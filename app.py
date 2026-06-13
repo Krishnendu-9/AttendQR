@@ -31,6 +31,30 @@ def utc_to_ist(utc_dt):
     ist_dt = utc_dt.astimezone(IST)
     return ist_dt
 
+
+def get_lan_ip():
+    """Return the LAN IP reachable by phones on the same network."""
+    override = os.environ.get('APP_HOST_IP')
+    if override:
+        return override.strip()
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(('8.8.8.8', 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return socket.gethostbyname(socket.gethostname())
+    finally:
+        sock.close()
+
+
+def build_scan_url(token):
+    base_url = os.environ.get('APP_BASE_URL')
+    if base_url:
+        return f"{base_url.rstrip('/')}/scan/{token}"
+    port = os.environ.get('APP_PORT', '5000')
+    return f"http://{get_lan_ip()}:{port}/scan/{token}"
+
 app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
@@ -719,8 +743,7 @@ def generate_qr():
             qr_image = f"static/qrcodes/{cs.token}.png"
             session_id = cs.id
             subject_name = cs.subject.name
-            local_ip = socket.gethostbyname(socket.gethostname())
-            scan_url = f'http://{local_ip}:5000/scan/{cs.token}'
+            scan_url = build_scan_url(cs.token)
             duration = int((cs.expires_at - cs.created_at).total_seconds() / 60)
     
     if request.method == 'POST':
@@ -753,8 +776,7 @@ def generate_qr():
         db.session.add(cs)
         db.session.commit()
         
-        local_ip = socket.gethostbyname(socket.gethostname())
-        scan_url = f'http://{local_ip}:5000/scan/{token}'
+        scan_url = build_scan_url(token)
         img = qrcode.make(scan_url)
         path = f"static/qrcodes/{token}.png"
         img.save(path)
