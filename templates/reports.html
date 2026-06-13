@@ -1,0 +1,283 @@
+{% extends 'base.html' %}
+{% block title %}Attendance Report | QR Attendance System{% endblock %}
+{% block page_title %}Attendance Report{% endblock %}
+{% block page_subtitle %}Filter, analyze, and export attendance records{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h2>Attendance Report</h2>
+    <p>Generate reports by department, semester, subject, and date range.</p>
+  </div>
+</div>
+
+<form method="GET" class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="dept_select">Department</label>
+      <select class="form-select" name="department_id" id="dept_select" required onchange="loadSemesters(this.value)">
+        <option value="">Select department</option>
+        {% for d in departments %}
+        <option value="{{ d.id }}" {% if selected_dept == d.id %}selected{% endif %}>{{ d.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="sem_select">Semester</label>
+      <select class="form-select" name="semester_id" id="sem_select" required onchange="loadSubjects(this.value)">
+        <option value="">Select semester</option>
+        {% for s in semesters %}
+        <option value="{{ s.id }}" {% if selected_sem == s.id %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="subject_select">Subject</label>
+      <select class="form-select" name="subject_id" id="subject_select">
+        <option value="">All subjects</option>
+        {% for sub in subjects %}
+        <option value="{{ sub.id }}" {% if selected_subject == sub.id %}selected{% endif %}>{{ sub.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="date_from">From Date</label>
+      <input type="date" class="form-control" id="date_from" name="date_from" value="{{ date_from }}">
+    </div>
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="date_to">To Date</label>
+      <input type="date" class="form-control" id="date_to" name="date_to" value="{{ date_to }}">
+    </div>
+    <div class="col-md-6 col-xl-3 d-flex align-items-end">
+      <button class="btn btn-primary w-100" type="submit">
+        <i class="bi bi-search me-1"></i> Generate Report
+      </button>
+    </div>
+  </div>
+</form>
+
+{% if stats %}
+<section class="stat-grid report-stats">
+  <div class="stat-card">
+    <div class="stat-icon"><i class="bi bi-people"></i></div>
+    <div class="stat-label">Total Students</div>
+    <div class="stat-value">{{ stats.total_students }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon accent"><i class="bi bi-calendar-check"></i></div>
+    <div class="stat-label">Sessions</div>
+    <div class="stat-value">{{ stats.total_sessions }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon warning"><i class="bi bi-check2-square"></i></div>
+    <div class="stat-label">Attendance</div>
+    <div class="stat-value">{{ stats.total_attendance }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon danger"><i class="bi bi-percent"></i></div>
+    <div class="stat-label">Average</div>
+    <div class="stat-value">{{ stats.avg_attendance }}%</div>
+  </div>
+</section>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a href="/reports/detailed?department_id={{ selected_dept }}&semester_id={{ selected_sem }}" class="btn btn-info">
+    <i class="bi bi-table me-1"></i> Detailed View
+  </a>
+  <a href="/export/{{ selected_dept }}/{{ selected_sem }}/excel" class="btn btn-success">
+    <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
+  </a>
+  <a href="/export/{{ selected_dept }}/{{ selected_sem }}/pdf" class="btn btn-danger">
+    <i class="bi bi-file-earmark-pdf me-1"></i> Export PDF
+  </a>
+</div>
+
+{% if sessions %}
+<div class="table-card">
+  <div class="card-header">
+    <h2 class="section-title">Class Sessions</h2>
+    <p class="section-subtitle">Attendance sessions matching the selected criteria</p>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Subject</th>
+          <th>Teacher</th>
+          <th>Date & Time</th>
+          <th>Status</th>
+          <th>Present</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for session in sessions %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="fw-semibold">{{ session.subject.name }}</td>
+          <td>{{ session.teacher.name if session.teacher else 'N/A' }}</td>
+          <td>{{ session.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>
+            {% if session.expires_at > now() %}
+            <span class="badge text-bg-success">Active</span>
+            {% else %}
+            <span class="badge text-bg-secondary">Expired</span>
+            {% endif %}
+          </td>
+          <td><span class="badge text-bg-primary">{{ session.attendances|length }} Students</span></td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-info btn-icon" onclick="viewAttendance({{ session.id }})" data-bs-toggle="tooltip" title="View details">
+              <i class="bi bi-eye"></i>
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+  <i class="bi bi-info-circle me-1"></i> No sessions found for the selected criteria.
+</div>
+{% endif %}
+{% endif %}
+
+<div class="modal fade" id="attendanceModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Session Attendance Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="sessionInfo" class="mb-3">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <p><strong>Subject:</strong> <span id="modalSubject"></span></p>
+              <p><strong>Department:</strong> <span id="modalDept"></span></p>
+              <p><strong>Semester:</strong> <span id="modalSem"></span></p>
+            </div>
+            <div class="col-md-6">
+              <p><strong>Teacher:</strong> <span id="modalTeacher"></span></p>
+              <p><strong>Date:</strong> <span id="modalDate"></span></p>
+              <p><strong>Total Present:</strong> <span id="modalTotal" class="badge text-bg-success"></span></p>
+            </div>
+          </div>
+        </div>
+        <hr>
+        <h6 class="fw-bold">Students Present</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Roll No</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Marked At</th>
+              </tr>
+            </thead>
+            <tbody id="attendanceList"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function loadSemesters(dept_id) {
+  const semSelect = document.getElementById('sem_select');
+  semSelect.innerHTML = '<option value="">Loading...</option>';
+
+  if (!dept_id) {
+    semSelect.innerHTML = '<option value="">Select semester</option>';
+    return;
+  }
+
+  fetch('/api/semesters/' + dept_id)
+    .then(r => r.json())
+    .then(data => {
+      semSelect.innerHTML = '<option value="">Select semester</option>';
+      data.forEach(s => semSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+    });
+}
+
+function loadSubjects(sem_id) {
+  const subSelect = document.getElementById('subject_select');
+  subSelect.innerHTML = '<option value="">Loading...</option>';
+
+  if (!sem_id) {
+    subSelect.innerHTML = '<option value="">All subjects</option>';
+    return;
+  }
+
+  fetch('/api/subjects/' + sem_id)
+    .then(r => r.json())
+    .then(data => {
+      subSelect.innerHTML = '<option value="">All subjects</option>';
+      data.forEach(s => subSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+    });
+}
+
+function viewAttendance(sessionId) {
+  fetch('/api/session_attendance/' + sessionId)
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('modalSubject').textContent = data.session.subject;
+      document.getElementById('modalDept').textContent = data.session.department;
+      document.getElementById('modalSem').textContent = data.session.semester;
+      document.getElementById('modalTeacher').textContent = data.session.teacher;
+      document.getElementById('modalDate').textContent = data.session.created_at;
+      document.getElementById('modalTotal').textContent = data.total + ' Students';
+
+      const tbody = document.getElementById('attendanceList');
+      tbody.innerHTML = '';
+
+      if (data.attendances.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No students marked attendance</td></tr>';
+      } else {
+        data.attendances.forEach((att, index) => {
+          tbody.innerHTML += `
+            <tr>
+              <td>${index + 1}</td>
+              <td>${att.student_roll}</td>
+              <td>${att.student_name}</td>
+              <td>${att.student_email}</td>
+              <td>${att.timestamp}</td>
+            </tr>
+          `;
+        });
+      }
+
+      new bootstrap.Modal(document.getElementById('attendanceModal')).show();
+    })
+    .catch(err => {
+      alert('Error loading attendance details');
+      console.error(err);
+    });
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+  const deptId = document.getElementById('dept_select').value;
+  if (deptId) {
+    loadSemesters(deptId);
+    setTimeout(() => {
+      const semId = {{ selected_sem if selected_sem else 'null' }};
+      if (semId) {
+        document.getElementById('sem_select').value = semId;
+        loadSubjects(semId);
+        setTimeout(() => {
+          const subId = {{ selected_subject if selected_subject else 'null' }};
+          if (subId) document.getElementById('subject_select').value = subId;
+        }, 300);
+      }
+    }, 300);
+  }
+});
+</script>
+{% endblock %}

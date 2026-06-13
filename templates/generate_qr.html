@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+{% block title %}Generate QR | QR Attendance System{% endblock %}
+{% block page_title %}Generate QR{% endblock %}
+{% block page_subtitle %}Create and monitor QR-based class attendance sessions{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h2>QR Session Setup</h2>
+    <p>Select class details, assign a teacher, and generate a time-bound QR code.</p>
+  </div>
+</div>
+
+{% if qr_image %}
+<div class="card mb-4">
+  <div class="card-body text-center p-4">
+    <div class="auth-mark mx-auto">
+      <i class="bi bi-qr-code"></i>
+    </div>
+    <h2 class="h4 fw-bold mb-1">{{ subject }}</h2>
+    <p class="text-muted mb-3">Valid for {{ duration }} minutes</p>
+    <img src="/{{ qr_image }}" class="qr-preview mb-3" alt="Generated QR code">
+    <div class="small text-muted text-break mb-3">{{ scan_url }}</div>
+    <div class="d-flex flex-wrap justify-content-center gap-2">
+      <a href="{{ url_for('generate_qr') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i> New QR
+      </a>
+      <a href="/reports?session_id={{ session_id }}" class="btn btn-info">
+        <i class="bi bi-eye me-1"></i> View Attendance
+      </a>
+      <form method="POST" action="/delete_session/{{ session_id }}" onsubmit="return confirm('Delete this QR session and all attendance records?')">
+        <button class="btn btn-danger" type="submit">
+          <i class="bi bi-trash me-1"></i> Delete Session
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% else %}
+<form method="POST" class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="dept_select">Department</label>
+      <select class="form-select" name="department_id" id="dept_select" required
+        onchange="loadSemesters(this.value,'sem_select'); loadTeachers(this.value,'teacher_select')">
+        <option value="">Select department</option>
+        {% for d in departments %}
+        <option value="{{ d.id }}">{{ d.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="sem_select">Semester</label>
+      <select class="form-select" name="semester_id" id="sem_select" required onchange="loadSubjects(this.value,'sub_select')">
+        <option value="">Select semester</option>
+      </select>
+    </div>
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="sub_select">Subject</label>
+      <select class="form-select" name="subject_id" id="sub_select" required>
+        <option value="">Select subject</option>
+      </select>
+    </div>
+    {% if current_teacher %}
+    <div class="col-md-6 col-xl">
+      <label class="form-label">Teacher</label>
+      <input class="form-control" value="{{ current_teacher.name }}" disabled>
+      <input type="hidden" name="teacher_id" value="{{ current_teacher.id }}">
+    </div>
+    {% else %}
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="teacher_select">Teacher</label>
+      <select class="form-select" name="teacher_id" id="teacher_select" required>
+        <option value="">Select teacher</option>
+      </select>
+    </div>
+    {% endif %}
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="duration">Duration</label>
+      <input class="form-control" id="duration" name="duration" type="number" min="1" placeholder="Minutes" value="30" required>
+    </div>
+    <div class="col-md-6 col-xl-auto d-flex align-items-end">
+      <button class="btn btn-primary w-100" type="submit">
+        <i class="bi bi-qr-code me-1"></i> Generate
+      </button>
+    </div>
+  </div>
+</form>
+{% endif %}
+
+<div class="table-card">
+  <div class="card-header">
+    <h2 class="section-title"><i class="bi bi-clock-history me-1"></i> Recent QR Sessions</h2>
+    <p class="section-subtitle">Latest generated class sessions and their current status</p>
+  </div>
+  {% if recent_sessions %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Subject</th>
+          <th>Department</th>
+          <th>Semester</th>
+          <th>Teacher</th>
+          <th>Created</th>
+          <th>Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cs in recent_sessions %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="fw-semibold">{{ cs.subject.name }}</td>
+          <td>{{ cs.subject.department.name }}</td>
+          <td>{{ cs.subject.semester.name }}</td>
+          <td>{{ cs.teacher.name if cs.teacher else 'N/A' }}</td>
+          <td>{{ cs.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>
+            {% set now = now() if now else None %}
+            {% if cs.expires_at > now %}
+              <span class="badge text-bg-success">Active</span>
+            {% else %}
+              <span class="badge text-bg-secondary">Expired</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{{ url_for('generate_qr', session_id=cs.id) }}" class="btn btn-sm btn-info btn-icon" data-bs-toggle="tooltip" title="View QR">
+              <i class="bi bi-qr-code"></i>
+            </a>
+            <form method="POST" action="/delete_session/{{ cs.id }}" class="d-inline"
+                  onsubmit="return confirm('Delete this session and all attendance records for {{ cs.subject.name }}?')">
+              <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete session">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="p-4 text-center text-muted">No QR sessions generated yet.</div>
+  {% endif %}
+</div>
+
+<script>
+function loadSemesters(dept_id, target_id) {
+  if (!dept_id) return;
+  fetch('/api/semesters/' + dept_id)
+    .then(r => r.json())
+    .then(data => {
+      const sel = document.getElementById(target_id);
+      sel.innerHTML = '<option value="">Select semester</option>';
+      data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+    });
+}
+function loadSubjects(sem_id, target_id) {
+  if (!sem_id) return;
+  fetch('/api/subjects/' + sem_id)
+    .then(r => r.json())
+    .then(data => {
+      const sel = document.getElementById(target_id);
+      sel.innerHTML = '<option value="">Select subject</option>';
+      data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+    });
+}
+
+function loadTeachers(dept_id, target_id) {
+  if (!dept_id) return;
+  fetch('/api/teachers/' + dept_id)
+    .then(r => r.json())
+    .then(data => {
+      const sel = document.getElementById(target_id);
+      if (!sel) return;
+      sel.innerHTML = '<option value="">Select teacher</option>';
+      data.forEach(t => sel.innerHTML += `<option value="${t.id}">${t.name}</option>`);
+    });
+}
+</script>
+{% endblock %}

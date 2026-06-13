@@ -1,0 +1,194 @@
+{% extends 'base.html' %}
+{% block title %}Accounts | QR Attendance System{% endblock %}
+{% block page_title %}Accounts{% endblock %}
+{% block page_subtitle %}Manage role-based login access for the system{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h2>Account Management</h2>
+    <p>
+      {% if current_user.role == 'hod' %}
+      Create teacher and student logins for your department.
+      {% else %}
+      Create trusted role-based accounts and protect the final active account.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{% if message %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+  <i class="bi bi-check-circle me-1"></i> {{ message }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+  <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card h-100">
+      <div class="card-header">
+        <h2 class="section-title"><i class="bi bi-person-plus me-1"></i> Add New Account</h2>
+        <p class="section-subtitle">Create a role-based login account</p>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <div class="mb-3">
+            <label for="username" class="form-label">Username</label>
+            <input type="text" class="form-control" id="username" name="username" placeholder="Enter username" required>
+            <div class="form-text">For HOD/Teacher accounts, use @rcciit.org.in or @gmail.com. Teacher username must match the selected teacher email.</div>
+          </div>
+          <div class="mb-3">
+            <label for="role" class="form-label">Role</label>
+            <select class="form-select" id="role" name="role" required onchange="toggleRoleFields()">
+              {% for key, label in roles.items() %}
+              <option value="{{ key }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3 role-field" id="departmentField">
+            <label for="department_id" class="form-label">Department</label>
+            <select class="form-select" id="department_id" name="department_id">
+              <option value="">Select department</option>
+              {% for d in departments %}
+              <option value="{{ d.id }}">{{ d.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3 role-field" id="teacherField">
+            <label for="teacher_id" class="form-label">Teacher Profile</label>
+            <select class="form-select" id="teacher_id" name="teacher_id">
+              <option value="">Select teacher</option>
+              {% for teacher in teachers %}
+              <option value="{{ teacher.id }}">{{ teacher.name }} - {{ teacher.email }} - {{ teacher.department.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3 role-field" id="studentField">
+            <label for="student_id" class="form-label">Student Profile</label>
+            <select class="form-select" id="student_id" name="student_id">
+              <option value="">Select student</option>
+              {% for student in students %}
+              <option value="{{ student.id }}">{{ student.roll_no }} - {{ student.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="password" class="form-label">Password</label>
+            <div class="input-group password-field">
+              <input type="password" class="form-control" id="password" name="password" placeholder="Minimum 6 characters" autocomplete="new-password" required minlength="6">
+              <button class="btn btn-outline-secondary password-toggle" type="button" data-target="password" aria-label="Show password">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+          </div>
+          <div class="mb-4">
+            <label for="confirm_password" class="form-label">Confirm Password</label>
+            <div class="input-group password-field">
+              <input type="password" class="form-control" id="confirm_password" name="confirm_password" placeholder="Re-enter password" autocomplete="new-password" required>
+              <button class="btn btn-outline-secondary password-toggle" type="button" data-target="confirm_password" aria-label="Show password">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-plus-circle me-1"></i> Add Admin
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="table-card h-100">
+      <div class="card-header">
+        <h2 class="section-title"><i class="bi bi-shield-lock me-1"></i> Current Admins</h2>
+        <p class="section-subtitle">Accounts with full system access</p>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr><th>#</th><th>Username</th><th>Role</th><th>Scope</th><th class="text-end">Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for admin in admins %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td class="fw-semibold">
+                <i class="bi bi-person-circle text-primary me-1"></i>{{ admin.username }}
+              </td>
+              <td><span class="badge text-bg-primary">{{ role_label(admin.role) }}</span></td>
+              <td>
+                {% if admin.role == 'hod' and admin.department %}
+                  {{ admin.department.name }}
+                {% elif admin.role == 'teacher' and admin.teacher %}
+                  {{ admin.teacher.name }}
+                {% elif admin.role == 'student' and admin.student %}
+                  {{ admin.student.roll_no }} - {{ admin.student.name }}
+                {% else %}
+                  {% if admin.role == 'super_admin' %}
+                    All departments
+                  {% elif admin.department %}
+                    {{ admin.department.name }}
+                  {% else %}
+                    Not assigned
+                  {% endif %}
+                {% endif %}
+              </td>
+              <td class="text-end">
+                {% set can_delete_account = current_user.role == 'super_admin' or (current_user.role == 'hod' and admin.role in ['teacher', 'student'] and admin.department_id == current_user.department_id) %}
+                {% if admins|length > 1 and can_delete_account %}
+                <form method="POST" action="/delete_admin/{{ admin.id }}" class="d-inline"
+                      onsubmit="return confirm('Delete account \'{{ admin.username }}\'?')">
+                  <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete account">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+                {% else %}
+                <span class="badge text-bg-secondary">Last admin</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            {% if not admins %}
+            <tr><td colspan="5" class="text-center text-muted py-4">No accounts found.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-info mt-4 mb-0">
+  <i class="bi bi-info-circle me-1"></i>
+  {% if current_user.role == 'hod' %}
+  HODs can create only Teacher and Student accounts for their assigned department.
+  {% else %}
+  Passwords must be at least 6 characters, and the last remaining Principal account should be protected.
+  {% endif %}
+</div>
+<script>
+function toggleRoleFields() {
+  const role = document.getElementById('role').value;
+  const departmentField = document.getElementById('departmentField');
+  const teacherField = document.getElementById('teacherField');
+  const studentField = document.getElementById('studentField');
+
+  departmentField.style.display = role === 'hod' ? '' : 'none';
+  teacherField.style.display = role === 'teacher' ? '' : 'none';
+  studentField.style.display = role === 'student' ? '' : 'none';
+
+  document.getElementById('department_id').required = role === 'hod';
+  document.getElementById('teacher_id').required = role === 'teacher';
+  document.getElementById('student_id').required = role === 'student';
+}
+document.addEventListener('DOMContentLoaded', toggleRoleFields);
+</script>
+{% endblock %}

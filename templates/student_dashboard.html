@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}My Attendance | QR Attendance System{% endblock %}
+{% block page_title %}My Attendance{% endblock %}
+{% block page_subtitle %}Track your subject-wise attendance and 80% eligibility status{% endblock %}
+{% block content %}
+<section class="hero-panel">
+  <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+    <div>
+      <h2>{{ student.name }}</h2>
+      <p>{{ student.roll_no }} · {{ student.department.name }} · {{ student.semester.name }}</p>
+    </div>
+    <span class="badge {% if summary.overall_safe %}text-bg-success{% else %}text-bg-danger{% endif %} align-self-start">
+      Required: {{ summary.target }}%
+    </span>
+  </div>
+</section>
+
+<section class="stat-grid report-stats">
+  <div class="stat-card">
+    <div class="stat-icon"><i class="bi bi-percent"></i></div>
+    <div class="stat-label">Overall</div>
+    <div class="stat-value">{{ summary.overall_percentage }}%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon accent"><i class="bi bi-check2-square"></i></div>
+    <div class="stat-label">Attended</div>
+    <div class="stat-value">{{ summary.overall_attended }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon warning"><i class="bi bi-calendar-event"></i></div>
+    <div class="stat-label">Total Classes</div>
+    <div class="stat-value">{{ summary.overall_total }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon danger"><i class="bi bi-arrow-up-circle"></i></div>
+    <div class="stat-label">Needed</div>
+    <div class="stat-value">{{ summary.overall_needed }}</div>
+  </div>
+</section>
+
+{% if not summary.overall_safe %}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  You need to attend the next {{ summary.overall_needed }} class{{ '' if summary.overall_needed == 1 else 'es' }} to reach {{ summary.target }}% overall attendance.
+</div>
+{% else %}
+<div class="alert alert-success">
+  <i class="bi bi-check-circle me-1"></i>
+  Your overall attendance is currently above the {{ summary.target }}% requirement.
+</div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-xl-8">
+    <div class="table-card">
+      <div class="card-header">
+        <h2 class="section-title">Subject-Wise Attendance</h2>
+        <p class="section-subtitle">Attendance percentage and recovery requirement per subject</p>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>Subject</th>
+              <th>Attended</th>
+              <th>Total</th>
+              <th>Percentage</th>
+              <th>Status</th>
+              <th>Classes Needed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in summary.rows %}
+            <tr>
+              <td class="fw-semibold">{{ row.subject.name }}</td>
+              <td>{{ row.attended }}</td>
+              <td>{{ row.total }}</td>
+              <td>{{ row.percentage }}%</td>
+              <td>
+                <span class="badge {% if row.safe %}text-bg-success{% else %}text-bg-danger{% endif %}">
+                  {{ 'Safe' if row.safe else 'Shortage' }}
+                </span>
+              </td>
+              <td>{{ row.needed }}</td>
+            </tr>
+            {% endfor %}
+            {% if not summary.rows %}
+            <tr><td colspan="6" class="text-center text-muted py-4">No subjects found for your semester.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-4">
+    <div class="card h-100">
+      <div class="card-header">
+        <h2 class="section-title">Recent Attendance</h2>
+        <p class="section-subtitle">Latest sessions marked present</p>
+      </div>
+      <div class="card-body">
+        {% for attendance in summary.recent %}
+        <div class="d-flex justify-content-between gap-3 py-3 border-bottom">
+          <div>
+            <div class="fw-semibold">{{ attendance.session.subject.name }}</div>
+            <div class="text-muted small">{{ attendance.timestamp.strftime('%Y-%m-%d %H:%M') }}</div>
+          </div>
+          <span class="badge text-bg-success align-self-start">Present</span>
+        </div>
+        {% endfor %}
+        {% if not summary.recent %}
+        <div class="text-center text-muted py-4">No attendance marked yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

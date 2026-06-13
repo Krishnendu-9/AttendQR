@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+{% block title %}Semesters | QR Attendance System{% endblock %}
+{% block page_title %}Semesters{% endblock %}
+{% block page_subtitle %}Manage semester records for each department{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h2>Semester Management</h2>
+    <p>Attach semesters to departments before adding students and subjects.</p>
+  </div>
+</div>
+
+<form method="POST" class="form-panel">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-5">
+      <label class="form-label" for="semester_name">Semester Name</label>
+      <input class="form-control" id="semester_name" name="name" placeholder="Example: Semester 1" required>
+    </div>
+    <div class="col-md-5">
+      <label class="form-label" for="department_id">Department</label>
+      <select class="form-select" id="department_id" name="department_id" required>
+        <option value="">Select department</option>
+        {% for d in departments %}
+        <option value="{{ d.id }}">{{ d.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-auto">
+      <button type="submit" class="btn btn-success">
+        <i class="bi bi-plus-circle me-1"></i> Add Semester
+      </button>
+    </div>
+  </div>
+</form>
+
+<div class="table-card">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr><th>#</th><th>Semester</th><th>Department</th><th class="text-end">Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for s in semesters %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="fw-semibold">{{ s.name }}</td>
+          <td>{{ s.department.name }}</td>
+          <td class="text-end">
+            <button type="button" class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit semester"
+              onclick="openEdit('{{ s.id }}','{{ s.name }}','{{ s.department_id }}')">
+              <i class="bi bi-pencil-square"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-danger btn-icon" data-bs-toggle="tooltip" title="Delete semester"
+              onclick="if(confirm('Delete {{ s.name }}?')) { document.getElementById('del-sem-{{ s.id }}').submit(); }">
+              <i class="bi bi-trash"></i>
+            </button>
+            <form id="del-sem-{{ s.id }}" method="POST" action="/semesters/delete/{{ s.id }}" class="d-none"></form>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not semesters %}
+        <tr><td colspan="4" class="text-center text-muted py-4">No semesters added yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" id="editForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Semester</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" for="edit_name">Semester Name</label>
+          <input class="form-control" name="name" id="edit_name" required>
+        </div>
+        <label class="form-label" for="edit_dept">Department</label>
+        <select class="form-select" name="department_id" id="edit_dept" required>
+          {% for d in departments %}
+          <option value="{{ d.id }}">{{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function openEdit(id, name, dept_id) {
+  document.getElementById('edit_name').value = name;
+  document.getElementById('edit_dept').value = dept_id;
+  document.getElementById('editForm').action = '/semesters/edit/' + id;
+  new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+</script>
+{% endblock %}

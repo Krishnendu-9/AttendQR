@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}QR Attendance System{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <a href="/" class="sidebar-brand">
+          <span class="brand-icon"><i class="bi bi-qr-code-scan"></i></span>
+          <span>
+            QR Attendance
+            <span class="brand-subtitle">Management System</span>
+          </span>
+        </a>
+      </div>
+      <ul class="sidebar-menu">
+        <li>
+          <a href="{{ '/student/attendance' if current_user.role == 'student' else '/' }}" class="{{ 'active' if request.path in ['/', '/student/attendance'] }}">
+            <i class="bi bi-speedometer2"></i>
+            <span>{{ 'My Attendance' if current_user.role == 'student' else 'Dashboard' }}</span>
+          </a>
+        </li>
+        {% if current_user.role in ['super_admin', 'hod'] %}
+        <li>
+          <a href="/departments" class="{{ 'active' if '/departments' in request.path }}">
+            <i class="bi bi-building"></i>
+            <span>Departments</span>
+          </a>
+        </li>
+        <li>
+          <a href="/semesters" class="{{ 'active' if '/semesters' in request.path }}">
+            <i class="bi bi-calendar-range"></i>
+            <span>Semesters</span>
+          </a>
+        </li>
+        <li>
+          <a href="/subjects" class="{{ 'active' if '/subjects' in request.path }}">
+            <i class="bi bi-book"></i>
+            <span>Subjects</span>
+          </a>
+        </li>
+        <li>
+          <a href="/teachers" class="{{ 'active' if '/teachers' in request.path }}">
+            <i class="bi bi-person-video3"></i>
+            <span>Teachers</span>
+          </a>
+        </li>
+        <li>
+          <a href="/students" class="{{ 'active' if '/students' in request.path }}">
+            <i class="bi bi-people"></i>
+            <span>Students</span>
+          </a>
+        </li>
+        {% endif %}
+        {% if current_user.role in ['super_admin', 'hod', 'teacher'] %}
+        <li>
+          <a href="/generate_qr" class="{{ 'active' if '/generate_qr' in request.path }}">
+            <i class="bi bi-qr-code"></i>
+            <span>Generate QR</span>
+          </a>
+        </li>
+        <li>
+          <a href="/reports" class="{{ 'active' if '/reports' in request.path }}">
+            <i class="bi bi-bar-chart-line"></i>
+            <span>Attendance Report</span>
+          </a>
+        </li>
+        {% endif %}
+        {% if current_user.role in ['super_admin', 'hod'] %}
+        <li>
+          <a href="/add_admin" class="{{ 'active' if '/add_admin' in request.path }}">
+            <i class="bi bi-shield-lock"></i>
+            <span>Accounts</span>
+          </a>
+        </li>
+        {% endif %}
+      </ul>
+    </aside>
+
+    <button class="toggle-sidebar" type="button" onclick="toggleSidebar()" aria-label="Open navigation">
+      <i class="bi bi-list"></i>
+    </button>
+
+    <main class="main-content">
+      <div class="top-bar">
+        <div>
+          <h1 class="page-title">{% block page_title %}Attendance Management{% endblock %}</h1>
+          <div class="page-kicker">{% block page_subtitle %}QR-based attendance tracking and reporting{% endblock %}</div>
+        </div>
+        <div class="user-info">
+          <div class="d-flex align-items-center gap-2">
+            <div class="user-avatar">A</div>
+            <div>
+              <div class="fw-semibold lh-sm">
+                {% if current_user.role == 'student' and current_user.student %}
+                  {{ current_user.student.name }}
+                {% elif current_user.role == 'teacher' and current_user.teacher %}
+                  {{ current_user.teacher.name }}
+                {% else %}
+                  {{ current_user.username }}
+                {% endif %}
+              </div>
+              <div class="text-muted small">{{ role_label(current_user.role) }}</div>
+            </div>
+          </div>
+          <a href="/logout" class="logout-btn">
+            <i class="bi bi-box-arrow-right"></i>
+            <span>Logout</span>
+          </a>
+        </div>
+      </div>
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('active');
+    }
+
+    document.addEventListener('click', function(event) {
+      const sidebar = document.getElementById('sidebar');
+      const toggleBtn = document.querySelector('.toggle-sidebar');
+
+      if (window.innerWidth <= 768 && !sidebar.contains(event.target) && !toggleBtn.contains(event.target)) {
+        sidebar.classList.remove('active');
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+        new bootstrap.Tooltip(el);
+      });
+
+      document.querySelectorAll('.password-toggle').forEach(function(button) {
+        button.addEventListener('click', function() {
+          const input = document.getElementById(button.dataset.target);
+          const icon = button.querySelector('i');
+          const isHidden = input.type === 'password';
+          input.type = isHidden ? 'text' : 'password';
+          icon.className = isHidden ? 'bi bi-eye-slash' : 'bi bi-eye';
+          button.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+        });
+      });
+    });
+  </script>
+</body>
+</html>

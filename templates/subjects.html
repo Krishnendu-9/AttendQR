@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% block title %}Subjects | QR Attendance System{% endblock %}
+{% block page_title %}Subjects{% endblock %}
+{% block page_subtitle %}Manage subjects by department and semester{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h2>Subject Management</h2>
+    <p>Subjects are used while generating QR sessions and reports.</p>
+  </div>
+</div>
+
+<form method="POST" class="form-panel">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="subject_name">Subject Name</label>
+      <input class="form-control" id="subject_name" name="name" placeholder="Example: Database Management" required>
+    </div>
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="dept_select">Department</label>
+      <select class="form-select" name="department_id" id="dept_select" required onchange="loadSemesters(this.value, 'sem_select')">
+        <option value="">Select department</option>
+        {% for d in departments %}
+        <option value="{{ d.id }}">{{ d.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="sem_select">Semester</label>
+      <select class="form-select" name="semester_id" id="sem_select" required>
+        <option value="">Select semester</option>
+      </select>
+    </div>
+    <div class="col-md-auto">
+      <button class="btn btn-success" type="submit">
+        <i class="bi bi-plus-circle me-1"></i> Add Subject
+      </button>
+    </div>
+  </div>
+</form>
+
+<div class="table-card">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr><th>#</th><th>Subject</th><th>Department</th><th>Semester</th><th class="text-end">Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for s in subjects %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="fw-semibold">{{ s.name }}</td>
+          <td>{{ s.department.name }}</td>
+          <td>{{ s.semester.name }}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit subject"
+              onclick="openEdit('{{ s.id }}','{{ s.name }}','{{ s.department_id }}','{{ s.semester_id }}')">
+              <i class="bi bi-pencil-square"></i>
+            </button>
+            <form method="POST" action="/subjects/delete/{{ s.id }}" class="d-inline"
+              onsubmit="return confirm('Delete {{ s.name }}?')">
+              <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete subject">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not subjects %}
+        <tr><td colspan="5" class="text-center text-muted py-4">No subjects added yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" id="editForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Subject</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" for="edit_name">Subject Name</label>
+          <input class="form-control" name="name" id="edit_name" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="edit_dept">Department</label>
+          <select class="form-select" name="department_id" id="edit_dept" required onchange="loadSemesters(this.value, 'edit_sem')">
+            {% for d in departments %}
+            <option value="{{ d.id }}">{{ d.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <label class="form-label" for="edit_sem">Semester</label>
+        <select class="form-select" name="semester_id" id="edit_sem" required>
+          {% for s in semesters %}
+          <option value="{{ s.id }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function loadSemesters(dept_id, target_id) {
+  if (!dept_id) return;
+  fetch('/api/semesters/' + dept_id)
+    .then(r => r.json())
+    .then(data => {
+      const sel = document.getElementById(target_id);
+      sel.innerHTML = '<option value="">Select semester</option>';
+      data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+    });
+}
+function openEdit(id, name, dept_id, sem_id) {
+  document.getElementById('edit_name').value = name;
+  document.getElementById('edit_dept').value = dept_id;
+  loadSemesters(dept_id, 'edit_sem');
+  setTimeout(() => document.getElementById('edit_sem').value = sem_id, 300);
+  document.getElementById('editForm').action = '/subjects/edit/' + id;
+  new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+</script>
+{% endblock %}

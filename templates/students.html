@@ -1,0 +1,288 @@
+{% extends 'base.html' %}
+{% block title %}Students | QR Attendance System{% endblock %}
+{% block page_title %}Students{% endblock %}
+{% block page_subtitle %}Manage student records, roll numbers, and semester assignments{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h2>Student Management</h2>
+    <p>Student roll numbers are used to mark attendance from QR scan links.</p>
+  </div>
+  <span id="resultCount" class="badge text-bg-info align-self-start">Total: {{ students|length }} students</span>
+</div>
+
+{% if error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+  <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="form-panel">
+  <div class="row g-3">
+    <div class="col-lg-3 col-md-6">
+      <label class="form-label" for="searchInput">Search</label>
+      <input type="text" id="searchInput" class="form-control" placeholder="Search by name or roll no">
+    </div>
+    <div class="col-lg-3 col-md-6">
+      <label class="form-label" for="filterDept">Department</label>
+      <select id="filterDept" class="form-select">
+        <option value="">All Departments</option>
+        {% for d in departments %}
+        <option value="{{ d.id }}">{{ d.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-lg-3 col-md-6">
+      <label class="form-label" for="filterSem">Semester</label>
+      <select id="filterSem" class="form-select">
+        <option value="">All Semesters</option>
+      </select>
+    </div>
+    <div class="col-lg-3 col-md-6 d-flex align-items-end">
+      <button class="btn btn-secondary w-100" type="button" onclick="clearFilters()">
+        <i class="bi bi-x-circle me-1"></i> Clear Filters
+      </button>
+    </div>
+  </div>
+</div>
+
+<form method="POST" class="form-panel" id="studentForm">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-4 col-xl">
+      <label class="form-label" for="student_name">Name</label>
+      <input class="form-control" id="student_name" name="name" placeholder="Student name" required>
+    </div>
+    <div class="col-md-4 col-xl">
+      <label class="form-label" for="roll_no">Roll No</label>
+      <input class="form-control" id="roll_no" name="roll_no" placeholder="Roll number" required>
+    </div>
+    <div class="col-md-4 col-xl">
+      <label class="form-label" for="email">Email</label>
+      <input class="form-control" id="email" name="email" placeholder="student@example.com" type="email" required>
+    </div>
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="dept_select">Department</label>
+      <select class="form-select" name="department_id" id="dept_select" required onchange="loadSemesters(this.value,'sem_select')">
+        <option value="">Select department</option>
+        {% for d in departments %}
+        <option value="{{ d.id }}">{{ d.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="sem_select">Semester</label>
+      <select class="form-select" name="semester_id" id="sem_select" required>
+        <option value="">Select semester</option>
+      </select>
+    </div>
+    <div class="col-xl-auto">
+      <button class="btn btn-success w-100" type="submit">
+        <i class="bi bi-plus-circle me-1"></i> Add Student
+      </button>
+    </div>
+  </div>
+</form>
+
+<div class="table-card">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle" id="studentsTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Roll No</th>
+          <th>Email</th>
+          <th>Department</th>
+          <th>Semester</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in students %}
+        <tr class="student-row" data-name="{{ s.name|lower }}" data-roll="{{ s.roll_no|lower }}" data-dept-id="{{ s.department_id }}" data-dept="{{ s.department.name }}" data-sem-id="{{ s.semester_id }}" data-sem="{{ s.semester.name }}">
+          <td>{{ loop.index }}</td>
+          <td class="fw-semibold">{{ s.name }}</td>
+          <td>{{ s.roll_no }}</td>
+          <td>{{ s.email }}</td>
+          <td>{{ s.department.name }}</td>
+          <td>{{ s.semester.name }}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit student"
+              onclick="openEdit('{{ s.id }}','{{ s.name }}','{{ s.roll_no }}','{{ s.email }}','{{ s.department_id }}','{{ s.semester_id }}')">
+              <i class="bi bi-pencil-square"></i>
+            </button>
+            <form method="POST" action="/students/delete/{{ s.id }}" class="d-inline"
+              onsubmit="return confirm('Delete {{ s.name }}?')">
+              <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete student">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not students %}
+        <tr id="noStudents"><td colspan="7" class="text-center text-muted py-4">No students added yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" id="editForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Student</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" for="edit_name">Name</label>
+          <input class="form-control" name="name" id="edit_name" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="edit_roll_no">Roll No</label>
+          <input class="form-control" name="roll_no" id="edit_roll_no" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="edit_email">Email</label>
+          <input class="form-control" name="email" id="edit_email" type="email" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="edit_dept">Department</label>
+          <select class="form-select" name="department_id" id="edit_dept" required onchange="loadSemesters(this.value,'edit_sem')">
+            {% for d in departments %}
+            <option value="{{ d.id }}">{{ d.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <label class="form-label" for="edit_sem">Semester</label>
+        <select class="form-select" name="semester_id" id="edit_sem" required>
+          <option value="">Select semester</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function loadSemesters(dept_id, target_id) {
+  const sel = document.getElementById(target_id);
+  sel.innerHTML = '<option value="">Loading...</option>';
+  sel.disabled = true;
+  sel.value = '';
+
+  if (!dept_id) {
+    sel.innerHTML = '<option value="">Select semester</option>';
+    sel.disabled = false;
+    return;
+  }
+
+  fetch('/api/semesters/' + dept_id)
+    .then(r => r.json())
+    .then(data => {
+      sel.innerHTML = '<option value="">Select semester</option>';
+      if (data.length === 0) {
+        sel.innerHTML += '<option value="" disabled>No semesters available</option>';
+      }
+      data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+      sel.disabled = false;
+    })
+    .catch(() => {
+      sel.innerHTML = '<option value="">Error loading</option>';
+      sel.disabled = false;
+      alert('Error loading semesters. Please refresh the page.');
+    });
+}
+
+function loadFilterSemesters(dept_id) {
+  const sel = document.getElementById('filterSem');
+
+  if (!dept_id) {
+    sel.innerHTML = '<option value="">All Semesters</option>';
+    filterTable();
+    return;
+  }
+
+  sel.innerHTML = '<option value="">Loading...</option>';
+
+  fetch('/api/semesters/' + dept_id)
+    .then(r => r.json())
+    .then(data => {
+      sel.innerHTML = '<option value="">All Semesters</option>';
+      data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+      filterTable();
+    })
+    .catch(() => {
+      sel.innerHTML = '<option value="">All Semesters</option>';
+    });
+}
+
+function openEdit(id, name, roll_no, email, dept_id, sem_id) {
+  document.getElementById('edit_name').value = name;
+  document.getElementById('edit_roll_no').value = roll_no;
+  document.getElementById('edit_email').value = email;
+  document.getElementById('edit_dept').value = dept_id;
+  loadSemesters(dept_id, 'edit_sem');
+  setTimeout(() => document.getElementById('edit_sem').value = sem_id, 500);
+  document.getElementById('editForm').action = '/students/edit/' + id;
+  new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+
+document.getElementById('studentForm').addEventListener('reset', function() {
+  document.getElementById('sem_select').innerHTML = '<option value="">Select semester</option>';
+});
+
+const searchInput = document.getElementById('searchInput');
+const filterDept = document.getElementById('filterDept');
+const filterSem = document.getElementById('filterSem');
+const resultCount = document.getElementById('resultCount');
+
+function filterTable() {
+  const searchTerm = searchInput.value.toLowerCase();
+  const deptFilter = filterDept.value;
+  const semFilter = filterSem.value;
+  const rows = document.querySelectorAll('.student-row');
+  let visibleCount = 0;
+
+  rows.forEach(row => {
+    const name = row.getAttribute('data-name');
+    const roll = row.getAttribute('data-roll');
+    const deptId = row.getAttribute('data-dept-id');
+    const semId = row.getAttribute('data-sem-id');
+    const matchSearch = name.includes(searchTerm) || roll.includes(searchTerm);
+    const matchDept = !deptFilter || deptId === deptFilter;
+    const matchSem = !semFilter || semId === semFilter;
+
+    if (matchSearch && matchDept && matchSem) {
+      row.style.display = '';
+      visibleCount++;
+      row.querySelector('td:first-child').textContent = visibleCount;
+    } else {
+      row.style.display = 'none';
+    }
+  });
+
+  resultCount.textContent = `Showing: ${visibleCount} of {{ students|length }} students`;
+}
+
+function clearFilters() {
+  searchInput.value = '';
+  filterDept.value = '';
+  filterSem.innerHTML = '<option value="">All Semesters</option>';
+  filterSem.value = '';
+  filterTable();
+}
+
+searchInput.addEventListener('keyup', filterTable);
+filterDept.addEventListener('change', function() {
+  loadFilterSemesters(this.value);
+});
+filterSem.addEventListener('change', filterTable);
+</script>
+{% endblock %}

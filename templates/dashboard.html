@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard | QR Attendance System{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Overview of departments, students, sessions, and attendance records{% endblock %}
+{% block content %}
+<section class="hero-panel">
+  <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+    <div>
+      <h2>QR-Based Smart Attendance Management System</h2>
+      <p>Manage academic data, generate class QR sessions, and review attendance reports from one workspace.</p>
+    </div>
+    <div class="d-flex gap-2 align-items-start">
+      <a href="/generate_qr" class="btn btn-primary">
+        <i class="bi bi-qr-code me-1"></i> Generate QR
+      </a>
+      <a href="/reports" class="btn btn-info">
+        <i class="bi bi-bar-chart-line me-1"></i> Attendance Report
+      </a>
+    </div>
+  </div>
+</section>
+
+{% if current_user.role in ['super_admin', 'hod'] %}
+<section class="stat-grid">
+  <a href="/departments" class="stat-card">
+    <div class="stat-icon"><i class="bi bi-building"></i></div>
+    <div class="stat-label">Departments</div>
+    <div class="stat-value">{{ departments }}</div>
+  </a>
+  <a href="/semesters" class="stat-card">
+    <div class="stat-icon accent"><i class="bi bi-calendar-range"></i></div>
+    <div class="stat-label">Semesters</div>
+    <div class="stat-value">{{ semesters }}</div>
+  </a>
+  <a href="/subjects" class="stat-card">
+    <div class="stat-icon"><i class="bi bi-book"></i></div>
+    <div class="stat-label">Subjects</div>
+    <div class="stat-value">{{ subjects }}</div>
+  </a>
+  <a href="/teachers" class="stat-card">
+    <div class="stat-icon warning"><i class="bi bi-person-video3"></i></div>
+    <div class="stat-label">Teachers</div>
+    <div class="stat-value">{{ teachers }}</div>
+  </a>
+  <a href="/students" class="stat-card">
+    <div class="stat-icon accent"><i class="bi bi-people"></i></div>
+    <div class="stat-label">Students</div>
+    <div class="stat-value">{{ students }}</div>
+  </a>
+  <a href="/reports" class="stat-card">
+    <div class="stat-icon danger"><i class="bi bi-check2-square"></i></div>
+    <div class="stat-label">Attendance Report</div>
+    <div class="stat-value">{{ attendance }}</div>
+  </a>
+</section>
+{% else %}
+<section class="stat-grid report-stats">
+  <a href="/generate_qr" class="stat-card">
+    <div class="stat-icon"><i class="bi bi-book"></i></div>
+    <div class="stat-label">Available Subjects</div>
+    <div class="stat-value">{{ subjects }}</div>
+  </a>
+  <a href="/reports" class="stat-card">
+    <div class="stat-icon accent"><i class="bi bi-calendar-check"></i></div>
+    <div class="stat-label">My Sessions</div>
+    <div class="stat-value">{{ sessions }}</div>
+  </a>
+  <a href="/reports" class="stat-card">
+    <div class="stat-icon danger"><i class="bi bi-check2-square"></i></div>
+    <div class="stat-label">Attendance Records</div>
+    <div class="stat-value">{{ attendance }}</div>
+  </a>
+</section>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-xl-7">
+    <div class="card h-100">
+      <div class="card-header">
+        <h2 class="section-title">Quick Actions</h2>
+        <p class="section-subtitle">Common tasks for the attendance workflow</p>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <a href="/generate_qr" class="quick-action">
+              <i class="bi bi-qr-code"></i>
+              <span>
+                <span class="fw-bold d-block">Generate QR Session</span>
+                <span class="text-muted small">Create attendance link for a class</span>
+              </span>
+            </a>
+          </div>
+          {% if current_user.role in ['super_admin', 'hod'] %}
+          <div class="col-md-6">
+            <a href="/students" class="quick-action">
+              <i class="bi bi-people"></i>
+              <span>
+                <span class="fw-bold d-block">Manage Students</span>
+                <span class="text-muted small">Add, edit, and organize records</span>
+              </span>
+            </a>
+          </div>
+          {% endif %}
+          <div class="col-md-6">
+            <a href="/reports" class="quick-action">
+              <i class="bi bi-file-earmark-bar-graph"></i>
+              <span>
+                <span class="fw-bold d-block">Attendance Report</span>
+                <span class="text-muted small">Analyze attendance by class</span>
+              </span>
+            </a>
+          </div>
+          {% if current_user.role in ['super_admin', 'hod'] %}
+          <div class="col-md-6">
+            <a href="/teachers" class="quick-action">
+              <i class="bi bi-person-video3"></i>
+              <span>
+                <span class="fw-bold d-block">Manage Teachers</span>
+                <span class="text-muted small">Maintain faculty details</span>
+              </span>
+            </a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-5">
+    <div class="card h-100">
+      <div class="card-header">
+        <h2 class="section-title">System Summary</h2>
+        <p class="section-subtitle">Current academic setup and session activity</p>
+      </div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center py-3 border-bottom">
+          <div>
+            <div class="fw-semibold">Class Sessions</div>
+            <div class="text-muted small">QR sessions generated so far</div>
+          </div>
+          <span class="badge text-bg-primary">{{ sessions }}</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center py-3 border-bottom">
+          <div>
+            <div class="fw-semibold">Registered Students</div>
+            <div class="text-muted small">Students eligible for attendance</div>
+          </div>
+          <span class="badge text-bg-success">{{ students }}</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center py-3">
+          <div>
+            <div class="fw-semibold">Attendance Entries</div>
+            <div class="text-muted small">Total marked records</div>
+          </div>
+          <span class="badge text-bg-dark">{{ attendance }}</span>
+        </div>
+        <div class="alert alert-info mt-3 mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          Generate a QR session, let students scan it, then review records from Attendance Report.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

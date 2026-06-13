@@ -1,0 +1,8 @@
+Flask
+Flask-SQLAlchemy
+Flask-Login
+qrcode[pil]
+openpyxl
+reportlab
+Pillow
+pytz
