@@ -7,7 +7,7 @@
   <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
     <div>
       <h2>{{ student.name }}</h2>
-      <p>{{ student.roll_no }} · {{ student.department.name }} · {{ student.semester.name }}</p>
+      <p>{{ student.roll_no }} · {{ student.department.display_name }} · {{ student.semester.name }}</p>
     </div>
     <span class="badge {% if summary.overall_safe %}text-bg-success{% else %}text-bg-danger{% endif %} align-self-start">
       Required: {{ summary.target }}%
@@ -103,7 +103,7 @@
         {% for attendance in summary.recent %}
         <div class="d-flex justify-content-between gap-3 py-3 border-bottom">
           <div>
-            <div class="fw-semibold">{{ attendance.session.subject.name }}</div>
+            <div class="fw-semibold">{{ session_display_name(attendance.session) }}</div>
             <div class="text-muted small">{{ attendance.timestamp.strftime('%Y-%m-%d %H:%M') }}</div>
           </div>
           <span class="badge text-bg-success align-self-start">Present</span>

@@ -1,6 +1,8 @@
 # Python
 __pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
 
 # Virtual Environment
 venv/
@@ -8,12 +10,20 @@ env/
 
 # Flask
 instance/
+*.db
+
+# Runtime-generated QR images
+static/qrcodes/*.png
+!static/qrcodes/.gitkeep
 
 # VS Code
 .vscode/
 
 # Environment Variables
 .env
+
+# Local notes / chat exports
+chat_*.md
 
 # OS Files
 .DS_Store

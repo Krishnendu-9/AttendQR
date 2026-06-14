@@ -1,0 +1,219 @@
+{% extends 'base.html' %}
+{% block title %}My Account | QR Attendance System{% endblock %}
+{% block page_title %}My Account{% endblock %}
+{% block page_subtitle %}Review your account details and manage your password{% endblock %}
+{% block content %}
+
+{% if message %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+  <i class="bi bi-check-circle me-1"></i> {{ message }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+  <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if current_user.must_change_password %}
+<div class="alert alert-warning">
+  <i class="bi bi-shield-exclamation me-1"></i>
+  This password was created or reset by another user. Please set a private password for this account.
+</div>
+{% endif %}
+
+<section class="hero-panel">
+  <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+    <div>
+      <h2>{{ profile.display_name }}</h2>
+      <p>{{ profile.role_label }} account{% if profile.email %} · {{ profile.email }}{% endif %}</p>
+    </div>
+    <span class="badge text-bg-primary align-self-start">{{ profile.scope_label }}: {{ profile.scope_value }}</span>
+  </div>
+</section>
+
+<div class="row g-4">
+  <div class="col-xl-6">
+    <section class="form-panel h-100">
+      <h2 class="section-title mb-1"><i class="bi bi-person-badge me-1"></i> Account Overview</h2>
+      <p class="section-subtitle mb-4">Identity, role, and access scope for your login.</p>
+
+      <div class="account-summary">
+        <div class="account-summary-item">
+          <div class="account-summary-label">Display Name</div>
+          <div class="account-summary-value">{{ profile.display_name }}</div>
+        </div>
+        <div class="account-summary-item">
+          <div class="account-summary-label">Login Username</div>
+          <div class="account-summary-value">{{ profile.username }}</div>
+        </div>
+        <div class="account-summary-item">
+          <div class="account-summary-label">Role</div>
+          <div class="account-summary-value">{{ profile.role_label }}</div>
+        </div>
+        <div class="account-summary-item">
+          <div class="account-summary-label">{{ profile.scope_label }}</div>
+          <div class="account-summary-value">{{ profile.scope_value }}</div>
+        </div>
+        {% for label, value in profile.details %}
+        <div class="account-summary-item">
+          <div class="account-summary-label">{{ label }}</div>
+          <div class="account-summary-value">{{ value }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <div class="col-xl-6">
+    <section class="form-panel h-100">
+      <h2 class="section-title mb-1"><i class="bi bi-shield-lock me-1"></i> Change Password</h2>
+      <p class="section-subtitle mb-4">Use your current password to set a new private password for this account.</p>
+
+      <form method="POST" id="accountPasswordForm">
+        <div class="mb-3">
+          <label for="current_password" class="form-label">Current Password</label>
+          <div class="input-group password-field">
+            <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password" required>
+            <button class="btn btn-outline-secondary password-toggle" type="button" data-target="current_password" aria-label="Show password">
+              <i class="bi bi-eye"></i>
+            </button>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label for="new_password" class="form-label">New Password</label>
+          <div class="input-group password-field">
+            <input type="password" class="form-control" id="new_password" name="new_password" minlength="6" autocomplete="new-password" required>
+            <button class="btn btn-outline-secondary password-toggle" type="button" data-target="new_password" aria-label="Show password">
+              <i class="bi bi-eye"></i>
+            </button>
+          </div>
+          <div class="form-text">Use at least 6 characters and make it different from the current password.</div>
+          <div class="password-strength mt-2" aria-live="polite">
+            <div class="password-strength-track">
+              <div class="password-strength-bar" id="passwordStrengthBar"></div>
+            </div>
+            <div class="password-strength-meta">
+              <span class="password-strength-label" id="passwordStrengthLabel">Strength: not checked</span>
+              <span class="password-strength-hint" id="passwordStrengthHint">Add uppercase, lowercase, number, and symbol for a stronger password.</span>
+            </div>
+          </div>
+        </div>
+        <div class="mb-4">
+          <label for="confirm_password" class="form-label">Confirm New Password</label>
+          <div class="input-group password-field">
+            <input type="password" class="form-control" id="confirm_password" name="confirm_password" minlength="6" autocomplete="new-password" required>
+            <button class="btn btn-outline-secondary password-toggle" type="button" data-target="confirm_password" aria-label="Show password">
+              <i class="bi bi-eye"></i>
+            </button>
+          </div>
+          <div class="password-match-status" id="passwordMatchStatus" aria-live="polite">Re-enter the new password to confirm it.</div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="updatePasswordButton" disabled>
+          <i class="bi bi-key me-1"></i> Update Password
+        </button>
+      </form>
+    </section>
+  </div>
+</div>
+
+<section class="form-panel">
+  <h2 class="section-title mb-1"><i class="bi bi-shield-check me-1"></i> Recent Security Activity</h2>
+  <p class="section-subtitle mb-3">Private account events related to your own login and password.</p>
+  {% if security_logs %}
+  <div class="activity-log-list mb-4">
+    {% for log in security_logs %}
+    <div class="activity-log-item">
+      <div class="activity-log-meta">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }} - {{ log.actor_username }}</div>
+      <div class="activity-log-text">{{ log.description }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-muted mb-4">No personal security activity recorded yet.</div>
+  {% endif %}
+
+  <h2 class="section-title mb-1"><i class="bi bi-info-circle me-1"></i> Security Notes</h2>
+  <p class="section-subtitle mb-3">A few simple guardrails for shared academic systems.</p>
+  <ul class="account-help-list">
+    <li>Do not share your password with other faculty or students.</li>
+    <li>Change the initial password created by Principal or HOD as soon as possible.</li>
+    <li>Use the same login username shown above when signing in again.</li>
+  </ul>
+</section>
+
+<script>
+  (function() {
+    const currentPassword = document.getElementById('current_password');
+    const newPassword = document.getElementById('new_password');
+    const confirmPassword = document.getElementById('confirm_password');
+    const strengthBar = document.getElementById('passwordStrengthBar');
+    const strengthLabel = document.getElementById('passwordStrengthLabel');
+    const strengthHint = document.getElementById('passwordStrengthHint');
+    const matchStatus = document.getElementById('passwordMatchStatus');
+    const submitButton = document.getElementById('updatePasswordButton');
+
+    function evaluatePassword(value) {
+      let score = 0;
+      if (value.length >= 6) score += 1;
+      if (value.length >= 8) score += 1;
+      if (/[a-z]/.test(value)) score += 1;
+      if (/[A-Z]/.test(value)) score += 1;
+      if (/\d/.test(value)) score += 1;
+      if (/[^A-Za-z0-9]/.test(value)) score += 1;
+
+      if (!value) {
+        return { label: 'Not checked', width: '0%', tone: 'is-empty', hint: 'Add uppercase, lowercase, number, and symbol for a stronger password.', strongEnough: false };
+      }
+      if (value.length < 6) {
+        return { label: 'Too short', width: '18%', tone: 'is-weak', hint: 'Password must be at least 6 characters long.', strongEnough: false };
+      }
+      if (score <= 3) {
+        return { label: 'Weak', width: '34%', tone: 'is-weak', hint: 'Try adding uppercase letters, numbers, or a symbol.', strongEnough: false };
+      }
+      if (score <= 5) {
+        return { label: 'Medium', width: '68%', tone: 'is-medium', hint: 'Good start. A symbol or longer phrase will make it stronger.', strongEnough: true };
+      }
+      return { label: 'Strong', width: '100%', tone: 'is-strong', hint: '', strongEnough: true };
+    }
+
+    function updatePasswordFeedback() {
+      const currentValue = currentPassword.value;
+      const newValue = newPassword.value;
+      const confirmValue = confirmPassword.value;
+      const strength = evaluatePassword(newValue);
+      const matches = !!confirmValue && newValue === confirmValue;
+
+      strengthBar.className = `password-strength-bar ${strength.tone}`;
+      strengthBar.style.width = strength.width;
+      strengthLabel.textContent = `Strength: ${strength.label}`;
+      strengthHint.textContent = strength.hint;
+
+      if (!confirmValue) {
+        matchStatus.className = 'password-match-status';
+        matchStatus.textContent = 'Re-enter the new password to confirm it.';
+      } else if (matches) {
+        matchStatus.className = 'password-match-status is-match';
+        matchStatus.textContent = 'Confirm password matched.';
+      } else {
+        matchStatus.className = 'password-match-status is-mismatch';
+        matchStatus.textContent = 'Confirm password does not match.';
+      }
+
+      submitButton.disabled = !(currentValue && strength.strongEnough && matches && currentValue !== newValue);
+    }
+
+    [currentPassword, newPassword, confirmPassword].forEach(function(input) {
+      input.addEventListener('input', updatePasswordFeedback);
+      input.addEventListener('paste', function() {
+        setTimeout(updatePasswordFeedback, 0);
+      });
+    });
+
+    updatePasswordFeedback();
+  })();
+</script>
+{% endblock %}

@@ -4,10 +4,7 @@
 {% block page_subtitle %}Student-wise attendance matrix for selected class sessions{% endblock %}
 {% block content %}
 <div class="page-heading">
-  <div>
-    <h2>Detailed Attendance Report</h2>
-    <p>{{ dept.name }} - {{ sem.name }}</p>
-  </div>
+  <span class="text-muted">{{ dept.display_name }} - {{ sem.name }}</span>
   <a href="{{ url_for('reports', department_id=dept.id, semester_id=sem.id) }}" class="btn btn-secondary">
     <i class="bi bi-arrow-left me-1"></i> Back
   </a>
@@ -22,7 +19,7 @@
           <th rowspan="2" class="align-middle">Name</th>
           {% for session in sessions %}
           <th class="text-center session-column">
-            <span class="d-block">{{ session.subject.name }}</span>
+            <span class="d-block">{{ session_display_name(session) }}</span>
             <span class="text-muted small">{{ session.created_at.strftime('%d/%m/%y') }}</span>
           </th>
           {% endfor %}

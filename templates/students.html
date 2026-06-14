@@ -4,10 +4,6 @@
 {% block page_subtitle %}Manage student records, roll numbers, and semester assignments{% endblock %}
 {% block content %}
 <div class="page-heading">
-  <div>
-    <h2>Student Management</h2>
-    <p>Student roll numbers are used to mark attendance from QR scan links.</p>
-  </div>
   <span id="resultCount" class="badge text-bg-info align-self-start">Total: {{ students|length }} students</span>
 </div>
 
@@ -29,7 +25,7 @@
       <select id="filterDept" class="form-select">
         <option value="">All Departments</option>
         {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.name }}</option>
+        <option value="{{ d.id }}">{{ d.display_name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -66,7 +62,7 @@
       <select class="form-select" name="department_id" id="dept_select" required onchange="loadSemesters(this.value,'sem_select')">
         <option value="">Select department</option>
         {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.name }}</option>
+        <option value="{{ d.id }}">{{ d.display_name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -84,6 +80,43 @@
   </div>
 </form>
 
+<div class="form-panel">
+  <div class="row g-3 align-items-end">
+    <div class="col-lg-8">
+      <h3 class="section-title mb-1"><i class="bi bi-upload me-1"></i> Bulk Upload Students</h3>
+      <p class="section-subtitle mb-3">
+        Upload CSV or XLSX with columns: name, roll_no, email, semester.
+        {% if current_user.role == 'super_admin' %}
+        Principal uploads also need department or department_id.
+        {% else %}
+        Department is automatically set to your assigned department.
+        {% endif %}
+      </p>
+      <form method="POST" action="/students/import" enctype="multipart/form-data" class="row g-2">
+        <div class="col-md">
+          <input class="form-control" type="file" name="student_file" accept=".csv,.xlsx" required>
+        </div>
+        <div class="col-md-auto">
+          <button class="btn btn-primary w-100 mb-2 mb-md-0" type="submit">
+            <i class="bi bi-cloud-arrow-up me-1"></i> Import Students
+          </button>
+        </div>
+        <div class="col-md-auto">
+          <a class="btn btn-info w-100" href="/students/import-template">
+            <i class="bi bi-download me-1"></i> Template
+          </a>
+        </div>
+      </form>
+    </div>
+    <div class="col-lg-4">
+      <div class="alert alert-info mb-0">
+        <i class="bi bi-shield-check me-1"></i>
+        Student accounts are managed here, not from Accounts. Initial password = roll number.
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="table-card">
   <div class="table-responsive">
     <table class="table table-hover align-middle" id="studentsTable">
@@ -100,14 +133,21 @@
       </thead>
       <tbody>
         {% for s in students %}
-        <tr class="student-row" data-name="{{ s.name|lower }}" data-roll="{{ s.roll_no|lower }}" data-dept-id="{{ s.department_id }}" data-dept="{{ s.department.name }}" data-sem-id="{{ s.semester_id }}" data-sem="{{ s.semester.name }}">
+        <tr class="student-row" data-name="{{ s.name|lower }}" data-roll="{{ s.roll_no|lower }}" data-dept-id="{{ s.department_id }}" data-dept="{{ s.department.display_name }}" data-sem-id="{{ s.semester_id }}" data-sem="{{ s.semester.name }}">
           <td>{{ loop.index }}</td>
           <td class="fw-semibold">{{ s.name }}</td>
           <td>{{ s.roll_no }}</td>
           <td>{{ s.email }}</td>
-          <td>{{ s.department.name }}</td>
+          <td>{{ s.department.display_name }}</td>
           <td>{{ s.semester.name }}</td>
           <td class="text-end">
+            <form method="POST" action="/students/reset-password/{{ s.id }}" class="d-inline"
+              onsubmit="return confirm('Reset password for {{ s.name }} to the roll number?')">
+              <button class="btn btn-sm btn-info btn-icon" type="submit" data-bs-toggle="tooltip" title="Reset password">
+                <i class="bi bi-key"></i>
+              </button>
+            </form>
+            {% if current_user.role in ['super_admin', 'hod'] %}
             <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit student"
               onclick="openEdit('{{ s.id }}','{{ s.name }}','{{ s.roll_no }}','{{ s.email }}','{{ s.department_id }}','{{ s.semester_id }}')">
               <i class="bi bi-pencil-square"></i>
@@ -118,6 +158,9 @@
                 <i class="bi bi-trash"></i>
               </button>
             </form>
+            {% else %}
+            <span class="badge text-bg-secondary">Password reset only</span>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -153,7 +196,7 @@
           <label class="form-label" for="edit_dept">Department</label>
           <select class="form-select" name="department_id" id="edit_dept" required onchange="loadSemesters(this.value,'edit_sem')">
             {% for d in departments %}
-            <option value="{{ d.id }}">{{ d.name }}</option>
+            <option value="{{ d.id }}">{{ d.display_name }}</option>
             {% endfor %}
           </select>
         </div>

@@ -41,6 +41,8 @@ a {
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   color: #ffffff;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   z-index: 1040;
 }
 
@@ -85,7 +87,7 @@ a {
 .sidebar-menu {
   list-style: none;
   margin: 0;
-  padding: 14px 12px;
+  padding: 14px 12px 18px;
 }
 
 .sidebar-menu a {
@@ -115,6 +117,63 @@ a {
   font-size: 1.05rem;
 }
 
+.sidebar-footer {
+  margin-top: auto;
+  padding: 16px 14px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.sidebar-user-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #ffffff;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.sidebar-user-card:hover,
+.sidebar-user-card.active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(45, 212, 191, 0.45);
+  transform: translateY(-1px);
+}
+
+.sidebar-user-meta {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.sidebar-user-name {
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.sidebar-user-role {
+  color: #9ca3af;
+  font-size: 0.78rem;
+  margin-top: 3px;
+}
+
+.sidebar-user-arrow {
+  color: #9ca3af;
+  font-size: 0.9rem;
+  flex: 0 0 auto;
+}
+
+.sidebar-user-card:hover .sidebar-user-arrow,
+.sidebar-user-card.active .sidebar-user-arrow {
+  color: #ffffff;
+}
+
 .main-content {
   margin-left: var(--sidebar-width);
   min-height: 100vh;
@@ -122,17 +181,12 @@ a {
 }
 
 .top-bar {
-  min-height: 72px;
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
+  min-height: auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
-  padding: 14px 18px;
-  margin-bottom: 24px;
+  padding: 0 0 10px;
+  margin-bottom: 12px;
 }
 
 .page-title {
@@ -146,12 +200,6 @@ a {
   color: var(--app-muted);
   font-size: 0.86rem;
   margin-top: 2px;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .user-avatar {
@@ -184,6 +232,21 @@ a {
 
 .logout-btn:hover {
   background: var(--app-danger);
+  color: #ffffff;
+}
+
+.sidebar-logout {
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+  background: rgba(255, 241, 240, 0.08);
+  border-color: rgba(245, 194, 188, 0.3);
+  color: #fda29b;
+}
+
+.sidebar-logout:hover {
+  background: var(--app-danger);
+  border-color: var(--app-danger);
   color: #ffffff;
 }
 
@@ -467,6 +530,244 @@ a {
   margin: 0;
 }
 
+.account-summary {
+  display: grid;
+  gap: 14px;
+}
+
+.account-summary-item {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--app-surface-soft);
+}
+
+.account-summary-label {
+  color: var(--app-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.account-summary-value {
+  color: var(--app-text);
+  font-size: 1rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.account-help-list {
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--app-muted);
+}
+
+.activity-log-list {
+  display: grid;
+  gap: 12px;
+}
+
+.activity-log-item {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface-soft);
+  padding: 12px 14px;
+}
+
+.activity-log-meta {
+  color: var(--app-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.activity-log-text {
+  color: var(--app-text);
+  font-size: 0.92rem;
+}
+
+.account-search-wrap {
+  width: min(240px, 100%);
+  flex: 0 0 auto;
+}
+
+.account-table-wrap {
+  overflow-x: visible;
+}
+
+#accountsTable {
+  width: 100%;
+}
+
+#accountsTable th,
+#accountsTable td {
+  vertical-align: top;
+  word-break: break-word;
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+#accountsTable tbody tr {
+  border-bottom: 2px solid #cbd5e1;
+}
+
+#accountsTable tbody tr:last-child {
+  border-bottom: 0;
+}
+
+#accountsTable thead th {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.account-col-username {
+  width: 38%;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.account-col-role {
+  width: 12%;
+  white-space: nowrap;
+}
+
+.account-col-status {
+  width: 16%;
+}
+
+.account-col-scope {
+  width: 18%;
+}
+
+.account-col-actions {
+  width: 16%;
+  min-width: 170px;
+  white-space: nowrap;
+}
+
+.account-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 100%;
+}
+
+#accountsTable td.account-col-role,
+#accountsTable td.account-col-status,
+#accountsTable td.account-col-actions,
+#accountsTable th.account-col-role,
+#accountsTable th.account-col-status,
+#accountsTable th.account-col-actions {
+  text-align: left;
+}
+
+#accountsTable td.account-col-actions,
+#accountsTable th.account-col-actions {
+  text-align: right;
+}
+
+#accountsTable td.account-col-status .badge + .badge {
+  margin-left: 0;
+}
+
+.account-status-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.account-status-stack .small {
+  line-height: 1.1;
+}
+
+@media (max-width: 1400px) {
+  .account-col-username {
+    width: 35%;
+  }
+
+  .account-col-status {
+    width: 19%;
+  }
+
+  .account-col-scope {
+    width: 17%;
+  }
+
+  .account-col-actions {
+    min-width: 160px;
+  }
+}
+
+.password-strength {
+  display: grid;
+  gap: 8px;
+}
+
+.password-strength-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.password-strength-bar {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  transition: width 0.2s ease, background 0.2s ease;
+}
+
+.password-strength-bar.is-empty {
+  background: #cbd5e1;
+}
+
+.password-strength-bar.is-weak {
+  background: #dc2626;
+}
+
+.password-strength-bar.is-medium {
+  background: #d97706;
+}
+
+.password-strength-bar.is-strong {
+  background: #059669;
+}
+
+.password-strength-meta {
+  display: grid;
+  gap: 2px;
+}
+
+.password-strength-label {
+  color: var(--app-text);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.password-strength-hint,
+.password-match-status {
+  color: var(--app-muted);
+  font-size: 0.82rem;
+}
+
+.password-match-status {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.password-match-status.is-match {
+  color: #047857;
+}
+
+.password-match-status.is-mismatch {
+  color: var(--app-danger);
+}
+
 .quick-action {
   border: 1px solid var(--app-border);
   border-radius: 8px;
@@ -542,6 +843,83 @@ a {
   min-width: 92px;
 }
 
+.teacher-row {
+  cursor: pointer;
+}
+
+.teacher-row:focus-visible {
+  outline: 2px solid var(--app-primary);
+  outline-offset: -2px;
+}
+
+.teacher-row.is-open {
+  background: #f8fbff;
+}
+
+.teacher-index {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.teacher-row-chevron {
+  color: var(--app-muted);
+  font-size: 0.82rem;
+  transition: transform 0.18s ease;
+}
+
+.teacher-row.is-open .teacher-row-chevron {
+  transform: rotate(180deg);
+}
+
+.teacher-detail-row td {
+  padding: 0;
+  background: #fbfdff;
+}
+
+.teacher-detail-panel {
+  border-top: 1px solid var(--app-border);
+  padding: 16px 20px 18px;
+}
+
+.teacher-detail-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.teacher-detail-label {
+  color: var(--app-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.teacher-detail-value {
+  color: var(--app-text);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.teacher-detail-subjects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.teacher-subject-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
 @media (max-width: 1200px) {
   .stat-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -577,10 +955,6 @@ a {
   .page-heading {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .user-info {
-    justify-content: space-between;
   }
 
   .stat-grid {

@@ -3,10 +3,22 @@
 {% block page_title %}Subjects{% endblock %}
 {% block page_subtitle %}Manage subjects by department and semester{% endblock %}
 {% block content %}
+
 <div class="page-heading">
-  <div>
-    <h2>Subject Management</h2>
-    <p>Subjects are used while generating QR sessions and reports.</p>
+  <span id="resultCount" class="badge text-bg-info align-self-start">Total: {{ subjects|length }} subjects</span>
+</div>
+
+<div class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-8 col-lg-6">
+      <label class="form-label" for="searchInput">Search</label>
+      <input type="text" id="searchInput" class="form-control" placeholder="Search by subject, department, or semester">
+    </div>
+    <div class="col-md-4 col-lg-3 d-flex align-items-end">
+      <button class="btn btn-secondary w-100" type="button" onclick="clearFilters()">
+        <i class="bi bi-x-circle me-1"></i> Clear Search
+      </button>
+    </div>
   </div>
 </div>
 
@@ -18,10 +30,10 @@
     </div>
     <div class="col-md-6 col-xl">
       <label class="form-label" for="dept_select">Department</label>
-      <select class="form-select" name="department_id" id="dept_select" required onchange="loadSemesters(this.value, 'sem_select')">
+      <select class="form-select" name="department_id" id="dept_select" required onchange="loadSemesters(this.value, 'sem_select'); loadTeachers(this.value, 'teacher_select')">
         <option value="">Select department</option>
         {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.name }}</option>
+        <option value="{{ d.id }}">{{ d.display_name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -29,6 +41,12 @@
       <label class="form-label" for="sem_select">Semester</label>
       <select class="form-select" name="semester_id" id="sem_select" required>
         <option value="">Select semester</option>
+      </select>
+    </div>
+    <div class="col-md-6 col-xl">
+      <label class="form-label" for="teacher_select">Assigned Teacher</label>
+      <select class="form-select" name="teacher_id" id="teacher_select">
+        <option value="">Assign later</option>
       </select>
     </div>
     <div class="col-md-auto">
@@ -41,20 +59,21 @@
 
 <div class="table-card">
   <div class="table-responsive">
-    <table class="table table-hover align-middle">
+    <table class="table table-hover align-middle" id="subjectsTable">
       <thead>
-        <tr><th>#</th><th>Subject</th><th>Department</th><th>Semester</th><th class="text-end">Actions</th></tr>
+        <tr><th>#</th><th>Subject</th><th>Assigned Teacher</th><th>Department</th><th>Semester</th><th class="text-end">Actions</th></tr>
       </thead>
       <tbody>
         {% for s in subjects %}
-        <tr>
+        <tr class="subject-row" data-name="{{ s.name|lower }}" data-teacher="{{ (s.teacher.name if s.teacher else 'unassigned')|lower }}" data-dept="{{ s.department.display_name|lower }}" data-sem="{{ s.semester.name|lower }}">
           <td>{{ loop.index }}</td>
           <td class="fw-semibold">{{ s.name }}</td>
-          <td>{{ s.department.name }}</td>
+          <td>{{ s.teacher.name if s.teacher else 'Not assigned' }}</td>
+          <td>{{ s.department.display_name }}</td>
           <td>{{ s.semester.name }}</td>
           <td class="text-end">
             <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit subject"
-              onclick="openEdit('{{ s.id }}','{{ s.name }}','{{ s.department_id }}','{{ s.semester_id }}')">
+              onclick="openEdit('{{ s.id }}','{{ s.name }}','{{ s.department_id }}','{{ s.semester_id }}','{{ s.teacher_id or '' }}')">
               <i class="bi bi-pencil-square"></i>
             </button>
             <form method="POST" action="/subjects/delete/{{ s.id }}" class="d-inline"
@@ -67,7 +86,7 @@
         </tr>
         {% endfor %}
         {% if not subjects %}
-        <tr><td colspan="5" class="text-center text-muted py-4">No subjects added yet.</td></tr>
+        <tr id="noSubjects"><td colspan="6" class="text-center text-muted py-4">No subjects added yet.</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -88,9 +107,9 @@
         </div>
         <div class="mb-3">
           <label class="form-label" for="edit_dept">Department</label>
-          <select class="form-select" name="department_id" id="edit_dept" required onchange="loadSemesters(this.value, 'edit_sem')">
+          <select class="form-select" name="department_id" id="edit_dept" required onchange="loadSemesters(this.value, 'edit_sem'); loadTeachers(this.value, 'edit_teacher')">
             {% for d in departments %}
-            <option value="{{ d.id }}">{{ d.name }}</option>
+            <option value="{{ d.id }}">{{ d.display_name }}</option>
             {% endfor %}
           </select>
         </div>
@@ -100,6 +119,15 @@
           <option value="{{ s.id }}">{{ s.name }}</option>
           {% endfor %}
         </select>
+        <div class="mt-3">
+          <label class="form-label" for="edit_teacher">Assigned Teacher</label>
+          <select class="form-select" name="teacher_id" id="edit_teacher">
+            <option value="">Assign later</option>
+            {% for t in teachers %}
+            <option value="{{ t.id }}">{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -119,13 +147,66 @@ function loadSemesters(dept_id, target_id) {
       data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
     });
 }
-function openEdit(id, name, dept_id, sem_id) {
+function loadTeachers(dept_id, target_id, selectedValue = '') {
+  const sel = document.getElementById(target_id);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Assign later</option>';
+  if (!dept_id) return;
+  fetch('/api/teachers/' + dept_id)
+    .then(r => r.json())
+    .then(data => {
+      sel.innerHTML = '<option value="">Assign later</option>';
+      data.forEach(t => sel.innerHTML += `<option value="${t.id}">${t.name}</option>`);
+      if (selectedValue !== '') {
+        sel.value = selectedValue;
+      }
+    });
+}
+function openEdit(id, name, dept_id, sem_id, teacher_id) {
   document.getElementById('edit_name').value = name;
   document.getElementById('edit_dept').value = dept_id;
   loadSemesters(dept_id, 'edit_sem');
+  loadTeachers(dept_id, 'edit_teacher', teacher_id);
   setTimeout(() => document.getElementById('edit_sem').value = sem_id, 300);
   document.getElementById('editForm').action = '/subjects/edit/' + id;
   new bootstrap.Modal(document.getElementById('editModal')).show();
 }
+
+const subjectSearchInput = document.getElementById('searchInput');
+const subjectResultCount = document.getElementById('resultCount');
+
+function filterSubjects() {
+  const searchTerm = subjectSearchInput.value.toLowerCase();
+  const rows = document.querySelectorAll('.subject-row');
+  let visibleCount = 0;
+
+  rows.forEach(row => {
+    const name = row.getAttribute('data-name');
+    const teacher = row.getAttribute('data-teacher');
+    const dept = row.getAttribute('data-dept');
+    const sem = row.getAttribute('data-sem');
+    const matches = name.includes(searchTerm) || teacher.includes(searchTerm) || dept.includes(searchTerm) || sem.includes(searchTerm);
+
+    if (matches) {
+      row.style.display = '';
+      visibleCount++;
+      row.querySelector('td:first-child').textContent = visibleCount;
+    } else {
+      row.style.display = 'none';
+    }
+  });
+
+  subjectResultCount.textContent = `Showing: ${visibleCount} of {{ subjects|length }} subjects`;
+}
+
+function clearFilters() {
+  subjectSearchInput.value = '';
+  filterSubjects();
+}
+
+subjectSearchInput.addEventListener('keyup', filterSubjects);
+document.getElementById('dept_select').addEventListener('change', function() {
+  loadTeachers(this.value, 'teacher_select');
+});
 </script>
 {% endblock %}

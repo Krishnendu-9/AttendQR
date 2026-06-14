@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Login | QR Attendance System</title>
+  <title>Login | QR Attendance System</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -16,13 +16,20 @@
     <div class="auth-mark">
       <i class="bi bi-qr-code-scan"></i>
     </div>
-    <h1 class="h4 fw-bold mb-1">Admin Login</h1>
-    <p class="text-muted mb-4">Access the QR attendance management dashboard.</p>
+    <h1 class="h4 fw-bold mb-1">Login</h1>
+    <p class="text-muted mb-4">Sign in with your username or email to access the QR attendance system.</p>
+
+    {% if error %}
+    <div class="alert alert-danger" role="alert">
+      <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
+    </div>
+    {% endif %}
 
     <form method="POST">
+      <input type="hidden" name="next" value="{{ next_url or '' }}">
       <div class="mb-3">
-        <label class="form-label" for="username">Username</label>
-        <input class="form-control" id="username" name="username" placeholder="Enter username" autocomplete="username" required>
+        <label class="form-label" for="username">Username or Email</label>
+        <input class="form-control" id="username" name="username" placeholder="Enter username or email" autocomplete="username" required>
       </div>
       <div class="mb-4">
         <label class="form-label" for="password">Password</label>

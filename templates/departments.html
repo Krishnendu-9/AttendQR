@@ -3,19 +3,35 @@
 {% block page_title %}Departments{% endblock %}
 {% block page_subtitle %}Create and manage academic departments{% endblock %}
 {% block content %}
+
 <div class="page-heading">
-  <div>
-    <h2>Department Management</h2>
-    <p>Departments organize semesters, subjects, teachers, and students.</p>
+  <span id="resultCount" class="badge text-bg-info align-self-start">Total: {{ departments|length }} departments</span>
+</div>
+
+<div class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-8 col-lg-6">
+      <label class="form-label" for="searchInput">Search</label>
+      <input type="text" id="searchInput" class="form-control" placeholder="Search by branch or course name">
+    </div>
+    <div class="col-md-4 col-lg-3 d-flex align-items-end">
+      <button class="btn btn-secondary w-100" type="button" onclick="clearFilters()">
+        <i class="bi bi-x-circle me-1"></i> Clear Search
+      </button>
+    </div>
   </div>
 </div>
 
 {% if current_user.role == 'super_admin' %}
 <form method="POST" class="form-panel">
   <div class="row g-3 align-items-end">
-    <div class="col-md-8 col-lg-6">
-      <label class="form-label" for="department_name">Department Name</label>
-      <input class="form-control" id="department_name" name="name" placeholder="Example: Computer Science" required>
+    <div class="col-md-3">
+      <label class="form-label" for="department_branch">Branch</label>
+      <input class="form-control text-uppercase" id="department_branch" name="branch" placeholder="Example: BCA" required>
+    </div>
+    <div class="col-md-9 col-lg-7">
+      <label class="form-label" for="department_name">Course Name</label>
+      <input class="form-control" id="department_name" name="name" placeholder="Example: Bachelor of Computer Application (BCA)" required>
     </div>
     <div class="col-md-auto">
       <button type="submit" class="btn btn-success">
@@ -28,22 +44,23 @@
 
 <div class="table-card">
   <div class="table-responsive">
-    <table class="table table-hover align-middle">
+    <table class="table table-hover align-middle" id="departmentsTable">
       <thead>
-        <tr><th>#</th><th>Name</th><th class="text-end">Actions</th></tr>
+        <tr><th>#</th><th>Branch</th><th>Course Name</th><th class="text-end">Actions</th></tr>
       </thead>
       <tbody>
         {% for d in departments %}
-        <tr>
+        <tr class="department-row" data-branch="{{ d.branch_name|lower }}" data-course="{{ d.course_name|lower }}">
           <td>{{ loop.index }}</td>
-          <td class="fw-semibold">{{ d.name }}</td>
+          <td><span class="badge text-bg-primary">{{ d.branch_name or 'N/A' }}</span></td>
+          <td class="fw-semibold">{{ d.course_name }}</td>
           <td class="text-end">
             {% if current_user.role == 'super_admin' %}
-            <button type="button" class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit department" onclick="openEdit('{{ d.id }}','{{ d.name }}')">
+            <button type="button" class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit department" onclick='openEdit({{ d.id }}, {{ d.branch_name|tojson }}, {{ d.course_name|tojson }})'>
               <i class="bi bi-pencil-square"></i>
             </button>
             <button type="button" class="btn btn-sm btn-danger btn-icon" data-bs-toggle="tooltip" title="Delete department"
-              onclick="if(confirm('Delete {{ d.name }}?')) { document.getElementById('del-dept-{{ d.id }}').submit(); }">
+              onclick="if(confirm('Delete {{ d.display_name }}?')) { document.getElementById('del-dept-{{ d.id }}').submit(); }">
               <i class="bi bi-trash"></i>
             </button>
             <form id="del-dept-{{ d.id }}" method="POST" action="/departments/delete/{{ d.id }}" class="d-none"></form>
@@ -54,7 +71,7 @@
         </tr>
         {% endfor %}
         {% if not departments %}
-        <tr><td colspan="3" class="text-center text-muted py-4">No departments added yet.</td></tr>
+        <tr id="noDepartments"><td colspan="4" class="text-center text-muted py-4">No departments added yet.</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -69,7 +86,11 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <label class="form-label" for="edit_name">Department Name</label>
+        <div class="mb-3">
+          <label class="form-label" for="edit_branch">Branch</label>
+          <input class="form-control text-uppercase" name="branch" id="edit_branch" required>
+        </div>
+        <label class="form-label" for="edit_name">Course Name</label>
         <input class="form-control" name="name" id="edit_name" required>
       </div>
       <div class="modal-footer">
@@ -80,10 +101,43 @@
   </div>
 </div>
 <script>
-function openEdit(id, name) {
+function openEdit(id, branch, name) {
+  document.getElementById('edit_branch').value = branch || '';
   document.getElementById('edit_name').value = name;
   document.getElementById('editForm').action = '/departments/edit/' + id;
   new bootstrap.Modal(document.getElementById('editModal')).show();
 }
+
+const departmentSearchInput = document.getElementById('searchInput');
+const departmentResultCount = document.getElementById('resultCount');
+
+function filterDepartments() {
+  const searchTerm = departmentSearchInput.value.toLowerCase();
+  const rows = document.querySelectorAll('.department-row');
+  let visibleCount = 0;
+
+  rows.forEach(row => {
+    const branch = row.getAttribute('data-branch');
+    const course = row.getAttribute('data-course');
+    const matches = branch.includes(searchTerm) || course.includes(searchTerm);
+
+    if (matches) {
+      row.style.display = '';
+      visibleCount++;
+      row.querySelector('td:first-child').textContent = visibleCount;
+    } else {
+      row.style.display = 'none';
+    }
+  });
+
+  departmentResultCount.textContent = `Showing: ${visibleCount} of {{ departments|length }} departments`;
+}
+
+function clearFilters() {
+  departmentSearchInput.value = '';
+  filterDepartments();
+}
+
+departmentSearchInput.addEventListener('keyup', filterDepartments);
 </script>
 {% endblock %}

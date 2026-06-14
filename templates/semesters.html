@@ -3,10 +3,22 @@
 {% block page_title %}Semesters{% endblock %}
 {% block page_subtitle %}Manage semester records for each department{% endblock %}
 {% block content %}
+
 <div class="page-heading">
-  <div>
-    <h2>Semester Management</h2>
-    <p>Attach semesters to departments before adding students and subjects.</p>
+  <span id="resultCount" class="badge text-bg-info align-self-start">Total: {{ semesters|length }} semesters</span>
+</div>
+
+<div class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-8 col-lg-6">
+      <label class="form-label" for="searchInput">Search</label>
+      <input type="text" id="searchInput" class="form-control" placeholder="Search by semester or department">
+    </div>
+    <div class="col-md-4 col-lg-3 d-flex align-items-end">
+      <button class="btn btn-secondary w-100" type="button" onclick="clearFilters()">
+        <i class="bi bi-x-circle me-1"></i> Clear Search
+      </button>
+    </div>
   </div>
 </div>
 
@@ -21,7 +33,7 @@
       <select class="form-select" id="department_id" name="department_id" required>
         <option value="">Select department</option>
         {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.name }}</option>
+        <option value="{{ d.id }}">{{ d.display_name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -35,16 +47,16 @@
 
 <div class="table-card">
   <div class="table-responsive">
-    <table class="table table-hover align-middle">
+    <table class="table table-hover align-middle" id="semestersTable">
       <thead>
         <tr><th>#</th><th>Semester</th><th>Department</th><th class="text-end">Actions</th></tr>
       </thead>
       <tbody>
         {% for s in semesters %}
-        <tr>
+        <tr class="semester-row" data-name="{{ s.name|lower }}" data-dept="{{ s.department.display_name|lower }}">
           <td>{{ loop.index }}</td>
           <td class="fw-semibold">{{ s.name }}</td>
-          <td>{{ s.department.name }}</td>
+          <td>{{ s.department.display_name }}</td>
           <td class="text-end">
             <button type="button" class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit semester"
               onclick="openEdit('{{ s.id }}','{{ s.name }}','{{ s.department_id }}')">
@@ -59,7 +71,7 @@
         </tr>
         {% endfor %}
         {% if not semesters %}
-        <tr><td colspan="4" class="text-center text-muted py-4">No semesters added yet.</td></tr>
+        <tr id="noSemesters"><td colspan="4" class="text-center text-muted py-4">No semesters added yet.</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -81,7 +93,7 @@
         <label class="form-label" for="edit_dept">Department</label>
         <select class="form-select" name="department_id" id="edit_dept" required>
           {% for d in departments %}
-          <option value="{{ d.id }}">{{ d.name }}</option>
+          <option value="{{ d.id }}">{{ d.display_name }}</option>
           {% endfor %}
         </select>
       </div>
@@ -99,5 +111,37 @@ function openEdit(id, name, dept_id) {
   document.getElementById('editForm').action = '/semesters/edit/' + id;
   new bootstrap.Modal(document.getElementById('editModal')).show();
 }
+
+const semesterSearchInput = document.getElementById('searchInput');
+const semesterResultCount = document.getElementById('resultCount');
+
+function filterSemesters() {
+  const searchTerm = semesterSearchInput.value.toLowerCase();
+  const rows = document.querySelectorAll('.semester-row');
+  let visibleCount = 0;
+
+  rows.forEach(row => {
+    const name = row.getAttribute('data-name');
+    const dept = row.getAttribute('data-dept');
+    const matches = name.includes(searchTerm) || dept.includes(searchTerm);
+
+    if (matches) {
+      row.style.display = '';
+      visibleCount++;
+      row.querySelector('td:first-child').textContent = visibleCount;
+    } else {
+      row.style.display = 'none';
+    }
+  });
+
+  semesterResultCount.textContent = `Showing: ${visibleCount} of {{ semesters|length }} semesters`;
+}
+
+function clearFilters() {
+  semesterSearchInput.value = '';
+  filterSemesters();
+}
+
+semesterSearchInput.addEventListener('keyup', filterSemesters);
 </script>
 {% endblock %}

@@ -4,24 +4,13 @@
 {% block page_subtitle %}Manage teacher records and department assignments{% endblock %}
 {% block content %}
 <div class="page-heading">
-  <div>
-    <h2>Teacher Management</h2>
-    <p>Teachers can be assigned while generating QR attendance sessions.</p>
-  </div>
   <span id="resultCount" class="badge text-bg-info align-self-start">Total: {{ teachers|length }} teachers</span>
 </div>
 
 <div class="alert alert-info">
   <i class="bi bi-info-circle me-1"></i>
-  Add teacher profiles here. Create HOD or Teacher login accounts from the Admins page.
+  Teacher login accounts are created and edited from the Accounts page. This page is only for teacher profile details.
 </div>
-
-{% if error %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-  <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
-  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
 
 <div class="form-panel">
   <div class="row g-3">
@@ -34,7 +23,7 @@
       <select id="filterDept" class="form-select">
         <option value="">All Departments</option>
         {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.name }}</option>
+        <option value="{{ d.id }}">{{ d.display_name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -46,127 +35,75 @@
   </div>
 </div>
 
-<form method="POST" class="form-panel">
-  <div class="row g-3 align-items-end">
-    <div class="col-md-4">
-      <label class="form-label" for="teacher_name">Name</label>
-      <input class="form-control" id="teacher_name" name="name" placeholder="Teacher name" required>
-    </div>
-    <div class="col-md-4">
-      <label class="form-label" for="teacher_email">Email</label>
-      <input class="form-control" id="teacher_email" name="email" placeholder="teacher@example.com" type="email" required>
-      <div class="form-text">Allowed: @rcciit.org.in or @gmail.com</div>
-    </div>
-    <div class="col-md-3">
-      <label class="form-label" for="department_id">Department</label>
-      <select class="form-select" id="department_id" name="department_id" required>
-        <option value="">Select department</option>
-        {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-auto">
-      <button class="btn btn-success" type="submit">
-        <i class="bi bi-plus-circle me-1"></i> Add Teacher
-      </button>
-    </div>
-  </div>
-</form>
-
 <div class="table-card">
   <div class="table-responsive">
     <table class="table table-hover align-middle" id="teachersTable">
       <thead>
-        <tr><th>#</th><th>Name</th><th>Email</th><th>Department</th><th>Account Status</th><th>Role</th><th class="text-end">Actions</th></tr>
+        <tr><th>#</th><th>Name</th><th>Email</th><th>Assigned Subjects</th><th>Department</th></tr>
       </thead>
       <tbody>
         {% for t in teachers %}
-        {% set account_roles = teacher_accounts.get(t.id, []) %}
-        <tr class="teacher-row" data-name="{{ t.name|lower }}" data-email="{{ t.email|lower }}" data-dept-id="{{ t.department_id }}" data-dept="{{ t.department.name }}">
-          <td>{{ loop.index }}</td>
+        <tr class="teacher-row" tabindex="0" role="button" aria-expanded="false"
+            data-name="{{ t.name|lower }}"
+            data-email="{{ t.email|lower }}"
+            data-dept-id="{{ t.department_id }}"
+            data-dept="{{ t.department.display_name }}"
+            data-target="teacher-detail-{{ t.id }}">
+          <td>
+            <div class="teacher-index">
+              <span class="teacher-index-number">{{ loop.index }}</span>
+              <i class="bi bi-chevron-down teacher-row-chevron"></i>
+            </div>
+          </td>
           <td class="fw-semibold">{{ t.name }}</td>
           <td>{{ t.email }}</td>
-          <td>{{ t.department.name }}</td>
           <td>
-            {% if account_roles %}
-            <span class="badge text-bg-success">Login Created</span>
-            {% else %}
-            <span class="badge text-bg-secondary">No Login</span>
-            {% endif %}
+            <span class="badge text-bg-primary">{{ t.assigned_subjects|length }}</span>
           </td>
-          <td>
-            {% if account_roles %}
-              {% for role in account_roles %}
-              <span class="badge text-bg-primary">{{ role }}</span>
-              {% endfor %}
-            {% else %}
-            <span class="text-muted small">None</span>
-            {% endif %}
-          </td>
-          <td class="text-end">
-            <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit teacher"
-              onclick="openEdit('{{ t.id }}','{{ t.name }}','{{ t.email }}','{{ t.department_id }}')">
-              <i class="bi bi-pencil-square"></i>
-            </button>
-            <form method="POST" action="/teachers/delete/{{ t.id }}" class="d-inline"
-              onsubmit="return confirm('Delete {{ t.name }}?')">
-              <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete teacher">
-                <i class="bi bi-trash"></i>
-              </button>
-            </form>
+          <td>{{ t.department.display_name }}</td>
+        </tr>
+        <tr class="teacher-detail-row d-none" id="teacher-detail-{{ t.id }}">
+          <td colspan="5">
+            <div class="teacher-detail-panel">
+              <div class="teacher-detail-grid">
+                <div>
+                  <div class="teacher-detail-label">Teacher</div>
+                  <div class="teacher-detail-value">{{ t.name }}</div>
+                </div>
+                <div>
+                  <div class="teacher-detail-label">Department</div>
+                  <div class="teacher-detail-value">{{ t.department.display_name }}</div>
+                </div>
+                <div>
+                  <div class="teacher-detail-label">Email</div>
+                  <div class="teacher-detail-value">{{ t.email }}</div>
+                </div>
+                <div>
+                  <div class="teacher-detail-label">Assigned Subjects</div>
+                  <div class="teacher-detail-subjects">
+                    {% if t.assigned_subjects %}
+                      {% for subject in t.assigned_subjects|sort(attribute='name') %}
+                      <span class="teacher-subject-chip">{{ subject.name }}{% if subject.semester %} · {{ subject.semester.name }}{% endif %}</span>
+                      {% endfor %}
+                    {% else %}
+                      <span class="text-muted">No subjects assigned yet.</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
           </td>
         </tr>
         {% endfor %}
         {% if not teachers %}
-        <tr id="noTeachers"><td colspan="7" class="text-center text-muted py-4">No teachers added yet.</td></tr>
+        <tr id="noTeachers"><td colspan="5" class="text-center text-muted py-4">No teachers added yet.</td></tr>
         {% endif %}
       </tbody>
     </table>
   </div>
 </div>
 
-<div class="modal fade" id="editModal" tabindex="-1">
-  <div class="modal-dialog">
-    <form method="POST" id="editForm" class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Edit Teacher</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-3">
-          <label class="form-label" for="edit_name">Name</label>
-          <input class="form-control" name="name" id="edit_name" placeholder="Name" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="edit_email">Email</label>
-          <input class="form-control" name="email" id="edit_email" placeholder="Email" type="email" required>
-          <div class="form-text">Allowed: @rcciit.org.in or @gmail.com</div>
-        </div>
-        <label class="form-label" for="edit_dept">Department</label>
-        <select class="form-select" name="department_id" id="edit_dept" required>
-          {% for d in departments %}
-          <option value="{{ d.id }}">{{ d.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
-      </div>
-    </form>
-  </div>
-</div>
-
 <script>
-function openEdit(id, name, email, dept_id) {
-  document.getElementById('edit_name').value = name;
-  document.getElementById('edit_email').value = email;
-  document.getElementById('edit_dept').value = dept_id;
-  document.getElementById('editForm').action = '/teachers/edit/' + id;
-  new bootstrap.Modal(document.getElementById('editModal')).show();
-}
-
 const searchInput = document.getElementById('searchInput');
 const filterDept = document.getElementById('filterDept');
 const resultCount = document.getElementById('resultCount');
@@ -178,6 +115,7 @@ function filterTable() {
   let visibleCount = 0;
 
   rows.forEach(row => {
+    const detailRow = document.getElementById(row.getAttribute('data-target'));
     const name = row.getAttribute('data-name');
     const email = row.getAttribute('data-email');
     const deptId = row.getAttribute('data-dept-id');
@@ -186,10 +124,19 @@ function filterTable() {
 
     if (matchSearch && matchDept) {
       row.style.display = '';
+      if (detailRow) {
+        detailRow.style.display = '';
+      }
       visibleCount++;
-      row.querySelector('td:first-child').textContent = visibleCount;
+      row.querySelector('.teacher-index-number').textContent = visibleCount;
     } else {
       row.style.display = 'none';
+      row.setAttribute('aria-expanded', 'false');
+      row.classList.remove('is-open');
+      if (detailRow) {
+        detailRow.classList.add('d-none');
+        detailRow.style.display = 'none';
+      }
     }
   });
 
@@ -204,5 +151,29 @@ function clearFilters() {
 
 searchInput.addEventListener('keyup', filterTable);
 filterDept.addEventListener('change', filterTable);
+
+document.querySelectorAll('.teacher-row').forEach(function(row) {
+  function toggleRow() {
+    if (row.style.display === 'none') {
+      return;
+    }
+    const detailRow = document.getElementById(row.getAttribute('data-target'));
+    if (!detailRow) {
+      return;
+    }
+    const isOpen = row.getAttribute('aria-expanded') === 'true';
+    row.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+    row.classList.toggle('is-open', !isOpen);
+    detailRow.classList.toggle('d-none', isOpen);
+  }
+
+  row.addEventListener('click', toggleRow);
+  row.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleRow();
+    }
+  });
+});
 </script>
 {% endblock %}

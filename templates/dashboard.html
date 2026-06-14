@@ -91,7 +91,7 @@
               </span>
             </a>
           </div>
-          {% if current_user.role in ['super_admin', 'hod'] %}
+          {% if current_user.role in ['super_admin', 'hod', 'teacher'] %}
           <div class="col-md-6">
             <a href="/students" class="quick-action">
               <i class="bi bi-people"></i>

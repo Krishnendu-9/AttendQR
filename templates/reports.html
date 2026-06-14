@@ -3,12 +3,6 @@
 {% block page_title %}Attendance Report{% endblock %}
 {% block page_subtitle %}Filter, analyze, and export attendance records{% endblock %}
 {% block content %}
-<div class="page-heading">
-  <div>
-    <h2>Attendance Report</h2>
-    <p>Generate reports by department, semester, subject, and date range.</p>
-  </div>
-</div>
 
 <form method="GET" class="form-panel">
   <div class="row g-3">
@@ -17,7 +11,7 @@
       <select class="form-select" name="department_id" id="dept_select" required onchange="loadSemesters(this.value)">
         <option value="">Select department</option>
         {% for d in departments %}
-        <option value="{{ d.id }}" {% if selected_dept == d.id %}selected{% endif %}>{{ d.name }}</option>
+        <option value="{{ d.id }}" {% if selected_dept == d.id %}selected{% endif %}>{{ d.display_name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -114,7 +108,12 @@
         {% for session in sessions %}
         <tr>
           <td>{{ loop.index }}</td>
-          <td class="fw-semibold">{{ session.subject.name }}</td>
+          <td class="fw-semibold">
+            {{ session_display_name(session) }}
+            {% if session.special_title %}
+            <span class="badge text-bg-info ms-2">Special</span>
+            {% endif %}
+          </td>
           <td>{{ session.teacher.name if session.teacher else 'N/A' }}</td>
           <td>{{ session.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
           <td>

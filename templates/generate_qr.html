@@ -3,12 +3,6 @@
 {% block page_title %}Generate QR{% endblock %}
 {% block page_subtitle %}Create and monitor QR-based class attendance sessions{% endblock %}
 {% block content %}
-<div class="page-heading">
-  <div>
-    <h2>QR Session Setup</h2>
-    <p>Select class details, assign a teacher, and generate a time-bound QR code.</p>
-  </div>
-</div>
 
 {% if qr_image %}
 <div class="card mb-4">
@@ -39,12 +33,19 @@
 <form method="POST" class="form-panel">
   <div class="row g-3">
     <div class="col-md-6 col-xl">
+      <label class="form-label" for="class_mode">Class Type</label>
+      <select class="form-select" name="class_mode" id="class_mode" onchange="toggleClassMode()">
+        <option value="regular">Regular Class</option>
+        <option value="special">Special Class</option>
+      </select>
+    </div>
+    <div class="col-md-6 col-xl">
       <label class="form-label" for="dept_select">Department</label>
       <select class="form-select" name="department_id" id="dept_select" required
         onchange="loadSemesters(this.value,'sem_select'); loadTeachers(this.value,'teacher_select')">
         <option value="">Select department</option>
         {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.name }}</option>
+        <option value="{{ d.id }}">{{ d.display_name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -54,11 +55,15 @@
         <option value="">Select semester</option>
       </select>
     </div>
-    <div class="col-md-6 col-xl">
+    <div class="col-md-6 col-xl" id="subjectField">
       <label class="form-label" for="sub_select">Subject</label>
       <select class="form-select" name="subject_id" id="sub_select" required>
         <option value="">Select subject</option>
       </select>
+    </div>
+    <div class="col-md-6 col-xl d-none" id="specialTitleField">
+      <label class="form-label" for="special_title">Special Class Details</label>
+      <input class="form-control" name="special_title" id="special_title" placeholder="Example: Aptitude Class / Spoken English Workshop">
     </div>
     {% if current_teacher %}
     <div class="col-md-6 col-xl">
@@ -67,7 +72,7 @@
       <input type="hidden" name="teacher_id" value="{{ current_teacher.id }}">
     </div>
     {% else %}
-    <div class="col-md-6 col-xl">
+    <div class="col-md-6 col-xl" id="teacherField">
       <label class="form-label" for="teacher_select">Teacher</label>
       <select class="form-select" name="teacher_id" id="teacher_select" required>
         <option value="">Select teacher</option>
@@ -111,8 +116,13 @@
         {% for cs in recent_sessions %}
         <tr>
           <td>{{ loop.index }}</td>
-          <td class="fw-semibold">{{ cs.subject.name }}</td>
-          <td>{{ cs.subject.department.name }}</td>
+          <td class="fw-semibold">
+            {{ session_display_name(cs) }}
+            {% if cs.special_title %}
+            <span class="badge text-bg-info ms-2">Special</span>
+            {% endif %}
+          </td>
+          <td>{{ cs.subject.department.display_name }}</td>
           <td>{{ cs.subject.semester.name }}</td>
           <td>{{ cs.teacher.name if cs.teacher else 'N/A' }}</td>
           <td>{{ cs.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
@@ -129,7 +139,7 @@
               <i class="bi bi-qr-code"></i>
             </a>
             <form method="POST" action="/delete_session/{{ cs.id }}" class="d-inline"
-                  onsubmit="return confirm('Delete this session and all attendance records for {{ cs.subject.name }}?')">
+                  onsubmit="return confirm('Delete this session and all attendance records for {{ session_display_name(cs) }}?')">
               <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete session">
                 <i class="bi bi-trash"></i>
               </button>
@@ -163,7 +173,8 @@ function loadSubjects(sem_id, target_id) {
     .then(data => {
       const sel = document.getElementById(target_id);
       sel.innerHTML = '<option value="">Select subject</option>';
-      data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+      data.forEach(s => sel.innerHTML += `<option value="${s.id}" data-teacher-id="${s.teacher_id || ''}" data-teacher-name="${s.teacher_name || ''}">${s.name}</option>`);
+      syncTeacherToSubject();
     });
 }
 
@@ -176,7 +187,62 @@ function loadTeachers(dept_id, target_id) {
       if (!sel) return;
       sel.innerHTML = '<option value="">Select teacher</option>';
       data.forEach(t => sel.innerHTML += `<option value="${t.id}">${t.name}</option>`);
+      syncTeacherToSubject();
     });
 }
+
+function syncTeacherToSubject() {
+  const teacherSelect = document.getElementById('teacher_select');
+  const subjectSelect = document.getElementById('sub_select');
+  if (!teacherSelect || !subjectSelect) return;
+
+  const selectedSubject = subjectSelect.options[subjectSelect.selectedIndex];
+  const assignedTeacherId = selectedSubject ? selectedSubject.dataset.teacherId : '';
+  const assignedTeacherName = selectedSubject ? selectedSubject.dataset.teacherName : '';
+
+  if (assignedTeacherId) {
+    teacherSelect.innerHTML = `<option value="${assignedTeacherId}">${assignedTeacherName}</option>`;
+    teacherSelect.value = assignedTeacherId;
+    teacherSelect.setAttribute('data-locked', 'true');
+    teacherSelect.disabled = false;
+  } else if (teacherSelect.getAttribute('data-locked') === 'true') {
+    loadTeachers(document.getElementById('dept_select').value, 'teacher_select');
+    teacherSelect.removeAttribute('data-locked');
+  }
+}
+
+function toggleClassMode() {
+  const classMode = document.getElementById('class_mode').value;
+  const subjectField = document.getElementById('subjectField');
+  const subjectSelect = document.getElementById('sub_select');
+  const specialTitleField = document.getElementById('specialTitleField');
+  const specialTitleInput = document.getElementById('special_title');
+  const teacherSelect = document.getElementById('teacher_select');
+
+  const isSpecial = classMode === 'special';
+
+  subjectField.classList.toggle('d-none', isSpecial);
+  specialTitleField.classList.toggle('d-none', !isSpecial);
+  subjectSelect.required = !isSpecial;
+  if (isSpecial) {
+    subjectSelect.value = '';
+  }
+
+  specialTitleInput.required = isSpecial;
+
+  if (teacherSelect) {
+    teacherSelect.required = !isSpecial;
+    if (isSpecial && teacherSelect.getAttribute('data-locked') === 'true') {
+      teacherSelect.removeAttribute('data-locked');
+      loadTeachers(document.getElementById('dept_select').value, 'teacher_select');
+    }
+  }
+}
+
+document.getElementById('sub_select')?.addEventListener('change', syncTeacherToSubject);
+document.addEventListener('DOMContentLoaded', function() {
+  toggleClassMode();
+  syncTeacherToSubject();
+});
 </script>
 {% endblock %}

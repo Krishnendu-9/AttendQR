@@ -1,16 +1,18 @@
-from flask import Flask, render_template, redirect, url_for, request, jsonify, send_file, abort
+from flask import Flask, render_template, redirect, url_for, request, jsonify, send_file, abort, flash, session, g
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, Admin, Student, ClassSession, Attendance, Department, Subject, Teacher, Semester
+from models import db, Admin, Student, ClassSession, Attendance, Department, Subject, Teacher, Semester, ActivityLog
 from config import Config
 from datetime import datetime, timedelta
-from sqlalchemy import event, text
+from sqlalchemy import event, text, and_, or_
 from sqlalchemy.engine import Engine
 from functools import wraps
 from math import ceil
+import csv
 import sqlite3
-import qrcode, uuid, os, io, socket
+import qrcode, uuid, os, io, socket, re
 import openpyxl
+from urllib.parse import urlsplit
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table
 import pytz
@@ -68,16 +70,38 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+login_manager.login_message = None
 
 @login_manager.user_loader
 def load_user(user_id):
     return Admin.query.get(int(user_id))
 
+
+@app.before_request
+def prepare_request_state():
+    g.password_reminder = False
+
+    if current_user.is_authenticated and not getattr(current_user, 'is_active', True):
+        logout_user()
+        flash("That account is inactive. Please contact the Principal or HOD.", "warning")
+        return redirect(url_for('login'))
+
+    if current_user.is_authenticated and session.pop('show_password_reminder', False):
+        g.password_reminder = bool(getattr(current_user, 'must_change_password', False))
+
+
 @app.context_processor
 def inject_now():
     return {
         'now': lambda: get_ist_now(),
-        'role_label': role_label
+        'role_label': role_label,
+        'department_scope_label': department_scope_label,
+        'session_display_name': session_display_name,
+        'password_reminder': getattr(g, 'password_reminder', False),
+        'can_edit_account': can_edit_account,
+        'can_manage_account': can_manage_account,
+        'can_toggle_account_status': can_toggle_account_status,
+        'can_reset_staff_account': can_reset_staff_account
     }
 
 
@@ -90,6 +114,7 @@ ROLE_LABELS = {
 
 ATTENDANCE_TARGET = 80
 ALLOWED_STAFF_EMAIL_DOMAINS = ('@rcciit.org.in', '@gmail.com')
+SPECIAL_CLASS_SUBJECT_NAME = '__SPECIAL_CLASS__'
 
 
 def normalize_email(value):
@@ -105,8 +130,55 @@ def staff_email_rule_message():
     return "Use an email ending with @rcciit.org.in or @gmail.com"
 
 
+def normalize_branch(value):
+    return ' '.join((value or '').strip().upper().split())
+
+
+def normalize_course_name(value):
+    course_name = ' '.join((value or '').strip().split())
+    return re.sub(r'\s*\(', ' (', course_name)
+
+
+def infer_department_branch(course_name):
+    title = normalize_course_name(course_name)
+    match = re.search(r'\(([A-Za-z0-9&./-]+)\)\s*$', title)
+    if match:
+        return normalize_branch(match.group(1))
+    if title.isupper() and ' ' not in title and len(title) <= 12:
+        return title
+
+    words = re.findall(r'[A-Za-z0-9]+', title)
+    ignored = {'of', 'and', 'in', 'the', 'for'}
+    acronym = ''.join(word[0] for word in words if word.lower() not in ignored).upper()
+    return acronym[:12] if acronym else ''
+
+
 def role_label(role):
     return ROLE_LABELS.get(role, role.replace('_', ' ').title() if role else 'User')
+
+
+def department_scope_label(department):
+    if not department:
+        return 'Not assigned'
+    branch = department.branch_name or infer_department_branch(department.course_name)
+    course_short = infer_department_branch(department.course_name)
+    if branch and course_short:
+        return f"{branch} - {course_short}"
+    return branch or department.course_name
+
+
+def log_activity(action, description, target_type=None, target_id=None, department_id=None):
+    actor_id = current_user.id if current_user.is_authenticated else None
+    actor_username = current_user.username if current_user.is_authenticated else 'System'
+    db.session.add(ActivityLog(
+        actor_admin_id=actor_id,
+        actor_username=actor_username,
+        department_id=department_id,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        description=description
+    ))
 
 
 def user_role():
@@ -117,6 +189,13 @@ def user_role():
 
 def is_super_admin():
     return user_role() == 'super_admin'
+
+
+def is_safe_redirect_target(target):
+    if not target:
+        return False
+    parsed = urlsplit(target)
+    return parsed.scheme == '' and parsed.netloc == '' and target.startswith('/')
 
 
 def role_required(*roles):
@@ -177,17 +256,21 @@ def can_access_subject(subject):
     if not subject:
         return False
     if user_role() == 'teacher':
-        return can_access_department(subject.department_id)
+        return subject.teacher_id == current_teacher_id()
     return can_access_department(subject.department_id)
 
 
 def can_access_session(session):
     if not session:
         return False
-    if not can_access_subject(session.subject):
-        return False
     if user_role() == 'teacher':
-        return session.teacher_id == current_teacher_id()
+        return bool(
+            session.subject
+            and can_access_department(session.subject.department_id)
+            and session.teacher_id == current_teacher_id()
+        )
+    if not session.subject or not can_access_subject(session.subject):
+        return False
     return user_role() in ('super_admin', 'hod')
 
 
@@ -197,6 +280,82 @@ def visible_departments_query():
         dept_id = current_department_id()
         query = query.filter(Department.id == dept_id if dept_id else False)
     return query
+
+
+def ordered_departments_query():
+    return visible_departments_query().order_by(Department.branch, Department.name)
+
+
+def build_account_profile(admin):
+    role = getattr(admin, 'role', None) or 'super_admin'
+    profile = {
+        'display_name': admin.username,
+        'username': admin.username,
+        'role_label': role_label(role),
+        'email': admin.username if '@' in (admin.username or '') else None,
+        'scope_label': 'System Access',
+        'scope_value': 'All departments' if role == 'super_admin' else 'Not assigned',
+        'details': []
+    }
+
+    if role == 'student' and admin.student:
+        profile.update({
+            'display_name': admin.student.name,
+            'email': admin.student.email,
+            'scope_label': 'Department',
+            'scope_value': admin.student.department.display_name
+        })
+        profile['details'] = [
+            ('Roll Number', admin.student.roll_no),
+            ('Semester', admin.student.semester.name)
+        ]
+    elif role == 'teacher' and admin.teacher:
+        profile.update({
+            'display_name': admin.teacher.name,
+            'email': admin.teacher.email,
+            'scope_label': 'Department',
+            'scope_value': admin.teacher.department.display_name
+        })
+        profile['details'] = [('Teacher Profile', admin.teacher.name)]
+    elif role == 'hod':
+        profile.update({
+            'scope_label': 'Department',
+            'scope_value': admin.department.display_name if admin.department else 'Not assigned'
+        })
+        profile['details'] = []
+    else:
+        profile['details'] = []
+
+    return profile
+
+
+def is_hidden_special_subject(subject):
+    return bool(subject and subject.name == SPECIAL_CLASS_SUBJECT_NAME)
+
+
+def session_display_name(session):
+    if getattr(session, 'special_title', None):
+        return session.special_title
+    return session.subject.name if session.subject else 'Special Class'
+
+
+def get_or_create_special_subject(department_id, semester_id):
+    subject = Subject.query.filter_by(
+        department_id=department_id,
+        semester_id=semester_id,
+        name=SPECIAL_CLASS_SUBJECT_NAME
+    ).first()
+    if subject:
+        return subject
+
+    subject = Subject(
+        name=SPECIAL_CLASS_SUBJECT_NAME,
+        department_id=department_id,
+        semester_id=semester_id
+    )
+    db.session.add(subject)
+    db.session.flush()
+    return subject
 
 
 def visible_semesters_query():
@@ -209,7 +368,10 @@ def visible_semesters_query():
 
 def visible_subjects_query():
     query = Subject.query
-    if not is_super_admin():
+    query = query.filter(Subject.name != SPECIAL_CLASS_SUBJECT_NAME)
+    if user_role() == 'teacher':
+        query = query.filter(Subject.teacher_id == current_teacher_id())
+    elif not is_super_admin():
         dept_id = current_department_id()
         query = query.filter(Subject.department_id == dept_id if dept_id else False)
     return query
@@ -236,13 +398,115 @@ def visible_students_query():
 
 
 def visible_sessions_query():
-    query = db.session.query(ClassSession).join(Subject)
+    query = ClassSession.query.join(Subject)
     if user_role() == 'teacher':
         query = query.filter(ClassSession.teacher_id == current_teacher_id())
     elif not is_super_admin():
         dept_id = current_department_id()
         query = query.filter(Subject.department_id == dept_id if dept_id else False)
     return query
+
+
+def visible_activity_logs_query():
+    query = ActivityLog.query.outerjoin(Admin, ActivityLog.actor_admin_id == Admin.id)
+    if is_super_admin():
+        return query
+    if user_role() == 'hod':
+        dept_id = current_department_id()
+        return query.filter(
+            or_(
+                ActivityLog.actor_admin_id == current_user.id,
+                and_(
+                    ActivityLog.department_id == dept_id,
+                    Admin.role == 'teacher'
+                )
+            )
+        )
+    return query.filter(ActivityLog.actor_admin_id == current_user.id)
+
+
+def own_security_activity_logs_query():
+    return ActivityLog.query.filter(
+        ActivityLog.action.in_(['password_changed', 'account_password_reset', 'account_status_changed']),
+        or_(
+            ActivityLog.actor_admin_id == current_user.id,
+            and_(
+                ActivityLog.target_type == 'admin',
+                ActivityLog.target_id == current_user.id
+            )
+        )
+    )
+
+
+def has_active_hod(department_id, exclude_admin_id=None):
+    query = Admin.query.filter_by(role='hod', department_id=department_id, is_active=True)
+    if exclude_admin_id:
+        query = query.filter(Admin.id != exclude_admin_id)
+    return db.session.query(query.exists()).scalar()
+
+
+def generate_temporary_password():
+    return f"Reset@{uuid.uuid4().hex[:6].upper()}"
+
+
+def password_strength_label(password):
+    score = 0
+    if len(password) >= 6:
+        score += 1
+    if len(password) >= 8:
+        score += 1
+    if re.search(r'[a-z]', password):
+        score += 1
+    if re.search(r'[A-Z]', password):
+        score += 1
+    if re.search(r'\d', password):
+        score += 1
+    if re.search(r'[^A-Za-z0-9]', password):
+        score += 1
+
+    if len(password) < 6:
+        return 'too_short'
+    if score <= 3:
+        return 'weak'
+    if score <= 5:
+        return 'medium'
+    return 'strong'
+
+
+def is_account_locked(admin):
+    return bool(admin and admin.locked_until and get_ist_now() < admin.locked_until)
+
+
+def can_manage_account(admin):
+    if user_role() == 'hod':
+        return admin.role == 'teacher' and admin.department_id == current_department_id()
+    if not is_super_admin():
+        return False
+    if admin.role == 'student' or admin.id == current_user.id:
+        return False
+    if admin.role == 'super_admin' and admin.is_active and Admin.query.filter_by(role='super_admin', is_active=True).count() <= 1:
+        return False
+    return True
+
+
+def can_edit_account(admin):
+    if admin.role == 'student':
+        return False
+    if user_role() == 'hod':
+        return admin.role == 'teacher' and admin.department_id == current_department_id()
+    return is_super_admin()
+
+
+def can_toggle_account_status(admin):
+    return can_manage_account(admin)
+
+
+def can_reset_staff_account(admin):
+    if user_role() == 'hod':
+        return admin.role == 'teacher' and admin.department_id == current_department_id()
+    if not is_super_admin():
+        return False
+    return admin.role in ('super_admin', 'hod', 'teacher') and admin.id != current_user.id
 
 
 def classes_needed_for_target(attended, total, target=ATTENDANCE_TARGET):
@@ -253,9 +517,10 @@ def classes_needed_for_target(attended, total, target=ATTENDANCE_TARGET):
 
 
 def build_student_attendance_summary(student):
-    subjects = Subject.query.filter_by(
-        department_id=student.department_id,
-        semester_id=student.semester_id
+    subjects = Subject.query.filter(
+        Subject.department_id == student.department_id,
+        Subject.semester_id == student.semester_id,
+        Subject.name != SPECIAL_CLASS_SUBJECT_NAME
     ).order_by(Subject.name).all()
     rows = []
     overall_attended = 0
@@ -295,19 +560,85 @@ def build_student_attendance_summary(student):
     }
 
 
+def describe_delete_block(entity_name, counts):
+    used_counts = [f"{label}: {value}" for label, value in counts.items() if value]
+    if not used_counts:
+        return f"{entity_name} still has linked records."
+    return f"Cannot delete {entity_name} because it still has linked records ({', '.join(used_counts)})."
+
+
 def ensure_rbac_columns():
     columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(admin)")).fetchall()}
     migrations = {
         'role': "ALTER TABLE admin ADD COLUMN role VARCHAR(20) DEFAULT 'super_admin' NOT NULL",
         'department_id': "ALTER TABLE admin ADD COLUMN department_id INTEGER",
         'teacher_id': "ALTER TABLE admin ADD COLUMN teacher_id INTEGER",
-        'student_id': "ALTER TABLE admin ADD COLUMN student_id INTEGER"
+        'student_id': "ALTER TABLE admin ADD COLUMN student_id INTEGER",
+        'is_active': "ALTER TABLE admin ADD COLUMN is_active BOOLEAN DEFAULT 1 NOT NULL",
+        'must_change_password': "ALTER TABLE admin ADD COLUMN must_change_password BOOLEAN DEFAULT 0 NOT NULL",
+        'failed_login_attempts': "ALTER TABLE admin ADD COLUMN failed_login_attempts INTEGER DEFAULT 0 NOT NULL",
+        'locked_until': "ALTER TABLE admin ADD COLUMN locked_until DATETIME"
     }
     for column, statement in migrations.items():
         if column not in columns:
             db.session.execute(text(statement))
     db.session.execute(text("UPDATE admin SET role = 'super_admin' WHERE role IS NULL OR role = ''"))
+    db.session.execute(text("UPDATE admin SET is_active = 1 WHERE is_active IS NULL"))
+    db.session.execute(text("UPDATE admin SET must_change_password = 0 WHERE must_change_password IS NULL"))
+    db.session.execute(text("UPDATE admin SET failed_login_attempts = 0 WHERE failed_login_attempts IS NULL"))
     db.session.commit()
+
+
+def ensure_class_session_columns():
+    columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(class_session)")).fetchall()}
+    if 'special_title' not in columns:
+        db.session.execute(text("ALTER TABLE class_session ADD COLUMN special_title VARCHAR(200)"))
+        db.session.commit()
+
+
+def ensure_department_columns():
+    columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(department)")).fetchall()}
+    if 'branch' not in columns:
+        db.session.execute(text("ALTER TABLE department ADD COLUMN branch VARCHAR(20)"))
+        db.session.commit()
+
+    updated = False
+    for department in Department.query.all():
+        normalized_name = normalize_course_name(department.name)
+        inferred_branch = infer_department_branch(normalized_name)
+
+        if department.name != normalized_name:
+            department.name = normalized_name
+            updated = True
+        if not department.branch and inferred_branch:
+            department.branch = inferred_branch
+            updated = True
+
+    if updated:
+        db.session.commit()
+
+
+def ensure_subject_columns():
+    columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(subject)")).fetchall()}
+    if 'teacher_id' not in columns:
+        db.session.execute(text("ALTER TABLE subject ADD COLUMN teacher_id INTEGER"))
+        db.session.commit()
+
+
+def backfill_subject_teacher_assignments():
+    updated = False
+    for subject in Subject.query.filter(Subject.name != SPECIAL_CLASS_SUBJECT_NAME, Subject.teacher_id.is_(None)).all():
+        teacher_ids = {
+            teacher_id for (teacher_id,) in db.session.query(ClassSession.teacher_id)
+            .filter(ClassSession.subject_id == subject.id, ClassSession.teacher_id.isnot(None))
+            .distinct()
+            .all()
+        }
+        if len(teacher_ids) == 1:
+            subject.teacher_id = teacher_ids.pop()
+            updated = True
+    if updated:
+        db.session.commit()
 
 
 def ensure_student_account(student):
@@ -319,6 +650,7 @@ def ensure_student_account(student):
         existing.username = student.email
         existing.student_id = student.id
         existing.department_id = student.department_id
+        existing.is_active = True
         return
     username_match = Admin.query.filter_by(username=student.email).first()
     if username_match:
@@ -328,7 +660,11 @@ def ensure_student_account(student):
         password=generate_password_hash(student.roll_no),
         role='student',
         department_id=student.department_id,
-        student_id=student.id
+        student_id=student.id,
+        is_active=True,
+        must_change_password=True,
+        failed_login_attempts=0,
+        locked_until=None
     ))
 
 
@@ -336,6 +672,152 @@ def ensure_existing_student_accounts():
     for student in Student.query.all():
         ensure_student_account(student)
     db.session.commit()
+
+
+def normalize_header(value):
+    return (value or '').strip().lower().replace(' ', '_')
+
+
+def parse_student_import(file_storage):
+    filename = (file_storage.filename or '').lower()
+    file_storage.stream.seek(0)
+    if filename.endswith('.csv'):
+        content = file_storage.stream.read().decode('utf-8-sig').splitlines()
+        return list(csv.DictReader(content))
+
+    if filename.endswith('.xlsx'):
+        workbook = openpyxl.load_workbook(file_storage.stream, read_only=True, data_only=True)
+        sheet = workbook.active
+        rows = list(sheet.iter_rows(values_only=True))
+        if not rows:
+            return []
+        headers = [normalize_header(value) for value in rows[0]]
+        parsed = []
+        for values in rows[1:]:
+            parsed.append({headers[index]: value for index, value in enumerate(values) if index < len(headers)})
+        return parsed
+
+    raise ValueError("Upload a .csv or .xlsx file")
+
+
+def row_value(row, *keys):
+    normalized = {normalize_header(key): value for key, value in row.items()}
+    for key in keys:
+        value = normalized.get(key)
+        if value is not None:
+            if isinstance(value, float) and value.is_integer():
+                value = int(value)
+            return str(value).strip()
+    return ''
+
+
+def resolve_import_department(row):
+    if not is_super_admin():
+        return Department.query.get(current_department_id())
+
+    dept_id = row_value(row, 'department_id', 'dept_id')
+    if dept_id:
+        try:
+            return Department.query.get(int(dept_id))
+        except ValueError:
+            pass
+
+    dept_name = row_value(row, 'department', 'dept')
+    if dept_name:
+        normalized = normalize_course_name(dept_name).lower()
+        for department in Department.query.all():
+            labels = {
+                department.course_name.lower(),
+                department.display_name.lower()
+            }
+            if department.branch_name:
+                labels.add(department.branch_name.lower())
+            if normalized in labels:
+                return department
+
+    return None
+
+
+def resolve_import_semester(row, department_id):
+    sem_id = row_value(row, 'semester_id', 'sem_id')
+    if sem_id:
+        try:
+            semester = Semester.query.get(int(sem_id))
+            if semester and semester.department_id == department_id:
+                return semester
+        except ValueError:
+            pass
+
+    sem_name = row_value(row, 'semester', 'sem')
+    if sem_name:
+        return Semester.query.filter(
+            Semester.department_id == department_id,
+            db.func.lower(Semester.name) == sem_name.lower()
+        ).first()
+
+    return None
+
+
+def import_students_from_rows(rows):
+    imported = 0
+    errors = []
+    seen_rolls = set()
+    seen_emails = set()
+
+    for index, row in enumerate(rows, start=2):
+        name = row_value(row, 'name', 'student_name')
+        roll_no = row_value(row, 'roll_no', 'roll', 'roll_number').upper()
+        email = row_value(row, 'email', 'student_email').lower()
+        department = resolve_import_department(row)
+
+        if not name or not roll_no or not email:
+            errors.append(f"Row {index}: name, roll_no, and email are required")
+            continue
+        if not department or not can_access_department(department.id):
+            errors.append(f"Row {index}: valid department is required")
+            continue
+
+        semester = resolve_import_semester(row, department.id)
+        if not semester:
+            errors.append(f"Row {index}: valid semester is required for {department.display_name}")
+            continue
+
+        roll_key = (roll_no, department.id, semester.id)
+        if roll_key in seen_rolls:
+            errors.append(f"Row {index}: duplicate roll number {roll_no} in uploaded file")
+            continue
+        if email in seen_emails:
+            errors.append(f"Row {index}: duplicate email {email} in uploaded file")
+            continue
+
+        existing_roll = Student.query.filter(
+            db.func.upper(Student.roll_no) == roll_no,
+            Student.department_id == department.id,
+            Student.semester_id == semester.id
+        ).first()
+        if existing_roll:
+            errors.append(f"Row {index}: roll number {roll_no} already exists")
+            continue
+        if Student.query.filter(db.func.lower(Student.email) == email).first():
+            errors.append(f"Row {index}: email {email} already exists")
+            continue
+
+        student = Student(
+            name=name,
+            roll_no=roll_no,
+            email=email,
+            department_id=department.id,
+            semester_id=semester.id
+        )
+        db.session.add(student)
+        db.session.flush()
+        ensure_student_account(student)
+        imported += 1
+        seen_rolls.add(roll_key)
+        seen_emails.add(email)
+
+    db.session.commit()
+    return imported, errors
 
 
 @app.route('/')
@@ -358,13 +840,36 @@ def dashboard():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    next_url = request.form.get('next') or request.args.get('next')
+    error = None
+
+    if current_user.is_authenticated:
+        return redirect(next_url if is_safe_redirect_target(next_url) else url_for('dashboard'))
+
     if request.method == 'POST':
         username = normalize_email(request.form['username'])
         admin = Admin.query.filter(db.func.lower(Admin.username) == username).first()
-        if admin and check_password_hash(admin.password, request.form['password']):
+        if admin and not admin.is_active:
+            error = "This account is inactive. Please contact the Principal or HOD."
+        elif admin and is_account_locked(admin):
+            error = f"Too many failed login attempts. Try again after {admin.locked_until.strftime('%H:%M')}."
+        elif admin and check_password_hash(admin.password, request.form['password']):
+            admin.failed_login_attempts = 0
+            admin.locked_until = None
+            db.session.commit()
             login_user(admin)
-            return redirect(url_for('dashboard'))
-    return render_template('login.html')
+            session.pop('_flashes', None)
+            session['show_password_reminder'] = bool(admin.must_change_password)
+            return redirect(next_url if is_safe_redirect_target(next_url) else url_for('dashboard'))
+        else:
+            if admin:
+                admin.failed_login_attempts = (admin.failed_login_attempts or 0) + 1
+                if admin.failed_login_attempts >= 5:
+                    admin.locked_until = get_ist_now() + timedelta(minutes=10)
+                    admin.failed_login_attempts = 0
+                db.session.commit()
+            error = "Invalid username/email or password"
+    return render_template('login.html', error=error, next_url=next_url)
 
 @app.route('/logout')
 def logout():
@@ -382,6 +887,50 @@ def student_attendance():
     return render_template('student_dashboard.html', student=current_user.student, summary=summary)
 
 # ── Departments ──────────────────────────────────────────────
+@app.route('/account', methods=['GET', 'POST'])
+@login_required
+def account():
+    message = None
+    error = None
+
+    if request.method == 'POST':
+        current_password = request.form.get('current_password', '')
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if not current_password or not new_password or not confirm_password:
+            error = "All password fields are required"
+        elif not check_password_hash(current_user.password, current_password):
+            error = "Current password is incorrect"
+        elif len(new_password) < 6:
+            error = "New password must be at least 6 characters"
+        elif new_password != confirm_password:
+            error = "New password and confirm password do not match"
+        elif check_password_hash(current_user.password, new_password):
+            error = "New password must be different from the current password"
+        else:
+            current_user.password = generate_password_hash(new_password)
+            current_user.must_change_password = False
+            current_user.failed_login_attempts = 0
+            current_user.locked_until = None
+            log_activity(
+                'password_changed',
+                f"{role_label(current_user.role)} account '{current_user.username}' changed its password.",
+                target_type='admin',
+                target_id=current_user.id,
+                department_id=current_department_id()
+            )
+            db.session.commit()
+            message = "Password updated successfully."
+
+    return render_template(
+        'account.html',
+        profile=build_account_profile(current_user),
+        security_logs=own_security_activity_logs_query().order_by(ActivityLog.created_at.desc()).limit(8).all(),
+        message=message,
+        error=error
+    )
+
 @app.route('/departments', methods=['GET', 'POST'])
 @login_required
 @role_required('super_admin', 'hod')
@@ -389,16 +938,36 @@ def departments():
     if request.method == 'POST':
         if not is_super_admin():
             abort(403)
-        db.session.add(Department(name=request.form['name']))
+        branch = normalize_branch(request.form.get('branch'))
+        course_name = normalize_course_name(request.form.get('name'))
+        if not branch or not course_name:
+            abort(400)
+        existing = Department.query.filter(db.func.lower(Department.name) == course_name.lower()).first()
+        if not existing:
+            department = Department(branch=branch, name=course_name)
+            db.session.add(department)
+            log_activity('department_created', f"Created department '{department.display_name}'.", 'department', None)
         db.session.commit()
-    return render_template('departments.html', departments=visible_departments_query().order_by(Department.name).all())
+    return render_template('departments.html', departments=ordered_departments_query().all())
 
 @app.route('/departments/edit/<int:id>', methods=['POST'])
 @login_required
 @role_required('super_admin')
 def edit_department(id):
     d = Department.query.get_or_404(id)
-    d.name = request.form['name']
+    branch = normalize_branch(request.form.get('branch'))
+    course_name = normalize_course_name(request.form.get('name'))
+    if not branch or not course_name:
+        abort(400)
+    existing = Department.query.filter(
+        db.func.lower(Department.name) == course_name.lower(),
+        Department.id != d.id
+    ).first()
+    if existing:
+        return redirect(url_for('departments'))
+    d.branch = branch
+    d.name = course_name
+    log_activity('department_updated', f"Updated department '{d.display_name}'.", 'department', d.id, d.id)
     db.session.commit()
     return redirect(url_for('departments'))
 
@@ -407,11 +976,20 @@ def edit_department(id):
 @role_required('super_admin')
 def delete_department(id):
     d = Department.query.get_or_404(id)
-    Admin.query.filter(Admin.department_id == id, Admin.role != 'super_admin').delete(synchronize_session=False)
-    Student.query.filter_by(department_id=id).delete()
-    Subject.query.filter_by(department_id=id).delete()
-    Teacher.query.filter_by(department_id=id).delete()
-    Semester.query.filter_by(department_id=id).delete()
+    counts = {
+        'admins': Admin.query.filter(Admin.department_id == id, Admin.role != 'super_admin').count(),
+        'teachers': Teacher.query.filter_by(department_id=id).count(),
+        'students': Student.query.filter_by(department_id=id).count(),
+        'subjects': Subject.query.filter_by(department_id=id).count(),
+        'semesters': Semester.query.filter_by(department_id=id).count(),
+        'sessions': db.session.query(ClassSession).join(Subject).filter(Subject.department_id == id).count(),
+        'attendance': db.session.query(Attendance).join(ClassSession).join(Subject).filter(Subject.department_id == id).count()
+    }
+    if any(counts.values()):
+        flash(describe_delete_block(d.display_name, counts), 'warning')
+        return redirect(url_for('departments'))
+
+    log_activity('department_deleted', f"Deleted department '{d.display_name}'.", 'department', d.id)
     db.session.delete(d)
     db.session.commit()
     return redirect(url_for('departments'))
@@ -425,11 +1003,13 @@ def semesters():
         department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
         if not can_access_department(department_id):
             abort(403)
-        db.session.add(Semester(name=request.form['name'], department_id=department_id))
+        semester = Semester(name=request.form['name'], department_id=department_id)
+        db.session.add(semester)
+        log_activity('semester_created', f"Created semester '{semester.name}' for {semester.department.display_name if semester.department else 'selected department'}.", 'semester', None, department_id)
         db.session.commit()
     return render_template('semesters.html',
         semesters=visible_semesters_query().order_by(Semester.department_id, Semester.name).all(),
-        departments=visible_departments_query().order_by(Department.name).all())
+        departments=ordered_departments_query().all())
 
 @app.route('/semesters/edit/<int:id>', methods=['POST'])
 @login_required
@@ -443,6 +1023,7 @@ def edit_semester(id):
     if not can_access_department(department_id):
         abort(403)
     s.department_id = department_id
+    log_activity('semester_updated', f"Updated semester '{s.name}'.", 'semester', s.id, department_id)
     db.session.commit()
     return redirect(url_for('semesters'))
 
@@ -453,11 +1034,17 @@ def delete_semester(id):
     semester = Semester.query.get_or_404(id)
     if not can_access_department(semester.department_id):
         abort(403)
-    student_ids = [s.id for s in Student.query.filter_by(semester_id=id).all()]
-    if student_ids:
-        Admin.query.filter(Admin.student_id.in_(student_ids)).delete(synchronize_session=False)
-    Student.query.filter_by(semester_id=id).delete()
-    Subject.query.filter_by(semester_id=id).delete()
+    counts = {
+        'students': Student.query.filter_by(semester_id=id).count(),
+        'subjects': Subject.query.filter_by(semester_id=id).count(),
+        'sessions': db.session.query(ClassSession).join(Subject).filter(Subject.semester_id == id).count(),
+        'attendance': db.session.query(Attendance).join(ClassSession).join(Subject).filter(Subject.semester_id == id).count()
+    }
+    if any(counts.values()):
+        flash(describe_delete_block(f"semester '{semester.name}'", counts), 'warning')
+        return redirect(url_for('semesters'))
+
+    log_activity('semester_deleted', f"Deleted semester '{semester.name}'.", 'semester', semester.id, semester.department_id)
     db.session.delete(semester)
     db.session.commit()
     return redirect(url_for('semesters'))
@@ -470,18 +1057,29 @@ def subjects():
     if request.method == 'POST':
         department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
         semester_id = int(request.form['semester_id'])
+        teacher_id = request.form.get('teacher_id') or None
         semester = Semester.query.get_or_404(semester_id)
         if not can_access_department(department_id) or semester.department_id != department_id:
             abort(403)
-        db.session.add(Subject(
+        if teacher_id:
+            teacher = Teacher.query.get_or_404(int(teacher_id))
+            if teacher.department_id != department_id or not can_access_teacher(teacher):
+                abort(403)
+            teacher_id = teacher.id
+        subject = Subject(
             name=request.form['name'],
             department_id=department_id,
-            semester_id=semester_id))
+            semester_id=semester_id,
+            teacher_id=teacher_id)
+        db.session.add(subject)
+        teacher_suffix = f" and assigned to {subject.teacher.name}" if subject.teacher else ""
+        log_activity('subject_created', f"Created subject '{subject.name}'{teacher_suffix}.", 'subject', None, department_id)
         db.session.commit()
     return render_template('subjects.html',
         subjects=visible_subjects_query().order_by(Subject.name).all(),
-        departments=visible_departments_query().order_by(Department.name).all(),
-        semesters=visible_semesters_query().order_by(Semester.name).all())
+        departments=ordered_departments_query().all(),
+        semesters=visible_semesters_query().order_by(Semester.name).all(),
+        teachers=visible_teachers_query().order_by(Teacher.name).all())
 
 @app.route('/subjects/edit/<int:id>', methods=['POST'])
 @login_required
@@ -492,12 +1090,21 @@ def edit_subject(id):
         abort(403)
     department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
     semester_id = int(request.form['semester_id'])
+    teacher_id = request.form.get('teacher_id') or None
     semester = Semester.query.get_or_404(semester_id)
     if not can_access_department(department_id) or semester.department_id != department_id:
         abort(403)
+    if teacher_id:
+        teacher = Teacher.query.get_or_404(int(teacher_id))
+        if teacher.department_id != department_id or not can_access_teacher(teacher):
+            abort(403)
+        teacher_id = teacher.id
     s.name = request.form['name']
     s.department_id = department_id
     s.semester_id = semester_id
+    s.teacher_id = teacher_id
+    teacher_suffix = f" Assigned teacher: {s.teacher.name}." if s.teacher else " No teacher assigned."
+    log_activity('subject_updated', f"Updated subject '{s.name}'.{teacher_suffix}", 'subject', s.id, department_id)
     db.session.commit()
     return redirect(url_for('subjects'))
 
@@ -508,43 +1115,27 @@ def delete_subject(id):
     subject = Subject.query.get_or_404(id)
     if not can_access_department(subject.department_id):
         abort(403)
+    counts = {
+        'sessions': ClassSession.query.filter_by(subject_id=id).count(),
+        'attendance': db.session.query(Attendance).join(ClassSession).filter(ClassSession.subject_id == id).count()
+    }
+    if any(counts.values()):
+        flash(describe_delete_block(f"subject '{subject.name}'", counts), 'warning')
+        return redirect(url_for('subjects'))
+    log_activity('subject_deleted', f"Deleted subject '{subject.name}'.", 'subject', subject.id, subject.department_id)
     db.session.delete(subject)
     db.session.commit()
     return redirect(url_for('subjects'))
 
 # ── Teachers ─────────────────────────────────────────────────
-@app.route('/teachers', methods=['GET', 'POST'])
+@app.route('/teachers')
 @login_required
 @role_required('super_admin', 'hod')
 def teachers():
-    error = None
-    if request.method == 'POST':
-        department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
-        email = normalize_email(request.form['email'])
-        if not can_access_department(department_id):
-            abort(403)
-        elif not is_allowed_staff_email(email):
-            error = staff_email_rule_message()
-        else:
-            db.session.add(Teacher(name=request.form['name'], email=email, department_id=department_id))
-            db.session.commit()
-    teacher_accounts = {}
-    for account in Admin.query.filter(Admin.role.in_(['teacher', 'hod'])).all():
-        if account.role == 'teacher' and account.teacher_id:
-            teacher_accounts.setdefault(account.teacher_id, []).append(role_label(account.role))
-        elif account.role == 'hod':
-            matched_teacher = Teacher.query.filter(
-                db.func.lower(Teacher.email) == normalize_email(account.username),
-                Teacher.department_id == account.department_id
-            ).first()
-            if matched_teacher:
-                teacher_accounts.setdefault(matched_teacher.id, []).append(role_label(account.role))
-
     return render_template('teachers.html',
         teachers=visible_teachers_query().order_by(Teacher.name).all(),
-        departments=visible_departments_query().order_by(Department.name).all(),
-        teacher_accounts=teacher_accounts,
-        error=error)
+        departments=ordered_departments_query().all(),
+        error=None)
 
 @app.route('/teachers/edit/<int:id>', methods=['POST'])
 @login_required
@@ -559,9 +1150,26 @@ def edit_teacher(id):
     email = normalize_email(request.form['email'])
     if not is_allowed_staff_email(email):
         abort(400, description=staff_email_rule_message())
+    if department_id != t.department_id:
+        assigned_subjects = Subject.query.filter_by(teacher_id=t.id).count()
+        sessions_count = ClassSession.query.filter_by(teacher_id=t.id).count()
+        if assigned_subjects or sessions_count:
+            flash(
+                describe_delete_block(
+                    f"moving teacher '{t.name}'",
+                    {'assigned subjects': assigned_subjects, 'sessions': sessions_count}
+                ),
+                'warning'
+            )
+            return redirect(url_for('teachers'))
     t.name = request.form['name']
     t.email = email
     t.department_id = department_id
+    linked_admin = Admin.query.filter_by(teacher_id=t.id).first()
+    if linked_admin:
+        linked_admin.username = email
+        linked_admin.department_id = department_id
+    log_activity('teacher_updated', f"Updated teacher profile '{t.name}'.", 'teacher', t.id, department_id)
     db.session.commit()
     return redirect(url_for('teachers'))
 
@@ -572,6 +1180,18 @@ def delete_teacher(id):
     teacher = Teacher.query.get_or_404(id)
     if not can_access_teacher(teacher):
         abort(403)
+    assigned_subjects = Subject.query.filter_by(teacher_id=teacher.id).count()
+    sessions_count = ClassSession.query.filter_by(teacher_id=teacher.id).count()
+    if assigned_subjects or sessions_count:
+        flash(
+            describe_delete_block(
+                f"teacher '{teacher.name}'",
+                {'assigned subjects': assigned_subjects, 'sessions': sessions_count}
+            ),
+            'warning'
+        )
+        return redirect(url_for('teachers'))
+    log_activity('teacher_deleted', f"Deleted teacher profile '{teacher.name}'.", 'teacher', teacher.id, teacher.department_id)
     Admin.query.filter_by(teacher_id=teacher.id).delete()
     db.session.delete(teacher)
     db.session.commit()
@@ -581,7 +1201,7 @@ def delete_teacher(id):
 # ── Students ─────────────────────────────────────────────────
 @app.route('/students', methods=['GET', 'POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('super_admin', 'hod', 'teacher')
 def students():
     error = None
     if request.method == 'POST':
@@ -599,7 +1219,7 @@ def students():
             elif not semester:
                 error = f"Semester with ID {sem_id} not found"
             elif semester.department_id != dept_id:
-                error = f"Semester '{semester.name}' belongs to '{Semester.query.get(sem_id).department.name}', not '{department.name}'"
+                error = f"Semester '{semester.name}' belongs to '{Semester.query.get(sem_id).department.display_name}', not '{department.display_name}'"
             else:
                 # Check if roll_no exists in same department and semester (case-insensitive)
                 existing = Student.query.filter(
@@ -608,7 +1228,7 @@ def students():
                     Student.semester_id == sem_id
                 ).first()
                 if existing:
-                    error = f"Roll number {roll_no} already exists in {department.name} - {semester.name}"
+                    error = f"Roll number {roll_no} already exists in {department.display_name} - {semester.name}"
                 else:
                     # Check if email already exists
                     existing_email = Student.query.filter_by(email=request.form['email']).first()
@@ -624,6 +1244,13 @@ def students():
                         db.session.add(student)
                         db.session.flush()
                         ensure_student_account(student)
+                        log_activity(
+                            'student_created',
+                            f"Created student profile '{student.name}' ({student.roll_no}).",
+                            'student',
+                            student.id,
+                            dept_id
+                        )
                         db.session.commit()
         except ValueError as e:
             db.session.rollback()
@@ -634,9 +1261,62 @@ def students():
     
     return render_template('students.html',
         students=visible_students_query().order_by(Student.roll_no).all(),
-        departments=visible_departments_query().order_by(Department.name).all(),
+        departments=ordered_departments_query().all(),
         semesters=visible_semesters_query().order_by(Semester.name).all(),
         error=error)
+
+
+@app.route('/students/import', methods=['POST'])
+@login_required
+@role_required('super_admin', 'hod', 'teacher')
+def import_students():
+    upload = request.files.get('student_file')
+    if not upload or not upload.filename:
+        flash("Please choose a CSV or XLSX file.", "danger")
+        return redirect(url_for('students'))
+
+    try:
+        rows = parse_student_import(upload)
+        if not rows:
+            flash("The uploaded file has no student rows.", "warning")
+            return redirect(url_for('students'))
+
+        imported, errors = import_students_from_rows(rows)
+        if imported:
+            flash(f"Imported {imported} student profile{'s' if imported != 1 else ''}. Student logins were created with roll number as initial password.", "success")
+            log_activity('student_imported', f"Imported {imported} student profile(s) by bulk upload.", 'student', None, current_department_id())
+        if errors:
+            preview = '; '.join(errors[:5])
+            suffix = f" and {len(errors) - 5} more" if len(errors) > 5 else ""
+            flash(f"{len(errors)} row issue{'s' if len(errors) != 1 else ''}: {preview}{suffix}", "warning")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Import failed: {exc}", "danger")
+
+    return redirect(url_for('students'))
+
+
+@app.route('/students/import-template')
+@login_required
+@role_required('super_admin', 'hod', 'teacher')
+def student_import_template():
+    output = io.StringIO()
+    writer = csv.writer(output)
+    headers = ['name', 'roll_no', 'email', 'semester']
+    sample = ['Rahul Das', 'MCA2026001', 'rahul@example.com', 'Semester 1']
+    if is_super_admin():
+        headers.append('department')
+        sample.append('MCA - Master of Computer Application (MCA)')
+    writer.writerow(headers)
+    writer.writerow(sample)
+
+    buffer = io.BytesIO(output.getvalue().encode('utf-8'))
+    return send_file(
+        buffer,
+        mimetype='text/csv',
+        download_name='student_import_template.csv',
+        as_attachment=True
+    )
 
 @app.route('/students/edit/<int:id>', methods=['POST'])
 @login_required
@@ -678,6 +1358,7 @@ def edit_student(id):
     s.department_id = dept_id
     s.semester_id = sem_id
     ensure_student_account(s)
+    log_activity('student_updated', f"Updated student profile '{s.name}' ({s.roll_no}).", 'student', s.id, dept_id)
     db.session.commit()
     return redirect(url_for('students'))
 
@@ -689,9 +1370,40 @@ def delete_student(id):
     student = Student.query.get_or_404(id)
     if not can_access_student(student):
         abort(403)
+    log_activity('student_deleted', f"Deleted student profile '{student.name}' ({student.roll_no}).", 'student', student.id, student.department_id)
     Admin.query.filter_by(student_id=student.id).delete()
     db.session.delete(student)
     db.session.commit()
+    return redirect(url_for('students'))
+
+
+@app.route('/students/reset-password/<int:id>', methods=['POST'])
+@login_required
+@role_required('super_admin', 'hod', 'teacher')
+def reset_student_password(id):
+    student = Student.query.get_or_404(id)
+    if not can_access_student(student):
+        abort(403)
+
+    ensure_student_account(student)
+    admin = Admin.query.filter_by(student_id=student.id).first()
+    if not admin:
+        abort(500)
+
+    admin.password = generate_password_hash(student.roll_no)
+    admin.is_active = True
+    admin.must_change_password = True
+    admin.failed_login_attempts = 0
+    admin.locked_until = None
+    log_activity(
+        'student_password_reset',
+        f"Reset student password for '{student.name}' to the roll number.",
+        'student',
+        student.id,
+        student.department_id
+    )
+    db.session.commit()
+    flash(f"Password for {student.name} was reset to the roll number ({student.roll_no}).", 'success')
     return redirect(url_for('students'))
 
 # ── API: filtered dropdowns ───────────────────────────────────
@@ -711,8 +1423,32 @@ def api_subjects(semester_id):
     semester = Semester.query.get_or_404(semester_id)
     if not can_access_department(semester.department_id):
         abort(403)
-    rows = Subject.query.filter_by(semester_id=semester_id).order_by(Subject.name).all()
-    return jsonify([{'id': r.id, 'name': r.name} for r in rows])
+    rows = visible_subjects_query().filter(Subject.semester_id == semester_id).order_by(Subject.name).all()
+    return jsonify([{
+        'id': r.id,
+        'name': r.name,
+        'teacher_id': r.teacher_id,
+        'teacher_name': r.teacher.name if r.teacher else ''
+    } for r in rows])
+
+
+@app.route('/api/department-subjects/<int:department_id>')
+@login_required
+@role_required('super_admin', 'hod')
+def api_department_subjects(department_id):
+    if not can_access_department(department_id):
+        abort(403)
+    rows = Subject.query.filter(
+        Subject.department_id == department_id,
+        Subject.name != SPECIAL_CLASS_SUBJECT_NAME
+    ).order_by(Subject.name).all()
+    return jsonify([{
+        'id': r.id,
+        'name': r.name,
+        'semester': r.semester.name if r.semester else '',
+        'teacher_id': r.teacher_id,
+        'teacher_name': r.teacher.name if r.teacher else ''
+    } for r in rows])
 
 @app.route('/api/teachers/<int:department_id>')
 @login_required
@@ -742,38 +1478,69 @@ def generate_qr():
                 abort(403)
             qr_image = f"static/qrcodes/{cs.token}.png"
             session_id = cs.id
-            subject_name = cs.subject.name
+            subject_name = session_display_name(cs)
             scan_url = build_scan_url(cs.token)
             duration = int((cs.expires_at - cs.created_at).total_seconds() / 60)
-    
+
     if request.method == 'POST':
         token = str(uuid.uuid4())
-        subject_id = int(request.form['subject_id'])
+        class_mode = request.form.get('class_mode', 'regular')
+        department_id = int(request.form['department_id'])
+        semester_id = int(request.form['semester_id'])
+        subject_id = request.form.get('subject_id')
+        special_title = ' '.join(request.form.get('special_title', '').split())
         duration = int(request.form.get('duration', 30))
         teacher_id = request.form.get('teacher_id') or None
-        
-        subject = Subject.query.get_or_404(subject_id)
-        if not can_access_subject(subject):
+
+        if not can_access_department(department_id):
             abort(403)
+        semester = Semester.query.get_or_404(semester_id)
+        if semester.department_id != department_id:
+            abort(403)
+
+        if class_mode == 'special':
+            if not special_title:
+                abort(400, description='Special class details are required.')
+            subject = get_or_create_special_subject(department_id, semester_id)
+        else:
+            if not subject_id:
+                abort(400, description='Subject is required.')
+            subject = Subject.query.get_or_404(int(subject_id))
+            if not can_access_subject(subject) or subject.department_id != department_id or subject.semester_id != semester_id:
+                abort(403)
+            special_title = None
+            if user_role() != 'teacher' and subject.teacher_id and not teacher_id:
+                teacher_id = subject.teacher_id
+
         if user_role() == 'teacher':
             teacher_id = current_teacher_id()
         elif teacher_id:
             teacher = Teacher.query.get_or_404(int(teacher_id))
             if not can_access_teacher(teacher) or teacher.department_id != subject.department_id:
                 abort(403)
-        
+        elif class_mode != 'special':
+            abort(400, description='Teacher is required for regular classes.')
+
         # Use IST timezone (stored as naive datetime)
         now_ist = get_ist_now()
         expires_ist = now_ist + timedelta(minutes=duration)
-        
+
         cs = ClassSession(
-            subject_id=subject_id, 
-            token=token, 
+            subject_id=subject.id,
+            special_title=special_title,
+            token=token,
             teacher_id=teacher_id,
             created_at=now_ist,
             expires_at=expires_ist
         )
         db.session.add(cs)
+        log_activity(
+            'qr_session_created',
+            f"Generated QR session for '{session_display_name(cs)}'.",
+            'class_session',
+            None,
+            department_id
+        )
         db.session.commit()
         
         scan_url = build_scan_url(token)
@@ -790,7 +1557,7 @@ def generate_qr():
     return render_template('generate_qr.html',
         qr_image=qr_image, session_id=session_id,
         scan_url=scan_url, subject=subject_name, duration=duration,
-        departments=visible_departments_query().order_by(Department.name).all(),
+        departments=ordered_departments_query().all(),
         recent_sessions=recent_sessions,
         current_teacher=current_user.teacher if user_role() == 'teacher' else None)
 
@@ -813,6 +1580,13 @@ def delete_session(id):
     Attendance.query.filter_by(session_id=id).delete()
     
     # Delete session
+    log_activity(
+        'qr_session_deleted',
+        f"Deleted QR session for '{session_display_name(cs)}'.",
+        'class_session',
+        cs.id,
+        cs.subject.department_id if cs.subject else None
+    )
     db.session.delete(cs)
     db.session.commit()
     
@@ -911,7 +1685,7 @@ def reports():
         }
     
     return render_template('reports.html',
-        departments=visible_departments_query().order_by(Department.name).all(),
+        departments=ordered_departments_query().all(),
         semesters=visible_semesters_query().order_by(Semester.name).all(),
         subjects=visible_subjects_query().order_by(Subject.name).all(),
         sessions=sessions,
@@ -934,8 +1708,8 @@ def api_session_attendance(session_id):
     data = {
         'session': {
             'id': cs.id,
-            'subject': cs.subject.name,
-            'department': cs.subject.department.name,
+            'subject': session_display_name(cs),
+            'department': cs.subject.department.display_name,
             'semester': cs.subject.semester.name,
             'teacher': cs.teacher.name if cs.teacher else 'N/A',
             'created_at': cs.created_at.strftime('%Y-%m-%d %H:%M'),
@@ -1024,7 +1798,7 @@ def export(department_id, semester_id, fmt):
     sem = Semester.query.get(semester_id)
     
     # Build data
-    headers = ['Roll No', 'Name', 'Email'] + [f"{s.subject.name}\n{s.created_at.strftime('%d/%m')}" for s in sessions] + ['Total', '%']
+    headers = ['Roll No', 'Name', 'Email'] + [f"{session_display_name(s)}\n{s.created_at.strftime('%d/%m')}" for s in sessions] + ['Total', '%']
     data = [headers]
     
     for student in students:
@@ -1039,7 +1813,7 @@ def export(department_id, semester_id, fmt):
         row.append(f"{round(total/len(sessions)*100, 1)}%" if sessions else "0%")
         data.append(row)
     
-    filename = f'{dept.name}_{sem.name}_attendance'
+    filename = f'{(dept.branch_name or dept.course_name).replace(" ", "_")}_{sem.name}_attendance'
     
     if fmt == 'excel':
         wb = openpyxl.Workbook()
@@ -1090,9 +1864,9 @@ def export(department_id, semester_id, fmt):
 def add_admin():
     message = None
     error = None
-    allowed_roles = ROLE_LABELS if is_super_admin() else {
-        'teacher': ROLE_LABELS['teacher'],
-        'student': ROLE_LABELS['student']
+    allowed_roles = {
+        key: ROLE_LABELS[key]
+        for key in (('super_admin', 'hod', 'teacher') if is_super_admin() else ('teacher',))
     }
     
     if request.method == 'POST':
@@ -1101,8 +1875,10 @@ def add_admin():
         confirm_password = request.form.get('confirm_password', '')
         role = request.form.get('role', 'teacher' if user_role() == 'hod' else 'super_admin')
         department_id = request.form.get('department_id') or None
-        teacher_id = request.form.get('teacher_id') or None
-        student_id = request.form.get('student_id') or None
+        subject_id = request.form.get('subject_id') or None
+        teacher_id = None
+        teacher_name = request.form.get('teacher_name', '').strip()
+        student_id = None
         
         # Validation
         if not username or not password:
@@ -1124,81 +1900,273 @@ def add_admin():
                         raise ValueError("Only Principal can create HOD accounts")
                     if not department_id:
                         raise ValueError("Department is required for HOD accounts")
+                    department_id = int(department_id)
+                    if has_active_hod(department_id):
+                        raise ValueError("This department already has an active HOD. Deactivate the current HOD first.")
                     teacher_id = None
                     student_id = None
                 elif role == 'teacher':
-                    teacher = Teacher.query.get(int(teacher_id)) if teacher_id else None
-                    if not teacher:
-                        raise ValueError("Teacher profile is required for teacher accounts")
-                    if not can_access_teacher(teacher):
-                        raise ValueError("You can create teacher accounts only for your department")
-                    if not is_allowed_staff_email(teacher.email):
-                        raise ValueError("Selected teacher profile does not use an allowed email format")
-                    if normalize_email(teacher.email) != username:
-                        raise ValueError("Teacher login username must match the selected teacher profile email")
-                    department_id = teacher.department_id
+                    department_id = int(department_id) if is_super_admin() else current_department_id()
+                    if not teacher_name:
+                        raise ValueError("Teacher name is required for teacher accounts")
+                    if not department_id or not can_access_department(department_id):
+                        raise ValueError("Valid department is required for teacher accounts")
+
+                    teacher = Teacher.query.filter(db.func.lower(Teacher.email) == username).first()
+                    if teacher:
+                        if not can_access_teacher(teacher):
+                            raise ValueError("You can create teacher accounts only for your department")
+                        teacher.name = teacher_name
+                        teacher.department_id = department_id
+                    else:
+                        teacher = Teacher(
+                            name=teacher_name,
+                            email=username,
+                            department_id=department_id
+                        )
+                        db.session.add(teacher)
+                        db.session.flush()
+
+                    teacher_id = teacher.id
                     student_id = None
-                elif role == 'student':
-                    student = Student.query.get(int(student_id)) if student_id else None
-                    if not student:
-                        raise ValueError("Student profile is required for student accounts")
-                    if not can_access_student(student):
-                        raise ValueError("You can create student accounts only for your department")
-                    department_id = student.department_id
-                    teacher_id = None
+                    if subject_id:
+                        subject = Subject.query.get_or_404(int(subject_id))
+                        if subject.name == SPECIAL_CLASS_SUBJECT_NAME or subject.department_id != department_id:
+                            raise ValueError("Please select a valid subject from the same department")
+                        subject.teacher_id = teacher.id
                 else:
                     if not is_super_admin():
                         raise ValueError("Only Principal can create Principal accounts")
                     department_id = None
                     teacher_id = None
                     student_id = None
-
                 new_admin = Admin(
                     username=username,
                     password=generate_password_hash(password),
                     role=role,
                     department_id=department_id,
                     teacher_id=teacher_id,
-                    student_id=student_id
+                    student_id=student_id,
+                    is_active=True,
+                    must_change_password=True,
+                    failed_login_attempts=0,
+                    locked_until=None
                 )
                 db.session.add(new_admin)
+                scope_department_id = department_id or (Teacher.query.get(teacher_id).department_id if teacher_id else None)
+                log_activity(
+                    'account_created',
+                    f"Created {role_label(role)} account '{username}'.",
+                    'admin',
+                    None,
+                    scope_department_id
+                )
                 db.session.commit()
-                message = f"{role_label(role)} account '{username}' added successfully!"
+                assigned_subject = None
+                if role == 'teacher' and subject_id:
+                    assigned_subject = Subject.query.get(int(subject_id))
+                message = f"{role_label(role)} account '{username}' added successfully."
+                if assigned_subject:
+                    message += f" Subject assigned: {assigned_subject.name}."
+                message += " The user will be reminded to change the password after login."
             except Exception as e:
                 db.session.rollback()
                 error = f"Error adding account: {str(e)}"
-    
+
     if is_super_admin():
-        admins = Admin.query.order_by(Admin.role, Admin.username).all()
+        admins = Admin.query.filter(Admin.role != 'student').order_by(Admin.role, Admin.is_active.desc(), Admin.username).all()
     else:
         admins = Admin.query.filter(
-            Admin.department_id == current_department_id()
-        ).order_by(Admin.role, Admin.username).all()
-    
+            Admin.department_id == current_department_id(),
+            Admin.role != 'student'
+        ).order_by(Admin.role, Admin.is_active.desc(), Admin.username).all()
+
     return render_template('add_admin.html', 
                          admins=admins, 
-                         departments=visible_departments_query().order_by(Department.name).all(),
-                         teachers=visible_teachers_query().order_by(Teacher.name).all(),
-                         students=visible_students_query().order_by(Student.roll_no).all(),
+                         departments=ordered_departments_query().all(),
+                         principal_count=Admin.query.filter_by(role='super_admin', is_active=True).count(),
                          roles=allowed_roles,
+                         recent_logs=visible_activity_logs_query().order_by(ActivityLog.created_at.desc()).limit(12).all(),
                          message=message, 
                          error=error)
+
+
+@app.route('/edit_admin/<int:id>', methods=['POST'])
+@login_required
+@role_required('super_admin', 'hod')
+def edit_admin(id):
+    admin = Admin.query.get_or_404(id)
+    if not can_edit_account(admin):
+        abort(403)
+
+    username = normalize_email(request.form.get('username', ''))
+    teacher_name = request.form.get('teacher_name', '').strip()
+    department_id = request.form.get('department_id') or None
+    subject_id = request.form.get('subject_id') or None
+
+    if not username:
+        flash("Username is required.", "danger")
+        return redirect(url_for('add_admin'))
+
+    if Admin.query.filter(Admin.id != admin.id, db.func.lower(Admin.username) == username).first():
+        flash(f"Username '{username}' already exists.", "danger")
+        return redirect(url_for('add_admin'))
+
+    if admin.role in ('hod', 'teacher') and not is_allowed_staff_email(username):
+        flash(staff_email_rule_message(), "danger")
+        return redirect(url_for('add_admin'))
+
+    try:
+        if admin.role == 'super_admin':
+            admin.username = username
+        elif admin.role == 'hod':
+            if not is_super_admin():
+                abort(403)
+            if not department_id:
+                raise ValueError("Department is required for HOD accounts")
+            department_id = int(department_id)
+            if not can_access_department(department_id):
+                abort(403)
+            if admin.is_active and has_active_hod(department_id, exclude_admin_id=admin.id):
+                raise ValueError("This department already has an active HOD. Deactivate the current HOD first.")
+            admin.username = username
+            admin.department_id = department_id
+        elif admin.role == 'teacher':
+            if not department_id:
+                raise ValueError("Department is required for Teacher accounts")
+            department_id = int(department_id) if is_super_admin() else current_department_id()
+            if not teacher_name:
+                raise ValueError("Teacher name is required for Teacher accounts")
+            if not can_access_department(department_id):
+                abort(403)
+
+            teacher = admin.teacher
+            if not teacher:
+                teacher = Teacher(name=teacher_name, email=username, department_id=department_id)
+                db.session.add(teacher)
+                db.session.flush()
+                admin.teacher_id = teacher.id
+
+            if department_id != teacher.department_id:
+                assigned_subjects = Subject.query.filter_by(teacher_id=teacher.id).count()
+                sessions_count = ClassSession.query.filter_by(teacher_id=teacher.id).count()
+                if assigned_subjects or sessions_count:
+                    raise ValueError(
+                        describe_delete_block(
+                            f"moving teacher '{teacher.name}'",
+                            {'assigned subjects': assigned_subjects, 'sessions': sessions_count}
+                        )
+                    )
+
+            teacher.name = teacher_name
+            teacher.email = username
+            teacher.department_id = department_id
+            admin.username = username
+            admin.department_id = department_id
+
+            if subject_id:
+                subject = Subject.query.get_or_404(int(subject_id))
+                if subject.name == SPECIAL_CLASS_SUBJECT_NAME or subject.department_id != department_id:
+                    raise ValueError("Please select a valid subject from the same department")
+                subject.teacher_id = teacher.id
+
+        log_activity(
+            'account_updated',
+            f"Updated {role_label(admin.role)} account '{admin.username}'.",
+            'admin',
+            admin.id,
+            admin.department_id
+        )
+        db.session.commit()
+        flash(f"{role_label(admin.role)} account '{admin.username}' updated successfully.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Unable to update account: {exc}", "danger")
+
+    return redirect(url_for('add_admin'))
 
 @app.route('/delete_admin/<int:id>', methods=['POST'])
 @login_required
 @role_required('super_admin', 'hod')
 def delete_admin(id):
     admin = Admin.query.get_or_404(id)
-    if user_role() == 'hod':
-        if admin.id == current_user.id or admin.role not in ('teacher', 'student') or admin.department_id != current_department_id():
-            abort(403)
-    
-    # Prevent deleting the last admin
-    if is_super_admin() and Admin.query.count() <= 1:
-        return redirect(url_for('add_admin'))
-    
+    if not can_manage_account(admin):
+        abort(403)
+
+    if admin.teacher_id:
+        assigned_subjects = Subject.query.filter_by(teacher_id=admin.teacher_id).count()
+        sessions_count = ClassSession.query.filter_by(teacher_id=admin.teacher_id).count()
+        if assigned_subjects or sessions_count:
+            flash(
+                describe_delete_block(
+                    f"account '{admin.username}'",
+                    {'assigned subjects': assigned_subjects, 'sessions': sessions_count}
+                ),
+                'warning'
+            )
+            return redirect(url_for('add_admin'))
+
+    log_activity(
+        'account_deleted',
+        f"Deleted {role_label(admin.role)} account '{admin.username}'.",
+        'admin',
+        admin.id,
+        admin.department_id
+    )
     db.session.delete(admin)
     db.session.commit()
+    return redirect(url_for('add_admin'))
+
+
+@app.route('/toggle_admin_status/<int:id>', methods=['POST'])
+@login_required
+@role_required('super_admin', 'hod')
+def toggle_admin_status(id):
+    admin = Admin.query.get_or_404(id)
+    if not can_toggle_account_status(admin):
+        abort(403)
+
+    next_status = not admin.is_active
+    if next_status and admin.role == 'hod' and admin.department_id and has_active_hod(admin.department_id, exclude_admin_id=admin.id):
+        flash("This department already has an active HOD. Deactivate that HOD first.", 'warning')
+        return redirect(url_for('add_admin'))
+
+    admin.is_active = next_status
+    log_activity(
+        'account_status_changed',
+        f"{'Activated' if next_status else 'Deactivated'} {role_label(admin.role)} account '{admin.username}'.",
+        'admin',
+        admin.id,
+        admin.department_id
+    )
+    db.session.commit()
+    flash(f"{role_label(admin.role)} account '{admin.username}' is now {'active' if next_status else 'inactive'}.", 'success')
+    return redirect(url_for('add_admin'))
+
+
+@app.route('/reset_admin_password/<int:id>', methods=['POST'])
+@login_required
+@role_required('super_admin', 'hod')
+def reset_admin_password(id):
+    admin = Admin.query.get_or_404(id)
+    if not can_reset_staff_account(admin):
+        abort(403)
+
+    temporary_password = generate_temporary_password()
+    admin.password = generate_password_hash(temporary_password)
+    admin.is_active = True
+    admin.must_change_password = True
+    admin.failed_login_attempts = 0
+    admin.locked_until = None
+    log_activity(
+        'account_password_reset',
+        f"Reset password for {role_label(admin.role)} account '{admin.username}'.",
+        'admin',
+        admin.id,
+        admin.department_id
+    )
+    db.session.commit()
+    flash(f"Temporary password for {admin.username}: {temporary_password}", 'success')
     return redirect(url_for('add_admin'))
 
 
@@ -1206,6 +2174,10 @@ def delete_admin(id):
 with app.app_context():
     db.create_all()
     ensure_rbac_columns()
+    ensure_class_session_columns()
+    ensure_department_columns()
+    ensure_subject_columns()
+    backfill_subject_teacher_assignments()
     if not Admin.query.first():
         db.session.add(Admin(username='admin', password=generate_password_hash('admin123'), role='super_admin'))
         db.session.commit()
