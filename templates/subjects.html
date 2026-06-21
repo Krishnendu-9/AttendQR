@@ -12,7 +12,7 @@
   <div class="row g-3">
     <div class="col-md-8 col-lg-6">
       <label class="form-label" for="searchInput">Search</label>
-      <input type="text" id="searchInput" class="form-control" placeholder="Search by subject, department, or semester">
+      <input type="text" id="searchInput" class="form-control" placeholder="Search by paper code, subject, department, or semester">
     </div>
     <div class="col-md-4 col-lg-3 d-flex align-items-end">
       <button class="btn btn-secondary w-100" type="button" onclick="clearFilters()">
@@ -23,10 +23,15 @@
 </div>
 
 <form method="POST" class="form-panel">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3 align-items-end">
     <div class="col-md-6 col-xl">
+      <label class="form-label" for="paper_code">Paper Code</label>
+      <input class="form-control text-uppercase" id="paper_code" name="paper_code" placeholder="RCC-MCA C102" maxlength="50" required>
+    </div>
+    <div class="col-md-6 col-xl">
       <label class="form-label" for="subject_name">Subject Name</label>
-      <input class="form-control" id="subject_name" name="name" placeholder="Example: Database Management" required>
+      <input class="form-control" id="subject_name" name="name" placeholder="DBMS" required>
     </div>
     <div class="col-md-6 col-xl">
       <label class="form-label" for="dept_select">Department</label>
@@ -61,23 +66,25 @@
   <div class="table-responsive">
     <table class="table table-hover align-middle" id="subjectsTable">
       <thead>
-        <tr><th>#</th><th>Subject</th><th>Assigned Teacher</th><th>Department</th><th>Semester</th><th class="text-end">Actions</th></tr>
+        <tr><th>#</th><th>Paper Code</th><th>Subject</th><th>Assigned Teacher</th><th>Department</th><th>Semester</th><th class="text-end">Actions</th></tr>
       </thead>
       <tbody>
         {% for s in subjects %}
-        <tr class="subject-row" data-name="{{ s.name|lower }}" data-teacher="{{ (s.teacher.name if s.teacher else 'unassigned')|lower }}" data-dept="{{ s.department.display_name|lower }}" data-sem="{{ s.semester.name|lower }}">
+        <tr class="subject-row" data-name="{{ s.name|lower }}" data-code="{{ (s.paper_code or '')|lower }}" data-teacher="{{ (s.teacher.name if s.teacher else 'unassigned')|lower }}" data-dept="{{ s.department.display_name|lower }}" data-sem="{{ s.semester.name|lower }}">
           <td>{{ loop.index }}</td>
+          <td><span class="badge text-bg-secondary">{{ s.paper_code or 'N/A' }}</span></td>
           <td class="fw-semibold">{{ s.name }}</td>
           <td>{{ s.teacher.name if s.teacher else 'Not assigned' }}</td>
           <td>{{ s.department.display_name }}</td>
           <td>{{ s.semester.name }}</td>
           <td class="text-end">
             <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit subject"
-              onclick="openEdit('{{ s.id }}','{{ s.name }}','{{ s.department_id }}','{{ s.semester_id }}','{{ s.teacher_id or '' }}')">
+              onclick='openEdit({{ s.id|tojson }}, {{ s.name|tojson }}, {{ (s.paper_code or '')|tojson }}, {{ s.department_id|tojson }}, {{ s.semester_id|tojson }}, {{ (s.teacher_id or '')|tojson }})'>
               <i class="bi bi-pencil-square"></i>
             </button>
             <form method="POST" action="/subjects/delete/{{ s.id }}" class="d-inline"
-              onsubmit="return confirm('Delete {{ s.name }}?')">
+              onsubmit='return confirm({{ ("Delete " ~ subject_display_name(s) ~ "?")|tojson }})'>
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete subject">
                 <i class="bi bi-trash"></i>
               </button>
@@ -86,7 +93,7 @@
         </tr>
         {% endfor %}
         {% if not subjects %}
-        <tr id="noSubjects"><td colspan="6" class="text-center text-muted py-4">No subjects added yet.</td></tr>
+        <tr id="noSubjects"><td colspan="7" class="text-center text-muted py-4">No subjects added yet.</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -96,11 +103,16 @@
 <div class="modal fade" id="editModal" tabindex="-1">
   <div class="modal-dialog">
     <form method="POST" id="editForm" class="modal-content">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       <div class="modal-header">
         <h5 class="modal-title">Edit Subject</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" for="edit_paper_code">Paper Code</label>
+          <input class="form-control text-uppercase" name="paper_code" id="edit_paper_code" maxlength="50" required>
+        </div>
         <div class="mb-3">
           <label class="form-label" for="edit_name">Subject Name</label>
           <input class="form-control" name="name" id="edit_name" required>
@@ -144,7 +156,7 @@ function loadSemesters(dept_id, target_id) {
     .then(data => {
       const sel = document.getElementById(target_id);
       sel.innerHTML = '<option value="">Select semester</option>';
-      data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+      data.forEach(s => sel.add(new Option(s.name, s.id)));
     });
 }
 function loadTeachers(dept_id, target_id, selectedValue = '') {
@@ -156,14 +168,15 @@ function loadTeachers(dept_id, target_id, selectedValue = '') {
     .then(r => r.json())
     .then(data => {
       sel.innerHTML = '<option value="">Assign later</option>';
-      data.forEach(t => sel.innerHTML += `<option value="${t.id}">${t.name}</option>`);
+      data.forEach(t => sel.add(new Option(t.name, t.id)));
       if (selectedValue !== '') {
         sel.value = selectedValue;
       }
     });
 }
-function openEdit(id, name, dept_id, sem_id, teacher_id) {
+function openEdit(id, name, paper_code, dept_id, sem_id, teacher_id) {
   document.getElementById('edit_name').value = name;
+  document.getElementById('edit_paper_code').value = paper_code;
   document.getElementById('edit_dept').value = dept_id;
   loadSemesters(dept_id, 'edit_sem');
   loadTeachers(dept_id, 'edit_teacher', teacher_id);
@@ -182,10 +195,11 @@ function filterSubjects() {
 
   rows.forEach(row => {
     const name = row.getAttribute('data-name');
+    const code = row.getAttribute('data-code');
     const teacher = row.getAttribute('data-teacher');
     const dept = row.getAttribute('data-dept');
     const sem = row.getAttribute('data-sem');
-    const matches = name.includes(searchTerm) || teacher.includes(searchTerm) || dept.includes(searchTerm) || sem.includes(searchTerm);
+    const matches = name.includes(searchTerm) || code.includes(searchTerm) || teacher.includes(searchTerm) || dept.includes(searchTerm) || sem.includes(searchTerm);
 
     if (matches) {
       row.style.display = '';

@@ -44,6 +44,7 @@
 </div>
 
 <form method="POST" class="form-panel" id="studentForm">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3 align-items-end">
     <div class="col-md-4 col-xl">
       <label class="form-label" for="student_name">Name</label>
@@ -93,6 +94,7 @@
         {% endif %}
       </p>
       <form method="POST" action="/students/import" enctype="multipart/form-data" class="row g-2">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="col-md">
           <input class="form-control" type="file" name="student_file" accept=".csv,.xlsx" required>
         </div>
@@ -142,18 +144,20 @@
           <td>{{ s.semester.name }}</td>
           <td class="text-end">
             <form method="POST" action="/students/reset-password/{{ s.id }}" class="d-inline"
-              onsubmit="return confirm('Reset password for {{ s.name }} to the roll number?')">
+              onsubmit='return confirm({{ ("Reset password for " ~ s.name ~ " to the roll number?")|tojson }})'>
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-info btn-icon" type="submit" data-bs-toggle="tooltip" title="Reset password">
                 <i class="bi bi-key"></i>
               </button>
             </form>
             {% if current_user.role in ['super_admin', 'hod'] %}
             <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit student"
-              onclick="openEdit('{{ s.id }}','{{ s.name }}','{{ s.roll_no }}','{{ s.email }}','{{ s.department_id }}','{{ s.semester_id }}')">
+              onclick='openEdit({{ s.id|tojson }}, {{ s.name|tojson }}, {{ s.roll_no|tojson }}, {{ s.email|tojson }}, {{ s.department_id|tojson }}, {{ s.semester_id|tojson }})'>
               <i class="bi bi-pencil-square"></i>
             </button>
             <form method="POST" action="/students/delete/{{ s.id }}" class="d-inline"
-              onsubmit="return confirm('Delete {{ s.name }}?')">
+              onsubmit='return confirm({{ ("Delete " ~ s.name ~ "?")|tojson }})'>
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete student">
                 <i class="bi bi-trash"></i>
               </button>
@@ -175,6 +179,7 @@
 <div class="modal fade" id="editModal" tabindex="-1">
   <div class="modal-dialog">
     <form method="POST" id="editForm" class="modal-content">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       <div class="modal-header">
         <h5 class="modal-title">Edit Student</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -233,7 +238,7 @@ function loadSemesters(dept_id, target_id) {
       if (data.length === 0) {
         sel.innerHTML += '<option value="" disabled>No semesters available</option>';
       }
-      data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+      data.forEach(s => sel.add(new Option(s.name, s.id)));
       sel.disabled = false;
     })
     .catch(() => {
@@ -258,7 +263,7 @@ function loadFilterSemesters(dept_id) {
     .then(r => r.json())
     .then(data => {
       sel.innerHTML = '<option value="">All Semesters</option>';
-      data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+      data.forEach(s => sel.add(new Option(s.name, s.id)));
       filterTable();
     })
     .catch(() => {

@@ -29,7 +29,7 @@
       <select class="form-select" name="subject_id" id="subject_select">
         <option value="">All subjects</option>
         {% for sub in subjects %}
-        <option value="{{ sub.id }}" {% if selected_subject == sub.id %}selected{% endif %}>{{ sub.name }}</option>
+        <option value="{{ sub.id }}" {% if selected_subject == sub.id %}selected{% endif %}>{{ subject_display_name(sub) }}</option>
         {% endfor %}
       </select>
     </div>
@@ -115,7 +115,7 @@
             {% endif %}
           </td>
           <td>{{ session.teacher.name if session.teacher else 'N/A' }}</td>
-          <td>{{ session.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ format_12h(session.created_at) }}</td>
           <td>
             {% if session.expires_at > now() %}
             <span class="badge text-bg-success">Active</span>
@@ -202,7 +202,7 @@ function loadSemesters(dept_id) {
     .then(r => r.json())
     .then(data => {
       semSelect.innerHTML = '<option value="">Select semester</option>';
-      data.forEach(s => semSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+      data.forEach(s => semSelect.add(new Option(s.name, s.id)));
     });
 }
 
@@ -219,7 +219,7 @@ function loadSubjects(sem_id) {
     .then(r => r.json())
     .then(data => {
       subSelect.innerHTML = '<option value="">All subjects</option>';
-      data.forEach(s => subSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+      data.forEach(s => subSelect.add(new Option(s.display_name, s.id)));
     });
 }
 
@@ -241,15 +241,13 @@ function viewAttendance(sessionId) {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No students marked attendance</td></tr>';
       } else {
         data.attendances.forEach((att, index) => {
-          tbody.innerHTML += `
-            <tr>
-              <td>${index + 1}</td>
-              <td>${att.student_roll}</td>
-              <td>${att.student_name}</td>
-              <td>${att.student_email}</td>
-              <td>${att.timestamp}</td>
-            </tr>
-          `;
+          const row = document.createElement('tr');
+          [index + 1, att.student_roll, att.student_name, att.student_email, att.timestamp].forEach(value => {
+            const cell = document.createElement('td');
+            cell.textContent = value;
+            row.appendChild(cell);
+          });
+          tbody.appendChild(row);
         });
       }
 

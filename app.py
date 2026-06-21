@@ -11,7 +11,7 @@ from functools import wraps
 from math import ceil
 import csv
 import sqlite3
-import qrcode, uuid, os, io, socket, re
+import qrcode, uuid, os, io, socket, re, secrets
 import openpyxl
 from urllib.parse import urlsplit
 from reportlab.lib.pagesizes import letter
@@ -24,6 +24,14 @@ IST = pytz.timezone('Asia/Kolkata')
 def get_ist_now():
     """Get current time in IST, return as naive datetime (no timezone info)"""
     return datetime.now(IST).replace(tzinfo=None)
+
+
+def format_12h(dt, include_date=True):
+    if not dt:
+        return ''
+    fmt = '%d-%m-%Y %I:%M %p' if include_date else '%I:%M %p'
+    return dt.strftime(fmt)
+
 
 def utc_to_ist(utc_dt):
     """Convert UTC datetime to IST for display"""
@@ -58,6 +66,45 @@ def build_scan_url(token):
     port = os.environ.get('APP_PORT', '5000')
     return f"http://{get_lan_ip()}:{port}/scan/{token}"
 
+
+def get_csrf_token():
+    token = session.get('_csrf_token')
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session['_csrf_token'] = token
+    return token
+
+
+def validate_csrf_request():
+    if request.method != 'POST':
+        return None
+
+    expected = session.get('_csrf_token')
+    supplied = (
+        request.form.get('_csrf_token')
+        or request.headers.get('X-CSRFToken')
+        or request.headers.get('X-CSRF-Token')
+    )
+
+    if expected and supplied and secrets.compare_digest(expected, supplied):
+        return None
+
+    if request.is_json or request.path == url_for('mark_attendance'):
+        return jsonify({'success': False, 'message': 'Security token expired. Refresh the page and try again.'}), 400
+    abort(400, description='Security token expired. Refresh the page and try again.')
+
+
+def parse_int_value(value):
+    if value is None:
+        return None
+    value = str(value).strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
 app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
@@ -82,6 +129,10 @@ def load_user(user_id):
 def prepare_request_state():
     g.password_reminder = False
 
+    csrf_error = validate_csrf_request()
+    if csrf_error:
+        return csrf_error
+
     if current_user.is_authenticated and not getattr(current_user, 'is_active', True):
         logout_user()
         flash("That account is inactive. Please contact the Principal or HOD.", "warning")
@@ -97,7 +148,10 @@ def inject_now():
         'now': lambda: get_ist_now(),
         'role_label': role_label,
         'department_scope_label': department_scope_label,
+        'subject_display_name': subject_display_name,
         'session_display_name': session_display_name,
+        'format_12h': format_12h,
+        'csrf_token': get_csrf_token,
         'password_reminder': getattr(g, 'password_reminder', False),
         'can_edit_account': can_edit_account,
         'can_manage_account': can_manage_account,
@@ -160,6 +214,10 @@ def normalize_branch(value):
 def normalize_course_name(value):
     course_name = ' '.join((value or '').strip().split())
     return re.sub(r'\s*\(', ' (', course_name)
+
+
+def normalize_paper_code(value):
+    return ' '.join((value or '').strip().upper().split())
 
 
 def infer_department_branch(course_name):
@@ -356,10 +414,21 @@ def is_hidden_special_subject(subject):
     return bool(subject and subject.name == SPECIAL_CLASS_SUBJECT_NAME)
 
 
+def subject_display_name(subject):
+    if not subject:
+        return ''
+    if is_hidden_special_subject(subject):
+        return 'Special Class'
+    paper_code = normalize_paper_code(getattr(subject, 'paper_code', None))
+    if paper_code:
+        return f"{paper_code} - {subject.name}"
+    return subject.name
+
+
 def session_display_name(session):
     if getattr(session, 'special_title', None):
         return session.special_title
-    return session.subject.name if session.subject else 'Special Class'
+    return subject_display_name(session.subject) if session.subject else 'Special Class'
 
 
 def get_or_create_special_subject(department_id, semester_id):
@@ -373,6 +442,7 @@ def get_or_create_special_subject(department_id, semester_id):
 
     subject = Subject(
         name=SPECIAL_CLASS_SUBJECT_NAME,
+        paper_code=None,
         department_id=department_id,
         semester_id=semester_id
     )
@@ -544,7 +614,7 @@ def build_student_attendance_summary(student):
         Subject.department_id == student.department_id,
         Subject.semester_id == student.semester_id,
         Subject.name != SPECIAL_CLASS_SUBJECT_NAME
-    ).order_by(Subject.name).all()
+    ).order_by(Subject.paper_code, Subject.name).all()
     rows = []
     overall_attended = 0
     overall_total = 0
@@ -643,6 +713,9 @@ def ensure_department_columns():
 
 def ensure_subject_columns():
     columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(subject)")).fetchall()}
+    if 'paper_code' not in columns:
+        db.session.execute(text("ALTER TABLE subject ADD COLUMN paper_code VARCHAR(50)"))
+        db.session.commit()
     if 'teacher_id' not in columns:
         db.session.execute(text("ALTER TABLE subject ADD COLUMN teacher_id INTEGER"))
         db.session.commit()
@@ -888,13 +961,14 @@ def login():
         return redirect(next_url if is_safe_redirect_target(next_url) else url_for('dashboard'))
 
     if request.method == 'POST':
-        username = normalize_email(request.form['username'])
+        username = normalize_email(request.form.get('username'))
+        password = request.form.get('password', '')
         admin = Admin.query.filter(db.func.lower(Admin.username) == username).first()
         if admin and not admin.is_active:
             error = "This account is inactive. Please contact the Principal or HOD."
         elif admin and is_account_locked(admin):
-            error = f"Too many failed login attempts. Try again after {admin.locked_until.strftime('%H:%M')}."
-        elif admin and check_password_hash(admin.password, request.form['password']):
+            error = f"Too many failed login attempts. Try again after {format_12h(admin.locked_until, include_date=False)}."
+        elif admin and check_password_hash(admin.password, password):
             admin.failed_login_attempts = 0
             admin.locked_until = None
             db.session.commit()
@@ -1046,10 +1120,13 @@ def delete_department(id):
 @role_required('super_admin', 'hod')
 def semesters():
     if request.method == 'POST':
-        department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
+        department_id = parse_int_value(request.form.get('department_id')) if is_super_admin() else current_department_id()
         name = normalize_text(request.form.get('name'))
         if not name:
             flash("Semester name is required.", "danger")
+            return redirect(url_for('semesters'))
+        if not department_id:
+            flash("Valid department is required.", "danger")
             return redirect(url_for('semesters'))
         if not can_access_department(department_id):
             abort(403)
@@ -1079,7 +1156,10 @@ def edit_semester(id):
     if not name:
         flash("Semester name is required.", "danger")
         return redirect(url_for('semesters'))
-    department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
+    department_id = parse_int_value(request.form.get('department_id')) if is_super_admin() else current_department_id()
+    if not department_id:
+        flash("Valid department is required.", "danger")
+        return redirect(url_for('semesters'))
     if not can_access_department(department_id):
         abort(403)
     existing = Semester.query.filter(
@@ -1124,12 +1204,19 @@ def delete_semester(id):
 @role_required('super_admin', 'hod')
 def subjects():
     if request.method == 'POST':
-        department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
-        semester_id = int(request.form['semester_id'])
-        teacher_id = request.form.get('teacher_id') or None
+        department_id = parse_int_value(request.form.get('department_id')) if is_super_admin() else current_department_id()
+        semester_id = parse_int_value(request.form.get('semester_id'))
+        teacher_id = parse_int_value(request.form.get('teacher_id'))
+        paper_code = normalize_paper_code(request.form.get('paper_code'))
         subject_name = normalize_text(request.form.get('name'))
-        if not subject_name:
-            flash("Subject name is required.", "danger")
+        if not paper_code or not subject_name:
+            flash("Paper code and subject name are required.", "danger")
+            return redirect(url_for('subjects'))
+        if len(paper_code) > 50:
+            flash("Paper code must be 50 characters or fewer.", "danger")
+            return redirect(url_for('subjects'))
+        if not department_id or not semester_id:
+            flash("Valid department and semester are required.", "danger")
             return redirect(url_for('subjects'))
         semester = Semester.query.get_or_404(semester_id)
         if not can_access_department(department_id) or semester.department_id != department_id:
@@ -1142,22 +1229,31 @@ def subjects():
         if existing:
             flash(f"Subject '{subject_name}' already exists for this semester.", "warning")
             return redirect(url_for('subjects'))
+        if paper_code:
+            existing_code = Subject.query.filter(
+                Subject.department_id == department_id,
+                db.func.upper(Subject.paper_code) == paper_code
+            ).first()
+            if existing_code:
+                flash(f"Paper code '{paper_code}' already exists for this department.", "warning")
+                return redirect(url_for('subjects'))
         if teacher_id:
-            teacher = Teacher.query.get_or_404(int(teacher_id))
+            teacher = Teacher.query.get_or_404(teacher_id)
             if teacher.department_id != department_id or not can_access_teacher(teacher):
                 abort(403)
             teacher_id = teacher.id
         subject = Subject(
             name=subject_name,
+            paper_code=paper_code or None,
             department_id=department_id,
             semester_id=semester_id,
             teacher_id=teacher_id)
         db.session.add(subject)
         teacher_suffix = f" and assigned to {subject.teacher.name}" if subject.teacher else ""
-        log_activity('subject_created', f"Created subject '{subject.name}'{teacher_suffix}.", 'subject', None, department_id)
+        log_activity('subject_created', f"Created subject '{subject_display_name(subject)}'{teacher_suffix}.", 'subject', None, department_id)
         db.session.commit()
     return render_template('subjects.html',
-        subjects=visible_subjects_query().order_by(Subject.name).all(),
+        subjects=visible_subjects_query().order_by(Subject.paper_code, Subject.name).all(),
         departments=ordered_departments_query().all(),
         semesters=visible_semesters_query().order_by(Semester.name).all(),
         teachers=visible_teachers_query().order_by(Teacher.name).all())
@@ -1169,12 +1265,19 @@ def edit_subject(id):
     s = Subject.query.get_or_404(id)
     if not can_access_department(s.department_id):
         abort(403)
-    department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
-    semester_id = int(request.form['semester_id'])
-    teacher_id = request.form.get('teacher_id') or None
+    department_id = parse_int_value(request.form.get('department_id')) if is_super_admin() else current_department_id()
+    semester_id = parse_int_value(request.form.get('semester_id'))
+    teacher_id = parse_int_value(request.form.get('teacher_id'))
+    paper_code = normalize_paper_code(request.form.get('paper_code'))
     subject_name = normalize_text(request.form.get('name'))
-    if not subject_name:
-        flash("Subject name is required.", "danger")
+    if not paper_code or not subject_name:
+        flash("Paper code and subject name are required.", "danger")
+        return redirect(url_for('subjects'))
+    if len(paper_code) > 50:
+        flash("Paper code must be 50 characters or fewer.", "danger")
+        return redirect(url_for('subjects'))
+    if not department_id or not semester_id:
+        flash("Valid department and semester are required.", "danger")
         return redirect(url_for('subjects'))
     semester = Semester.query.get_or_404(semester_id)
     if not can_access_department(department_id) or semester.department_id != department_id:
@@ -1188,17 +1291,27 @@ def edit_subject(id):
     if existing:
         flash(f"Subject '{subject_name}' already exists for this semester.", "warning")
         return redirect(url_for('subjects'))
+    if paper_code:
+        existing_code = Subject.query.filter(
+            Subject.id != s.id,
+            Subject.department_id == department_id,
+            db.func.upper(Subject.paper_code) == paper_code
+        ).first()
+        if existing_code:
+            flash(f"Paper code '{paper_code}' already exists for this department.", "warning")
+            return redirect(url_for('subjects'))
     if teacher_id:
-        teacher = Teacher.query.get_or_404(int(teacher_id))
+        teacher = Teacher.query.get_or_404(teacher_id)
         if teacher.department_id != department_id or not can_access_teacher(teacher):
             abort(403)
         teacher_id = teacher.id
     s.name = subject_name
+    s.paper_code = paper_code or None
     s.department_id = department_id
     s.semester_id = semester_id
     s.teacher_id = teacher_id
     teacher_suffix = f" Assigned teacher: {s.teacher.name}." if s.teacher else " No teacher assigned."
-    log_activity('subject_updated', f"Updated subject '{s.name}'.{teacher_suffix}", 'subject', s.id, department_id)
+    log_activity('subject_updated', f"Updated subject '{subject_display_name(s)}'.{teacher_suffix}", 'subject', s.id, department_id)
     db.session.commit()
     return redirect(url_for('subjects'))
 
@@ -1216,7 +1329,7 @@ def delete_subject(id):
     if any(counts.values()):
         flash(describe_delete_block(f"subject '{subject.name}'", counts), 'warning')
         return redirect(url_for('subjects'))
-    log_activity('subject_deleted', f"Deleted subject '{subject.name}'.", 'subject', subject.id, subject.department_id)
+    log_activity('subject_deleted', f"Deleted subject '{subject_display_name(subject)}'.", 'subject', subject.id, subject.department_id)
     db.session.delete(subject)
     db.session.commit()
     return redirect(url_for('subjects'))
@@ -1238,7 +1351,10 @@ def edit_teacher(id):
     t = Teacher.query.get_or_404(id)
     if not can_access_teacher(t):
         abort(403)
-    department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
+    department_id = parse_int_value(request.form.get('department_id')) if is_super_admin() else current_department_id()
+    if not department_id:
+        flash("Valid department is required.", "danger")
+        return redirect(url_for('teachers'))
     if not can_access_department(department_id):
         abort(403)
     name = normalize_text(request.form.get('name'))
@@ -1313,8 +1429,8 @@ def students():
     error = None
     if request.method == 'POST':
         try:
-            dept_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
-            sem_id = int(request.form.get('semester_id', 0))
+            dept_id = parse_int_value(request.form.get('department_id')) if is_super_admin() else current_department_id()
+            sem_id = parse_int_value(request.form.get('semester_id'))
             name = normalize_text(request.form.get('name'))
             roll_no = normalize_roll_no(request.form.get('roll_no'))
             email = normalize_email(request.form.get('email'))
@@ -1327,6 +1443,10 @@ def students():
                 error = "Name, roll number, and email are required"
             elif not is_valid_email(email):
                 error = email_format_rule_message()
+            elif not dept_id:
+                error = "Valid department is required"
+            elif not sem_id:
+                error = "Valid semester is required"
             elif not department:
                 error = f"Department with ID {dept_id} not found"
             elif not semester:
@@ -1443,13 +1563,16 @@ def edit_student(id):
     name = normalize_text(request.form.get('name'))
     roll_no = normalize_roll_no(request.form.get('roll_no'))
     email = normalize_email(request.form.get('email'))
-    dept_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
-    sem_id = int(request.form['semester_id'])
+    dept_id = parse_int_value(request.form.get('department_id')) if is_super_admin() else current_department_id()
+    sem_id = parse_int_value(request.form.get('semester_id'))
     if not name or not roll_no or not email:
         flash("Name, roll number, and email are required.", "danger")
         return redirect(url_for('students'))
     if not is_valid_email(email):
         flash(email_format_rule_message(), "danger")
+        return redirect(url_for('students'))
+    if not dept_id or not sem_id:
+        flash("Valid department and semester are required.", "danger")
         return redirect(url_for('students'))
     if not can_access_department(dept_id):
         abort(403)
@@ -1556,10 +1679,12 @@ def api_subjects(semester_id):
     semester = Semester.query.get_or_404(semester_id)
     if not can_access_department(semester.department_id):
         abort(403)
-    rows = visible_subjects_query().filter(Subject.semester_id == semester_id).order_by(Subject.name).all()
+    rows = visible_subjects_query().filter(Subject.semester_id == semester_id).order_by(Subject.paper_code, Subject.name).all()
     return jsonify([{
         'id': r.id,
         'name': r.name,
+        'paper_code': r.paper_code or '',
+        'display_name': subject_display_name(r),
         'teacher_id': r.teacher_id,
         'teacher_name': r.teacher.name if r.teacher else ''
     } for r in rows])
@@ -1574,10 +1699,12 @@ def api_department_subjects(department_id):
     rows = Subject.query.filter(
         Subject.department_id == department_id,
         Subject.name != SPECIAL_CLASS_SUBJECT_NAME
-    ).order_by(Subject.name).all()
+    ).order_by(Subject.paper_code, Subject.name).all()
     return jsonify([{
         'id': r.id,
         'name': r.name,
+        'paper_code': r.paper_code or '',
+        'display_name': subject_display_name(r),
         'semester': r.semester.name if r.semester else '',
         'teacher_id': r.teacher_id,
         'teacher_name': r.teacher.name if r.teacher else ''
@@ -1601,6 +1728,8 @@ def api_teachers(department_id):
 @role_required('super_admin', 'hod', 'teacher')
 def generate_qr():
     qr_image = session_id = scan_url = subject_name = duration = None
+    view_session = None
+    attendance_records = []
     
     # Check if viewing existing session
     view_session_id = request.args.get('session_id', type=int)
@@ -1614,13 +1743,15 @@ def generate_qr():
             subject_name = session_display_name(cs)
             scan_url = build_scan_url(cs.token)
             duration = int((cs.expires_at - cs.created_at).total_seconds() / 60)
+            view_session = cs
+            attendance_records = Attendance.query.filter_by(session_id=cs.id).order_by(Attendance.timestamp.desc()).all()
 
     if request.method == 'POST':
         token = str(uuid.uuid4())
         class_mode = request.form.get('class_mode', 'regular')
-        department_id = int(request.form['department_id'])
-        semester_id = int(request.form['semester_id'])
-        subject_id = request.form.get('subject_id')
+        department_id = parse_int_value(request.form.get('department_id'))
+        semester_id = parse_int_value(request.form.get('semester_id'))
+        subject_id = parse_int_value(request.form.get('subject_id'))
         special_title = normalize_text(request.form.get('special_title'))
         try:
             duration = int(request.form.get('duration', 30))
@@ -1628,8 +1759,10 @@ def generate_qr():
             abort(400, description='Duration must be a number.')
         if duration < MIN_QR_DURATION or duration > MAX_QR_DURATION:
             abort(400, description=f'Duration must be between {MIN_QR_DURATION} and {MAX_QR_DURATION} minutes.')
-        teacher_id = request.form.get('teacher_id') or None
+        teacher_id = parse_int_value(request.form.get('teacher_id'))
 
+        if not department_id or not semester_id:
+            abort(400, description='Department and semester are required.')
         if not can_access_department(department_id):
             abort(403)
         semester = Semester.query.get_or_404(semester_id)
@@ -1643,7 +1776,7 @@ def generate_qr():
         else:
             if not subject_id:
                 abort(400, description='Subject is required.')
-            subject = Subject.query.get_or_404(int(subject_id))
+            subject = Subject.query.get_or_404(subject_id)
             if not can_access_subject(subject) or subject.department_id != department_id or subject.semester_id != semester_id:
                 abort(403)
             special_title = None
@@ -1653,7 +1786,7 @@ def generate_qr():
         if user_role() == 'teacher':
             teacher_id = current_teacher_id()
         elif teacher_id:
-            teacher = Teacher.query.get_or_404(int(teacher_id))
+            teacher = Teacher.query.get_or_404(teacher_id)
             if not can_access_teacher(teacher) or teacher.department_id != subject.department_id:
                 abort(403)
         elif class_mode != 'special':
@@ -1695,6 +1828,8 @@ def generate_qr():
     return render_template('generate_qr.html',
         qr_image=qr_image, session_id=session_id,
         scan_url=scan_url, subject=subject_name, duration=duration,
+        view_session=view_session,
+        attendance_records=attendance_records,
         departments=ordered_departments_query().all(),
         recent_sessions=recent_sessions,
         current_teacher=current_user.teacher if user_role() == 'teacher' else None)
@@ -1734,33 +1869,68 @@ def delete_session(id):
 
 @app.route('/scan/<token>')
 def scan_qr(token):
-    return render_template('scan_qr.html', token=token)
+    cs = ClassSession.query.filter_by(token=token).first()
+    now_ist = get_ist_now()
+
+    if not cs or not cs.subject:
+        return render_template(
+            'scan_qr.html',
+            token=token,
+            is_active=False,
+            status_title='QR Expired',
+            status_message='This QR code is expired or invalid. Please ask your teacher for a new QR code.',
+            session_info=None
+        )
+
+    session_info = {
+        'subject': session_display_name(cs),
+        'department': cs.subject.department.display_name,
+        'semester': cs.subject.semester.name,
+        'created_at': format_12h(cs.created_at),
+        'expires_at': format_12h(cs.expires_at)
+    }
+    is_active = now_ist <= cs.expires_at
+    return render_template(
+        'scan_qr.html',
+        token=token,
+        is_active=is_active,
+        status_title='Mark Attendance' if is_active else 'QR Expired',
+        status_message='Enter your roll number to register attendance for this session.' if is_active else 'This QR code has expired. Please ask your teacher for a new QR code.',
+        session_info=session_info
+    )
 
 @app.route('/mark_attendance', methods=['POST'])
 def mark_attendance():
-    data = request.json
-    cs = ClassSession.query.filter_by(token=data['token']).first()
+    data = request.get_json(silent=True) or {}
+    token = normalize_text(data.get('token'))
+    roll_no = normalize_roll_no(data.get('roll_no'))
+
+    if not token or not roll_no:
+        return jsonify({'success': False, 'message': 'Roll number and QR token are required'}), 400
+
+    cs = ClassSession.query.filter_by(token=token).first()
     
     # Use IST timezone for comparison (naive datetime)
     now_ist = get_ist_now()
     
     if not cs or now_ist > cs.expires_at:
         return jsonify({'success': False, 'message': 'QR code expired or invalid'})
-    
-    # Case-insensitive roll number search
-    roll_no = data['roll_no'].strip().upper()
-    student = Student.query.filter(db.func.upper(Student.roll_no) == roll_no).first()
+
+    subject = cs.subject
+    if not subject:
+        return jsonify({'success': False, 'message': 'QR code expired or invalid'})
+
+    student = Student.query.filter(
+        db.func.upper(Student.roll_no) == roll_no,
+        Student.department_id == subject.department_id,
+        Student.semester_id == subject.semester_id
+    ).first()
     
     if not student:
-        return jsonify({'success': False, 'message': 'Student not found'})
-    
-    # Validate department and semester match
-    subject = cs.subject
-    if student.department_id != subject.department_id:
-        return jsonify({'success': False, 'message': 'This QR code is not for your department'})
-    
-    if student.semester_id != subject.semester_id:
-        return jsonify({'success': False, 'message': 'This QR code is not for your semester'})
+        return jsonify({
+            'success': False,
+            'message': f'This QR code is only for {subject.department.display_name} - {subject.semester.name}. Please check your roll number.'
+        })
     
     if Attendance.query.filter_by(student_id=student.id, session_id=cs.id).first():
         return jsonify({'success': False, 'message': 'Attendance already marked'})
@@ -1808,7 +1978,7 @@ def reports():
                 pass
         if date_to:
             try:
-                query = query.filter(ClassSession.created_at <= datetime.strptime(date_to, '%Y-%m-%d'))
+                query = query.filter(ClassSession.created_at < datetime.strptime(date_to, '%Y-%m-%d') + timedelta(days=1))
             except:
                 pass
         
@@ -1829,7 +1999,7 @@ def reports():
     return render_template('reports.html',
         departments=ordered_departments_query().all(),
         semesters=visible_semesters_query().order_by(Semester.name).all(),
-        subjects=visible_subjects_query().order_by(Subject.name).all(),
+        subjects=visible_subjects_query().order_by(Subject.paper_code, Subject.name).all(),
         sessions=sessions,
         stats=stats,
         selected_dept=dept_id,
@@ -1854,15 +2024,15 @@ def api_session_attendance(session_id):
             'department': cs.subject.department.display_name,
             'semester': cs.subject.semester.name,
             'teacher': cs.teacher.name if cs.teacher else 'N/A',
-            'created_at': cs.created_at.strftime('%Y-%m-%d %H:%M'),
-            'expires_at': cs.expires_at.strftime('%Y-%m-%d %H:%M')
+            'created_at': format_12h(cs.created_at),
+            'expires_at': format_12h(cs.expires_at)
         },
         'attendances': [{
             'id': a.id,
             'student_name': a.student.name,
             'student_roll': a.student.roll_no,
             'student_email': a.student.email,
-            'timestamp': a.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            'timestamp': format_12h(a.timestamp)
         } for a in attendances],
         'total': len(attendances)
     }
@@ -1880,6 +2050,9 @@ def detailed_report():
     if not dept_id or not sem_id:
         return redirect(url_for('reports'))
     if not can_access_department(dept_id):
+        abort(403)
+    semester = Semester.query.get_or_404(sem_id)
+    if semester.department_id != dept_id:
         abort(403)
     
     # Get all students in department/semester
@@ -1917,7 +2090,7 @@ def detailed_report():
     
     return render_template('detailed_report.html',
         dept=Department.query.get(dept_id),
-        sem=Semester.query.get(sem_id),
+        sem=semester,
         sessions=sessions,
         attendance_data=attendance_data)
 
@@ -1927,6 +2100,12 @@ def detailed_report():
 def export(department_id, semester_id, fmt):
     if not can_access_department(department_id):
         abort(403)
+    if fmt not in ('excel', 'pdf'):
+        abort(404)
+    dept = Department.query.get_or_404(department_id)
+    sem = Semester.query.get_or_404(semester_id)
+    if sem.department_id != department_id:
+        abort(403)
     students = Student.query.filter_by(department_id=department_id, semester_id=semester_id).all()
     sessions = db.session.query(ClassSession).join(Subject).filter(
         Subject.department_id == department_id,
@@ -1935,9 +2114,6 @@ def export(department_id, semester_id, fmt):
     if user_role() == 'teacher':
         sessions = sessions.filter(ClassSession.teacher_id == current_teacher_id())
     sessions = sessions.order_by(ClassSession.created_at.desc()).all()
-    
-    dept = Department.query.get(department_id)
-    sem = Semester.query.get(semester_id)
     
     # Build data
     headers = ['Roll No', 'Name', 'Email'] + [f"{session_display_name(s)}\n{s.created_at.strftime('%d/%m')}" for s in sessions] + ['Total', '%']
@@ -2017,7 +2193,7 @@ def add_admin():
         confirm_password = request.form.get('confirm_password', '')
         role = request.form.get('role', 'teacher' if user_role() == 'hod' else 'super_admin')
         department_id = request.form.get('department_id') or None
-        subject_id = request.form.get('subject_id') or None
+        subject_id = parse_int_value(request.form.get('subject_id'))
         teacher_id = None
         teacher_name = normalize_text(request.form.get('teacher_name'))
         student_id = None
@@ -2042,13 +2218,15 @@ def add_admin():
                         raise ValueError("Only Principal can create HOD accounts")
                     if not department_id:
                         raise ValueError("Department is required for HOD accounts")
-                    department_id = int(department_id)
+                    department_id = parse_int_value(department_id)
+                    if not department_id:
+                        raise ValueError("Valid department is required for HOD accounts")
                     if has_active_hod(department_id):
                         raise ValueError("This department already has an active HOD. Deactivate the current HOD first.")
                     teacher_id = None
                     student_id = None
                 elif role == 'teacher':
-                    department_id = int(department_id) if is_super_admin() else current_department_id()
+                    department_id = parse_int_value(department_id) if is_super_admin() else current_department_id()
                     if not teacher_name:
                         raise ValueError("Teacher name is required for teacher accounts")
                     if not department_id or not can_access_department(department_id):
@@ -2072,7 +2250,7 @@ def add_admin():
                     teacher_id = teacher.id
                     student_id = None
                     if subject_id:
-                        subject = Subject.query.get_or_404(int(subject_id))
+                        subject = Subject.query.get_or_404(subject_id)
                         if subject.name == SPECIAL_CLASS_SUBJECT_NAME or subject.department_id != department_id:
                             raise ValueError("Please select a valid subject from the same department")
                         subject.teacher_id = teacher.id
@@ -2106,10 +2284,10 @@ def add_admin():
                 db.session.commit()
                 assigned_subject = None
                 if role == 'teacher' and subject_id:
-                    assigned_subject = Subject.query.get(int(subject_id))
+                    assigned_subject = Subject.query.get(subject_id)
                 message = f"{role_label(role)} account '{username}' added successfully."
                 if assigned_subject:
-                    message += f" Subject assigned: {assigned_subject.name}."
+                    message += f" Subject assigned: {subject_display_name(assigned_subject)}."
                 message += " The user will be reminded to change the password after login."
             except Exception as e:
                 db.session.rollback()
@@ -2144,7 +2322,7 @@ def edit_admin(id):
     username = normalize_email(request.form.get('username', ''))
     teacher_name = normalize_text(request.form.get('teacher_name'))
     department_id = request.form.get('department_id') or None
-    subject_id = request.form.get('subject_id') or None
+    subject_id = parse_int_value(request.form.get('subject_id'))
 
     if not username:
         flash("Account email is required.", "danger")
@@ -2166,7 +2344,9 @@ def edit_admin(id):
                 abort(403)
             if not department_id:
                 raise ValueError("Department is required for HOD accounts")
-            department_id = int(department_id)
+            department_id = parse_int_value(department_id)
+            if not department_id:
+                raise ValueError("Valid department is required for HOD accounts")
             if not can_access_department(department_id):
                 abort(403)
             if admin.is_active and has_active_hod(department_id, exclude_admin_id=admin.id):
@@ -2176,9 +2356,11 @@ def edit_admin(id):
         elif admin.role == 'teacher':
             if not department_id:
                 raise ValueError("Department is required for Teacher accounts")
-            department_id = int(department_id) if is_super_admin() else current_department_id()
+            department_id = parse_int_value(department_id) if is_super_admin() else current_department_id()
             if not teacher_name:
                 raise ValueError("Teacher name is required for Teacher accounts")
+            if not department_id:
+                raise ValueError("Valid department is required for Teacher accounts")
             if not can_access_department(department_id):
                 abort(403)
 
@@ -2207,7 +2389,7 @@ def edit_admin(id):
             admin.department_id = department_id
 
             if subject_id:
-                subject = Subject.query.get_or_404(int(subject_id))
+                subject = Subject.query.get_or_404(subject_id)
                 if subject.name == SPECIAL_CLASS_SUBJECT_NAME or subject.department_id != department_id:
                     raise ValueError("Please select a valid subject from the same department")
                 subject.teacher_id = teacher.id

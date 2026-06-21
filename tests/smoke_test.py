@@ -17,10 +17,23 @@ def assert_status(client, path, expected):
         raise AssertionError(f"{path}: expected {expected}, got {actual}")
 
 
+def csrf_data(client, data=None):
+    data = dict(data or {})
+    with client.session_transaction() as sess:
+        token = sess.get("_csrf_token")
+    if not token:
+        client.get("/login")
+        with client.session_transaction() as sess:
+            token = sess.get("_csrf_token")
+    data["_csrf_token"] = token
+    return data
+
+
 def login(client, username, password):
+    client.get("/login")
     response = client.post(
         "/login",
-        data={"username": username, "password": password},
+        data=csrf_data(client, {"username": username, "password": password}),
         follow_redirects=False,
     )
     if response.status_code != 302:
@@ -91,7 +104,7 @@ def main():
 
     post_login_redirect = next_client.post(
         "/login?next=%2Fadd_admin",
-        data={"username": "_smoke_principal_root", "password": "test123", "next": "/add_admin"},
+        data=csrf_data(next_client, {"username": "_smoke_principal_root", "password": "test123", "next": "/add_admin"}),
         follow_redirects=False,
     )
     if post_login_redirect.status_code != 302 or not post_login_redirect.headers.get("Location", "").endswith("/add_admin"):
@@ -137,13 +150,13 @@ def main():
     login(principal_client, "_smoke_principal_root", "test123")
     blocked_student = principal_client.post(
         "/add_admin",
-        data={
+        data=csrf_data(principal_client, {
             "username": "blocked.student@example.com",
             "role": "student",
             "password": "test123",
             "confirm_password": "test123",
             "student_id": student.id,
-        },
+        }),
         follow_redirects=True,
     )
     if "Invalid role selected" not in blocked_student.get_data(as_text=True):
@@ -151,7 +164,10 @@ def main():
 
     student_account = app.Admin.query.filter_by(student_id=student.id).first()
     if student_account:
-        delete_student_account = principal_client.post(f"/delete_admin/{student_account.id}")
+        delete_student_account = principal_client.post(
+            f"/delete_admin/{student_account.id}",
+            data=csrf_data(principal_client)
+        )
         if delete_student_account.status_code != 403:
             raise AssertionError("Student accounts should not be deleted from Accounts page.")
 
@@ -173,12 +189,12 @@ def main():
 
     created_principal = fresh_principal_client.post(
         "/add_admin",
-        data={
+        data=csrf_data(fresh_principal_client, {
             "username": "_smoke_principal",
             "role": "super_admin",
             "password": "test123",
             "confirm_password": "test123",
-        },
+        }),
         follow_redirects=True,
     )
     created_principal_html = created_principal.get_data(as_text=True)
@@ -186,13 +202,20 @@ def main():
         raise AssertionError("Principal account creation from Accounts page should be allowed.")
 
     current_principal = app.Admin.query.filter_by(username="_smoke_principal_root", role="super_admin").first()
-    if current_principal and fresh_principal_client.post(f"/delete_admin/{current_principal.id}").status_code != 403:
+    if current_principal and fresh_principal_client.post(
+        f"/delete_admin/{current_principal.id}",
+        data=csrf_data(fresh_principal_client)
+    ).status_code != 403:
         raise AssertionError("Principal accounts should be protected from Accounts deletion.")
 
     extra_principal = app.Admin.query.filter_by(username="_smoke_principal", role="super_admin").first()
     if not extra_principal:
         raise AssertionError("Created Principal account should exist.")
-    delete_extra_principal = fresh_principal_client.post(f"/delete_admin/{extra_principal.id}", follow_redirects=False)
+    delete_extra_principal = fresh_principal_client.post(
+        f"/delete_admin/{extra_principal.id}",
+        data=csrf_data(fresh_principal_client),
+        follow_redirects=False
+    )
     if delete_extra_principal.status_code != 302:
         raise AssertionError("Additional Principal accounts should be deletable by Principal.")
 
@@ -216,7 +239,7 @@ def main():
     )
     import_response = teacher_client.post(
         "/students/import",
-        data={"student_file": (io.BytesIO(csv_data.encode("utf-8")), "students.csv")},
+        data=csrf_data(teacher_client, {"student_file": (io.BytesIO(csv_data.encode("utf-8")), "students.csv")}),
         content_type="multipart/form-data",
         follow_redirects=True,
     )
@@ -248,14 +271,14 @@ def main():
 
     created_teacher = teacher_create_client.post(
         "/add_admin",
-        data={
+        data=csrf_data(teacher_create_client, {
             "username": temp_teacher_email,
             "role": "teacher",
             "teacher_name": "Smoke New Teacher",
             "department_id": department.id,
             "password": "test123",
             "confirm_password": "test123",
-        },
+        }),
         follow_redirects=True,
     )
     created_teacher_html = created_teacher.get_data(as_text=True)
@@ -274,19 +297,21 @@ def main():
 
     password_change = password_client.post(
         "/account",
-        data={
+        data=csrf_data(password_client, {
             "current_password": "test123",
             "new_password": "test456",
             "confirm_password": "test456",
-        },
+        }),
         follow_redirects=True,
     )
     if password_change.status_code != 200 or "Password updated successfully." not in password_change.get_data(as_text=True):
         raise AssertionError("My Account page should allow the logged-in user to change password.")
 
-    old_login_response = app.app.test_client().post(
+    old_login_client = app.app.test_client()
+    old_login_client.get("/login")
+    old_login_response = old_login_client.post(
         "/login",
-        data={"username": "_smoke_teacher@gmail.com", "password": "test123"},
+        data=csrf_data(old_login_client, {"username": "_smoke_teacher@gmail.com", "password": "test123"}),
         follow_redirects=False,
     )
     if old_login_response.status_code == 302:

@@ -23,6 +23,7 @@
 </div>
 
 <form method="POST" class="form-panel">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3 align-items-end">
     <div class="col-md-5">
       <label class="form-label" for="semester_name">Semester Name</label>
@@ -59,14 +60,16 @@
           <td>{{ s.department.display_name }}</td>
           <td class="text-end">
             <button type="button" class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit semester"
-              onclick="openEdit('{{ s.id }}','{{ s.name }}','{{ s.department_id }}')">
+              onclick='openEdit({{ s.id|tojson }}, {{ s.name|tojson }}, {{ s.department_id|tojson }})'>
               <i class="bi bi-pencil-square"></i>
             </button>
             <button type="button" class="btn btn-sm btn-danger btn-icon" data-bs-toggle="tooltip" title="Delete semester"
-              onclick="if(confirm('Delete {{ s.name }}?')) { document.getElementById('del-sem-{{ s.id }}').submit(); }">
+              onclick='if(confirm({{ ("Delete " ~ s.name ~ "?")|tojson }})) { document.getElementById("del-sem-{{ s.id }}").submit(); }'>
               <i class="bi bi-trash"></i>
             </button>
-            <form id="del-sem-{{ s.id }}" method="POST" action="/semesters/delete/{{ s.id }}" class="d-none"></form>
+            <form id="del-sem-{{ s.id }}" method="POST" action="/semesters/delete/{{ s.id }}" class="d-none">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            </form>
           </td>
         </tr>
         {% endfor %}
@@ -81,6 +84,7 @@
 <div class="modal fade" id="editModal" tabindex="-1">
   <div class="modal-dialog">
     <form method="POST" id="editForm" class="modal-content">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       <div class="modal-header">
         <h5 class="modal-title">Edit Semester</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

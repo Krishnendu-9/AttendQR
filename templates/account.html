@@ -74,6 +74,7 @@
       <p class="section-subtitle mb-4">Use your current password to set a new private password for this account.</p>
 
       <form method="POST" id="accountPasswordForm">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="mb-3">
           <label for="current_password" class="form-label">Current Password</label>
           <div class="input-group password-field">
@@ -127,7 +128,7 @@
   <div class="activity-log-list mb-4">
     {% for log in security_logs %}
     <div class="activity-log-item">
-      <div class="activity-log-meta">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }} - {{ log.actor_username }}</div>
+      <div class="activity-log-meta">{{ format_12h(log.created_at) }} - {{ log.actor_username }}</div>
       <div class="activity-log-text">{{ log.description }}</div>
     </div>
     {% endfor %}
@@ -172,7 +173,7 @@
         return { label: 'Too short', width: '18%', tone: 'is-weak', hint: 'Password must be at least 6 characters long.', strongEnough: false };
       }
       if (score <= 3) {
-        return { label: 'Weak', width: '34%', tone: 'is-weak', hint: 'Try adding uppercase letters, numbers, or a symbol.', strongEnough: false };
+        return { label: 'Weak', width: '34%', tone: 'is-weak', hint: 'Allowed, but uppercase letters, numbers, or a symbol are recommended.', strongEnough: true };
       }
       if (score <= 5) {
         return { label: 'Medium', width: '68%', tone: 'is-medium', hint: 'Good start. A symbol or longer phrase will make it stronger.', strongEnough: true };

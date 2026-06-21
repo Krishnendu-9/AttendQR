@@ -11,17 +11,24 @@
       <i class="bi bi-qr-code"></i>
     </div>
     <h2 class="h4 fw-bold mb-1">{{ subject }}</h2>
-    <p class="text-muted mb-3">Valid for {{ duration }} minutes</p>
+    <div class="text-muted mb-3">
+      <div>Valid for {{ duration }} minutes</div>
+      {% if view_session %}
+      <div>Created at: {{ format_12h(view_session.created_at) }}</div>
+      <div>Expired at: {{ format_12h(view_session.expires_at) }}</div>
+      {% endif %}
+    </div>
     <img src="/{{ qr_image }}" class="qr-preview mb-3" alt="Generated QR code">
     <div class="small text-muted text-break mb-3">{{ scan_url }}</div>
     <div class="d-flex flex-wrap justify-content-center gap-2">
       <a href="{{ url_for('generate_qr') }}" class="btn btn-primary">
         <i class="bi bi-plus-circle me-1"></i> New QR
       </a>
-      <a href="/reports?session_id={{ session_id }}" class="btn btn-info">
+      <a href="#qr-attendance" class="btn btn-info">
         <i class="bi bi-eye me-1"></i> View Attendance
       </a>
       <form method="POST" action="/delete_session/{{ session_id }}" onsubmit="return confirm('Delete this QR session and all attendance records?')">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-danger" type="submit">
           <i class="bi bi-trash me-1"></i> Delete Session
         </button>
@@ -29,8 +36,49 @@
     </div>
   </div>
 </div>
+
+<div class="table-card mb-4" id="qr-attendance">
+  <div class="card-header">
+    <h2 class="section-title"><i class="bi bi-clipboard-check me-1"></i> QR Attendance</h2>
+    <p class="section-subtitle">
+      Attendance marked for this QR session only.
+      {% if view_session %}
+      {{ view_session.subject.department.display_name }} - {{ view_session.subject.semester.name }}
+      {% endif %}
+    </p>
+  </div>
+  {% if attendance_records %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Roll No</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Marked At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for attendance in attendance_records %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="fw-semibold">{{ attendance.student.roll_no }}</td>
+          <td>{{ attendance.student.name }}</td>
+          <td>{{ attendance.student.email }}</td>
+          <td>{{ format_12h(attendance.timestamp) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="p-4 text-center text-muted">No attendance has been marked for this QR session yet.</div>
+  {% endif %}
+</div>
 {% else %}
 <form method="POST" class="form-panel">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3">
     <div class="col-md-6 col-xl">
       <label class="form-label" for="class_mode">Class Type</label>
@@ -92,6 +140,7 @@
 </form>
 {% endif %}
 
+{% if not qr_image %}
 <div class="table-card">
   <div class="card-header">
     <h2 class="section-title"><i class="bi bi-clock-history me-1"></i> Recent QR Sessions</h2>
@@ -125,7 +174,7 @@
           <td>{{ cs.subject.department.display_name }}</td>
           <td>{{ cs.subject.semester.name }}</td>
           <td>{{ cs.teacher.name if cs.teacher else 'N/A' }}</td>
-          <td>{{ cs.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ format_12h(cs.created_at) }}</td>
           <td>
             {% set now = now() if now else None %}
             {% if cs.expires_at > now %}
@@ -139,7 +188,8 @@
               <i class="bi bi-qr-code"></i>
             </a>
             <form method="POST" action="/delete_session/{{ cs.id }}" class="d-inline"
-                  onsubmit="return confirm('Delete this session and all attendance records for {{ session_display_name(cs) }}?')">
+                  onsubmit='return confirm({{ ("Delete this session and all attendance records for " ~ session_display_name(cs) ~ "?")|tojson }})'>
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete session">
                 <i class="bi bi-trash"></i>
               </button>
@@ -154,6 +204,7 @@
   <div class="p-4 text-center text-muted">No QR sessions generated yet.</div>
   {% endif %}
 </div>
+{% endif %}
 
 <script>
 function loadSemesters(dept_id, target_id) {
@@ -163,7 +214,7 @@ function loadSemesters(dept_id, target_id) {
     .then(data => {
       const sel = document.getElementById(target_id);
       sel.innerHTML = '<option value="">Select semester</option>';
-      data.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+      data.forEach(s => sel.add(new Option(s.name, s.id)));
     });
 }
 function loadSubjects(sem_id, target_id) {
@@ -173,7 +224,12 @@ function loadSubjects(sem_id, target_id) {
     .then(data => {
       const sel = document.getElementById(target_id);
       sel.innerHTML = '<option value="">Select subject</option>';
-      data.forEach(s => sel.innerHTML += `<option value="${s.id}" data-teacher-id="${s.teacher_id || ''}" data-teacher-name="${s.teacher_name || ''}">${s.name}</option>`);
+      data.forEach(s => {
+        const option = new Option(s.display_name, s.id);
+        option.dataset.teacherId = s.teacher_id || '';
+        option.dataset.teacherName = s.teacher_name || '';
+        sel.add(option);
+      });
       syncTeacherToSubject();
     });
 }
@@ -186,7 +242,7 @@ function loadTeachers(dept_id, target_id) {
       const sel = document.getElementById(target_id);
       if (!sel) return;
       sel.innerHTML = '<option value="">Select teacher</option>';
-      data.forEach(t => sel.innerHTML += `<option value="${t.id}">${t.name}</option>`);
+      data.forEach(t => sel.add(new Option(t.name, t.id)));
       syncTeacherToSubject();
     });
 }

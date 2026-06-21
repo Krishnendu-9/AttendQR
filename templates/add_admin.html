@@ -26,6 +26,7 @@
       </div>
       <div class="card-body">
         <form method="POST" id="addAccountForm">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
             <label for="username" class="form-label">Account Email</label>
             <input type="email" class="form-control" id="username" name="username" placeholder="name@rcciit.org.in" pattern="^[^@\s]+@(rcciit\.org\.in|gmail\.com)$" title="Use a valid email ending with @rcciit.org.in or @gmail.com" required>
@@ -141,7 +142,7 @@
                   <span class="badge text-bg-warning">Change Password Pending</span>
                   {% endif %}
                   {% if locked %}
-                  <div class="small text-muted">Until {{ admin.locked_until.strftime('%H:%M') }}</div>
+                  <div class="small text-muted">Until {{ format_12h(admin.locked_until, include_date=False) }}</div>
                   {% endif %}
                 </div>
               </td>
@@ -175,7 +176,8 @@
                 {% endif %}
                 {% if can_reset_staff_account(admin) %}
                 <form method="POST" action="/reset_admin_password/{{ admin.id }}" class="d-inline"
-                      onsubmit="return confirm('Reset password for {{ admin.username }}? A temporary password will be shown once.')">
+                      onsubmit='return confirm({{ ("Reset password for " ~ admin.username ~ "? A temporary password will be shown once.")|tojson }})'>
+                  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                   <button class="btn btn-sm btn-info btn-icon" type="submit" data-bs-toggle="tooltip" title="Reset password">
                     <i class="bi bi-key"></i>
                   </button>
@@ -183,7 +185,8 @@
                 {% endif %}
                 {% if can_toggle_account_status(admin) %}
                 <form method="POST" action="/toggle_admin_status/{{ admin.id }}" class="d-inline"
-                      onsubmit="return confirm('{{ 'Deactivate' if admin.is_active else 'Activate' }} {{ admin.username }}?')">
+                      onsubmit='return confirm({{ (("Deactivate" if admin.is_active else "Activate") ~ " " ~ admin.username ~ "?")|tojson }})'>
+                  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                   <button class="btn btn-sm {{ 'btn-secondary' if admin.is_active else 'btn-success' }} btn-icon" type="submit" data-bs-toggle="tooltip" title="{{ 'Deactivate' if admin.is_active else 'Activate' }} account">
                     <i class="bi {{ 'bi-pause-circle' if admin.is_active else 'bi-play-circle' }}"></i>
                   </button>
@@ -191,7 +194,8 @@
                 {% endif %}
                 {% if can_manage_account(admin) %}
                 <form method="POST" action="/delete_admin/{{ admin.id }}" class="d-inline"
-                      onsubmit="return confirm('Delete account \'{{ admin.username }}\'?')">
+                      onsubmit='return confirm({{ ("Delete account '" ~ admin.username ~ "'?")|tojson }})'>
+                  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                   <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete account">
                     <i class="bi bi-trash"></i>
                   </button>
@@ -219,6 +223,7 @@
 <div class="modal fade" id="editAccountModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <form method="POST" id="editAccountForm" class="modal-content">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       <div class="modal-header">
         <h5 class="modal-title">Edit Account</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -272,7 +277,7 @@
       <div class="activity-log-list">
         {% for log in recent_logs %}
         <div class="activity-log-item">
-          <div class="activity-log-meta">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }} - {{ log.actor_username }}</div>
+          <div class="activity-log-meta">{{ format_12h(log.created_at) }} - {{ log.actor_username }}</div>
           <div class="activity-log-text">{{ log.description }}</div>
         </div>
         {% endfor %}
@@ -336,7 +341,7 @@ function handleDepartmentChange() {
       subjectSelect.innerHTML = '<option value="">Assign later</option>';
       data.forEach(subject => {
         const teacherSuffix = subject.teacher_name ? ` - assigned to ${subject.teacher_name}` : '';
-        subjectSelect.innerHTML += `<option value="${subject.id}">${subject.name} (${subject.semester})${teacherSuffix}</option>`;
+        subjectSelect.add(new Option(`${subject.display_name} (${subject.semester})${teacherSuffix}`, subject.id));
       });
     })
     .catch(() => {
@@ -359,7 +364,7 @@ function loadEditSubjects(departmentId) {
       subjectSelect.innerHTML = '<option value="">No change</option>';
       data.forEach(subject => {
         const teacherSuffix = subject.teacher_name ? ` - assigned to ${subject.teacher_name}` : '';
-        subjectSelect.innerHTML += `<option value="${subject.id}">${subject.name} (${subject.semester})${teacherSuffix}</option>`;
+        subjectSelect.add(new Option(`${subject.display_name} (${subject.semester})${teacherSuffix}`, subject.id));
       });
     })
     .catch(() => {
@@ -452,7 +457,7 @@ function filterAccountsTable() {
       return { label: 'Too short', width: '18%', tone: 'is-weak', hint: 'Password must be at least 6 characters long.', strongEnough: false };
     }
     if (score <= 3) {
-      return { label: 'Weak', width: '34%', tone: 'is-weak', hint: 'Try adding uppercase letters, numbers, or a symbol.', strongEnough: false };
+      return { label: 'Weak', width: '34%', tone: 'is-weak', hint: 'Allowed, but uppercase letters, numbers, or a symbol are recommended.', strongEnough: true };
     }
     if (score <= 5) {
       return { label: 'Medium', width: '68%', tone: 'is-medium', hint: 'Good start. A symbol or longer phrase will make it stronger.', strongEnough: true };

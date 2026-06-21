@@ -83,7 +83,7 @@
                   <div class="teacher-detail-subjects">
                     {% if t.assigned_subjects %}
                       {% for subject in t.assigned_subjects|sort(attribute='name') %}
-                      <span class="teacher-subject-chip">{{ subject.name }}{% if subject.semester %} · {{ subject.semester.name }}{% endif %}</span>
+                      <span class="teacher-subject-chip">{{ subject_display_name(subject) }}{% if subject.semester %} · {{ subject.semester.name }}{% endif %}</span>
                       {% endfor %}
                     {% else %}
                       <span class="text-muted">No subjects assigned yet.</span>
