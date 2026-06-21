@@ -108,6 +108,14 @@ python -m venv venv
 .\venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
+Create a local environment file from the example:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Update `.env` if you want to change the secret key, database URL, LAN URL settings, or initial Principal account.
+
 ## Running the Application
 
 Recommended local run:
@@ -136,15 +144,16 @@ Or run without debug mode:
 .\venv\Scripts\python.exe -c "from app import app; app.run(host='0.0.0.0', port=5000, debug=False)"
 ```
 
-## Default Login
+## Initial Login
 
-Default Principal account:
+The first Principal account is created from these environment variables when the database has no accounts yet:
 
 ```text
-username: principal@rcciit.org.in
-password: RCC@qr2026
-role: Principal
+DEFAULT_PRINCIPAL_EMAIL
+DEFAULT_PRINCIPAL_PASSWORD
 ```
+
+For a local demo, copy `.env.example` to `.env` and use the values defined there. Change the password before sharing or deploying the project.
 
 ## Account Rules
 

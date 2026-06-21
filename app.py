@@ -2321,8 +2321,8 @@ with app.app_context():
     ensure_subject_columns()
     ensure_attendance_unique_index()
     backfill_subject_teacher_assignments()
-    default_principal_username = 'principal@rcciit.org.in'
-    default_principal_password = 'RCC@qr2026'
+    default_principal_username = normalize_email(app.config['DEFAULT_PRINCIPAL_EMAIL'])
+    default_principal_password = app.config['DEFAULT_PRINCIPAL_PASSWORD']
     if not Admin.query.first():
         db.session.add(Admin(
             username=default_principal_username,

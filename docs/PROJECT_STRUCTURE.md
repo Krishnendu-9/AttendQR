@@ -3,7 +3,7 @@
 The project uses a simple Flask layout suitable for a final-year academic project.
 
 ```text
-minor_project/
+QR-Based-Smart-Attendance-Management-System/
   app.py
   models.py
   config.py
@@ -35,3 +35,8 @@ minor_project/
 The SQLite database lives inside `instance/`. This folder is ignored by git because it is runtime data.
 
 Generated QR images are runtime artifacts and should not be committed.
+
+## Environment Files
+
+- `.env.example`: committed template for required and optional environment variables.
+- `.env`: local machine-specific values; ignored by git and not committed.
