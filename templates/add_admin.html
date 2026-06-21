@@ -28,7 +28,7 @@
         <form method="POST" id="addAccountForm">
           <div class="mb-3">
             <label for="username" class="form-label">Account Email</label>
-            <input type="email" class="form-control" id="username" name="username" placeholder="name@rcciit.org.in" required>
+            <input type="email" class="form-control" id="username" name="username" placeholder="name@rcciit.org.in" pattern="^[^@\s]+@(rcciit\.org\.in|gmail\.com)$" title="Use a valid email ending with @rcciit.org.in or @gmail.com" required>
             <div class="form-text">Use an account email ending with @rcciit.org.in or @gmail.com.</div>
           </div>
           <div class="mb-3">
@@ -226,7 +226,7 @@
       <div class="modal-body">
         <div class="mb-3">
           <label for="edit_username" class="form-label">Account Email</label>
-          <input type="email" class="form-control" id="edit_username" name="username" placeholder="name@rcciit.org.in" required>
+          <input type="email" class="form-control" id="edit_username" name="username" placeholder="name@rcciit.org.in" pattern="^[^@\s]+@(rcciit\.org\.in|gmail\.com)$" title="Use a valid email ending with @rcciit.org.in or @gmail.com" required>
         </div>
         <div class="mb-3">
           <label for="edit_role_label" class="form-label">Role</label>

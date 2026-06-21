@@ -8,3 +8,6 @@ Pillow
 pytz
 
 #.\venv\Scripts\python.exe app.py 
+
+#username: principal@rcciit.org.in
+#password: RCC@qr2026

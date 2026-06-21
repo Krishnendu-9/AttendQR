@@ -88,6 +88,9 @@ class ClassSession(db.Model):
     teacher = db.relationship('Teacher', backref=db.backref('sessions', lazy=True))
 
 class Attendance(db.Model):
+    __table_args__ = (
+        db.UniqueConstraint('student_id', 'session_id', name='unique_student_session_attendance'),
+    )
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False)
     session_id = db.Column(db.Integer, db.ForeignKey('class_session.id', ondelete='CASCADE'), nullable=False)

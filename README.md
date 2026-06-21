@@ -141,8 +141,8 @@ Or run without debug mode:
 Default Principal account:
 
 ```text
-username: admin
-password: admin123
+username: principal@rcciit.org.in
+password: RCC@qr2026
 role: Principal
 ```
 

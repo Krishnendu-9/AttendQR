@@ -5,6 +5,7 @@ from models import db, Admin, Student, ClassSession, Attendance, Department, Sub
 from config import Config
 from datetime import datetime, timedelta
 from sqlalchemy import event, text, and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 from functools import wraps
 from math import ceil
@@ -115,19 +116,41 @@ ROLE_LABELS = {
 ATTENDANCE_TARGET = 80
 ALLOWED_STAFF_EMAIL_DOMAINS = ('@rcciit.org.in', '@gmail.com')
 SPECIAL_CLASS_SUBJECT_NAME = '__SPECIAL_CLASS__'
+MIN_QR_DURATION = 1
+MAX_QR_DURATION = 180
+EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}$")
+
+
+def normalize_text(value):
+    return ' '.join((value or '').strip().split())
 
 
 def normalize_email(value):
-    return (value or '').strip().lower()
+    return normalize_text(value).lower()
+
+
+def normalize_roll_no(value):
+    return normalize_text(value).upper()
+
+
+def is_valid_email(value):
+    email = normalize_email(value)
+    if not email or len(email) > 120:
+        return False
+    return bool(EMAIL_PATTERN.fullmatch(email))
 
 
 def is_allowed_staff_email(value):
     email = normalize_email(value)
-    return any(email.endswith(domain) for domain in ALLOWED_STAFF_EMAIL_DOMAINS)
+    return is_valid_email(email) and any(email.endswith(domain) for domain in ALLOWED_STAFF_EMAIL_DOMAINS)
+
+
+def email_format_rule_message():
+    return "Use a valid email address."
 
 
 def staff_email_rule_message():
-    return "Use an email ending with @rcciit.org.in or @gmail.com"
+    return "Use a valid email ending with @rcciit.org.in or @gmail.com."
 
 
 def normalize_branch(value):
@@ -674,6 +697,18 @@ def ensure_existing_student_accounts():
     db.session.commit()
 
 
+def ensure_attendance_unique_index():
+    try:
+        db.session.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_attendance_student_session "
+            "ON attendance(student_id, session_id)"
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
+
 def normalize_header(value):
     return (value or '').strip().lower().replace(' ', '_')
 
@@ -765,13 +800,16 @@ def import_students_from_rows(rows):
     seen_emails = set()
 
     for index, row in enumerate(rows, start=2):
-        name = row_value(row, 'name', 'student_name')
-        roll_no = row_value(row, 'roll_no', 'roll', 'roll_number').upper()
-        email = row_value(row, 'email', 'student_email').lower()
+        name = normalize_text(row_value(row, 'name', 'student_name'))
+        roll_no = normalize_roll_no(row_value(row, 'roll_no', 'roll', 'roll_number'))
+        email = normalize_email(row_value(row, 'email', 'student_email'))
         department = resolve_import_department(row)
 
         if not name or not roll_no or not email:
             errors.append(f"Row {index}: name, roll_no, and email are required")
+            continue
+        if not is_valid_email(email):
+            errors.append(f"Row {index}: valid student email is required")
             continue
         if not department or not can_access_department(department.id):
             errors.append(f"Row {index}: valid department is required")
@@ -800,6 +838,9 @@ def import_students_from_rows(rows):
             continue
         if Student.query.filter(db.func.lower(Student.email) == email).first():
             errors.append(f"Row {index}: email {email} already exists")
+            continue
+        if Admin.query.filter(db.func.lower(Admin.username) == email).first():
+            errors.append(f"Row {index}: login account email {email} already exists")
             continue
 
         student = Student(
@@ -941,12 +982,15 @@ def departments():
         branch = normalize_branch(request.form.get('branch'))
         course_name = normalize_course_name(request.form.get('name'))
         if not branch or not course_name:
-            abort(400)
+            flash("Branch and course name are required.", "danger")
+            return redirect(url_for('departments'))
         existing = Department.query.filter(db.func.lower(Department.name) == course_name.lower()).first()
-        if not existing:
-            department = Department(branch=branch, name=course_name)
-            db.session.add(department)
-            log_activity('department_created', f"Created department '{department.display_name}'.", 'department', None)
+        if existing:
+            flash(f"Department '{existing.display_name}' already exists.", "warning")
+            return redirect(url_for('departments'))
+        department = Department(branch=branch, name=course_name)
+        db.session.add(department)
+        log_activity('department_created', f"Created department '{department.display_name}'.", 'department', None)
         db.session.commit()
     return render_template('departments.html', departments=ordered_departments_query().all())
 
@@ -958,12 +1002,14 @@ def edit_department(id):
     branch = normalize_branch(request.form.get('branch'))
     course_name = normalize_course_name(request.form.get('name'))
     if not branch or not course_name:
-        abort(400)
+        flash("Branch and course name are required.", "danger")
+        return redirect(url_for('departments'))
     existing = Department.query.filter(
         db.func.lower(Department.name) == course_name.lower(),
         Department.id != d.id
     ).first()
     if existing:
+        flash(f"Department '{existing.display_name}' already exists.", "warning")
         return redirect(url_for('departments'))
     d.branch = branch
     d.name = course_name
@@ -1001,9 +1047,20 @@ def delete_department(id):
 def semesters():
     if request.method == 'POST':
         department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
+        name = normalize_text(request.form.get('name'))
+        if not name:
+            flash("Semester name is required.", "danger")
+            return redirect(url_for('semesters'))
         if not can_access_department(department_id):
             abort(403)
-        semester = Semester(name=request.form['name'], department_id=department_id)
+        existing = Semester.query.filter(
+            Semester.department_id == department_id,
+            db.func.lower(Semester.name) == name.lower()
+        ).first()
+        if existing:
+            flash(f"Semester '{name}' already exists for this department.", "warning")
+            return redirect(url_for('semesters'))
+        semester = Semester(name=name, department_id=department_id)
         db.session.add(semester)
         log_activity('semester_created', f"Created semester '{semester.name}' for {semester.department.display_name if semester.department else 'selected department'}.", 'semester', None, department_id)
         db.session.commit()
@@ -1018,10 +1075,22 @@ def edit_semester(id):
     s = Semester.query.get_or_404(id)
     if not can_access_department(s.department_id):
         abort(403)
-    s.name = request.form['name']
+    name = normalize_text(request.form.get('name'))
+    if not name:
+        flash("Semester name is required.", "danger")
+        return redirect(url_for('semesters'))
     department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
     if not can_access_department(department_id):
         abort(403)
+    existing = Semester.query.filter(
+        Semester.id != s.id,
+        Semester.department_id == department_id,
+        db.func.lower(Semester.name) == name.lower()
+    ).first()
+    if existing:
+        flash(f"Semester '{name}' already exists for this department.", "warning")
+        return redirect(url_for('semesters'))
+    s.name = name
     s.department_id = department_id
     log_activity('semester_updated', f"Updated semester '{s.name}'.", 'semester', s.id, department_id)
     db.session.commit()
@@ -1058,16 +1127,28 @@ def subjects():
         department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
         semester_id = int(request.form['semester_id'])
         teacher_id = request.form.get('teacher_id') or None
+        subject_name = normalize_text(request.form.get('name'))
+        if not subject_name:
+            flash("Subject name is required.", "danger")
+            return redirect(url_for('subjects'))
         semester = Semester.query.get_or_404(semester_id)
         if not can_access_department(department_id) or semester.department_id != department_id:
             abort(403)
+        existing = Subject.query.filter(
+            Subject.department_id == department_id,
+            Subject.semester_id == semester_id,
+            db.func.lower(Subject.name) == subject_name.lower()
+        ).first()
+        if existing:
+            flash(f"Subject '{subject_name}' already exists for this semester.", "warning")
+            return redirect(url_for('subjects'))
         if teacher_id:
             teacher = Teacher.query.get_or_404(int(teacher_id))
             if teacher.department_id != department_id or not can_access_teacher(teacher):
                 abort(403)
             teacher_id = teacher.id
         subject = Subject(
-            name=request.form['name'],
+            name=subject_name,
             department_id=department_id,
             semester_id=semester_id,
             teacher_id=teacher_id)
@@ -1091,15 +1172,28 @@ def edit_subject(id):
     department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
     semester_id = int(request.form['semester_id'])
     teacher_id = request.form.get('teacher_id') or None
+    subject_name = normalize_text(request.form.get('name'))
+    if not subject_name:
+        flash("Subject name is required.", "danger")
+        return redirect(url_for('subjects'))
     semester = Semester.query.get_or_404(semester_id)
     if not can_access_department(department_id) or semester.department_id != department_id:
         abort(403)
+    existing = Subject.query.filter(
+        Subject.id != s.id,
+        Subject.department_id == department_id,
+        Subject.semester_id == semester_id,
+        db.func.lower(Subject.name) == subject_name.lower()
+    ).first()
+    if existing:
+        flash(f"Subject '{subject_name}' already exists for this semester.", "warning")
+        return redirect(url_for('subjects'))
     if teacher_id:
         teacher = Teacher.query.get_or_404(int(teacher_id))
         if teacher.department_id != department_id or not can_access_teacher(teacher):
             abort(403)
         teacher_id = teacher.id
-    s.name = request.form['name']
+    s.name = subject_name
     s.department_id = department_id
     s.semester_id = semester_id
     s.teacher_id = teacher_id
@@ -1147,9 +1241,22 @@ def edit_teacher(id):
     department_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
     if not can_access_department(department_id):
         abort(403)
-    email = normalize_email(request.form['email'])
+    name = normalize_text(request.form.get('name'))
+    email = normalize_email(request.form.get('email'))
+    if not name:
+        flash("Teacher name is required.", "danger")
+        return redirect(url_for('teachers'))
     if not is_allowed_staff_email(email):
-        abort(400, description=staff_email_rule_message())
+        flash(staff_email_rule_message(), "danger")
+        return redirect(url_for('teachers'))
+    duplicate_teacher = Teacher.query.filter(Teacher.id != t.id, db.func.lower(Teacher.email) == email).first()
+    if duplicate_teacher:
+        flash(f"Teacher email '{email}' already exists.", "warning")
+        return redirect(url_for('teachers'))
+    duplicate_admin = Admin.query.filter(db.func.lower(Admin.username) == email).filter(or_(Admin.teacher_id.is_(None), Admin.teacher_id != t.id)).first()
+    if duplicate_admin:
+        flash(f"Account email '{email}' already exists.", "warning")
+        return redirect(url_for('teachers'))
     if department_id != t.department_id:
         assigned_subjects = Subject.query.filter_by(teacher_id=t.id).count()
         sessions_count = ClassSession.query.filter_by(teacher_id=t.id).count()
@@ -1162,7 +1269,7 @@ def edit_teacher(id):
                 'warning'
             )
             return redirect(url_for('teachers'))
-    t.name = request.form['name']
+    t.name = name
     t.email = email
     t.department_id = department_id
     linked_admin = Admin.query.filter_by(teacher_id=t.id).first()
@@ -1208,13 +1315,19 @@ def students():
         try:
             dept_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
             sem_id = int(request.form.get('semester_id', 0))
-            roll_no = request.form['roll_no'].strip().upper()  # Convert to uppercase
+            name = normalize_text(request.form.get('name'))
+            roll_no = normalize_roll_no(request.form.get('roll_no'))
+            email = normalize_email(request.form.get('email'))
             
             # Debug: Check what department and semester are selected
             department = Department.query.get(dept_id)
             semester = Semester.query.get(sem_id)
             
-            if not department:
+            if not name or not roll_no or not email:
+                error = "Name, roll number, and email are required"
+            elif not is_valid_email(email):
+                error = email_format_rule_message()
+            elif not department:
                 error = f"Department with ID {dept_id} not found"
             elif not semester:
                 error = f"Semester with ID {sem_id} not found"
@@ -1231,14 +1344,16 @@ def students():
                     error = f"Roll number {roll_no} already exists in {department.display_name} - {semester.name}"
                 else:
                     # Check if email already exists
-                    existing_email = Student.query.filter_by(email=request.form['email']).first()
+                    existing_email = Student.query.filter(db.func.lower(Student.email) == email).first()
                     if existing_email:
-                        error = f"Email {request.form['email']} already exists"
+                        error = f"Email {email} already exists"
+                    elif Admin.query.filter(db.func.lower(Admin.username) == email).first():
+                        error = f"Login account email {email} already exists"
                     else:
                         student = Student(
-                            name=request.form['name'],
+                            name=name,
                             roll_no=roll_no,
-                            email=request.form['email'],
+                            email=email,
                             department_id=dept_id,
                             semester_id=sem_id)
                         db.session.add(student)
@@ -1303,7 +1418,7 @@ def student_import_template():
     output = io.StringIO()
     writer = csv.writer(output)
     headers = ['name', 'roll_no', 'email', 'semester']
-    sample = ['Rahul Das', 'MCA2026001', 'rahul@example.com', 'Semester 1']
+    sample = ['Rahul Das', 'MCA2026001', 'mca2026001@rcciit.org.in', 'Semester 1']
     if is_super_admin():
         headers.append('department')
         sample.append('MCA - Master of Computer Application (MCA)')
@@ -1325,15 +1440,24 @@ def edit_student(id):
     s = Student.query.get_or_404(id)
     if not can_access_student(s):
         abort(403)
-    roll_no = request.form['roll_no'].strip().upper()  # Convert to uppercase
+    name = normalize_text(request.form.get('name'))
+    roll_no = normalize_roll_no(request.form.get('roll_no'))
+    email = normalize_email(request.form.get('email'))
     dept_id = int(request.form['department_id']) if is_super_admin() else current_department_id()
     sem_id = int(request.form['semester_id'])
+    if not name or not roll_no or not email:
+        flash("Name, roll number, and email are required.", "danger")
+        return redirect(url_for('students'))
+    if not is_valid_email(email):
+        flash(email_format_rule_message(), "danger")
+        return redirect(url_for('students'))
     if not can_access_department(dept_id):
         abort(403)
     
     # Validate semester belongs to department
     semester = Semester.query.get(sem_id)
     if not semester or semester.department_id != dept_id:
+        flash("Selected semester does not belong to the selected department.", "danger")
         return redirect(url_for('students'))
     
     # Check if roll_no changed and exists in same dept/sem (case-insensitive)
@@ -1344,17 +1468,26 @@ def edit_student(id):
             Student.semester_id == sem_id
         ).first()
         if existing:
+            flash(f"Roll number {roll_no} already exists in this department and semester.", "warning")
             return redirect(url_for('students'))
     
     # Check if email changed and already exists
-    if s.email != request.form['email']:
-        existing_email = Student.query.filter_by(email=request.form['email']).first()
+    if normalize_email(s.email) != email:
+        existing_email = Student.query.filter(db.func.lower(Student.email) == email).first()
         if existing_email:
+            flash(f"Email {email} already exists.", "warning")
+            return redirect(url_for('students'))
+        existing_login = Admin.query.filter(
+            db.func.lower(Admin.username) == email,
+            or_(Admin.student_id.is_(None), Admin.student_id != s.id)
+        ).first()
+        if existing_login:
+            flash(f"Login account email {email} already exists.", "warning")
             return redirect(url_for('students'))
     
-    s.name = request.form['name']
+    s.name = name
     s.roll_no = roll_no
-    s.email = request.form['email']
+    s.email = email
     s.department_id = dept_id
     s.semester_id = sem_id
     ensure_student_account(s)
@@ -1488,8 +1621,13 @@ def generate_qr():
         department_id = int(request.form['department_id'])
         semester_id = int(request.form['semester_id'])
         subject_id = request.form.get('subject_id')
-        special_title = ' '.join(request.form.get('special_title', '').split())
-        duration = int(request.form.get('duration', 30))
+        special_title = normalize_text(request.form.get('special_title'))
+        try:
+            duration = int(request.form.get('duration', 30))
+        except (TypeError, ValueError):
+            abort(400, description='Duration must be a number.')
+        if duration < MIN_QR_DURATION or duration > MAX_QR_DURATION:
+            abort(400, description=f'Duration must be between {MIN_QR_DURATION} and {MAX_QR_DURATION} minutes.')
         teacher_id = request.form.get('teacher_id') or None
 
         if not can_access_department(department_id):
@@ -1628,7 +1766,11 @@ def mark_attendance():
         return jsonify({'success': False, 'message': 'Attendance already marked'})
     
     db.session.add(Attendance(student_id=student.id, session_id=cs.id, timestamp=now_ist))
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Attendance already marked'})
     return jsonify({'success': True, 'message': f'Attendance marked for {student.name}'})
 
 
@@ -1877,22 +2019,22 @@ def add_admin():
         department_id = request.form.get('department_id') or None
         subject_id = request.form.get('subject_id') or None
         teacher_id = None
-        teacher_name = request.form.get('teacher_name', '').strip()
+        teacher_name = normalize_text(request.form.get('teacher_name'))
         student_id = None
         
         # Validation
         if not username or not password:
-            error = "Username and password are required"
+            error = "Account email and password are required"
         elif role not in allowed_roles:
             error = "Invalid role selected"
-        elif role in ('hod', 'teacher') and not is_allowed_staff_email(username):
+        elif not is_allowed_staff_email(username):
             error = staff_email_rule_message()
         elif len(password) < 6:
             error = "Password must be at least 6 characters"
         elif password != confirm_password:
             error = "Passwords do not match"
-        elif Admin.query.filter_by(username=username).first():
-            error = f"Username '{username}' already exists"
+        elif Admin.query.filter(db.func.lower(Admin.username) == username).first():
+            error = f"Account email '{username}' already exists"
         else:
             try:
                 if role == 'hod':
@@ -2000,20 +2142,20 @@ def edit_admin(id):
         abort(403)
 
     username = normalize_email(request.form.get('username', ''))
-    teacher_name = request.form.get('teacher_name', '').strip()
+    teacher_name = normalize_text(request.form.get('teacher_name'))
     department_id = request.form.get('department_id') or None
     subject_id = request.form.get('subject_id') or None
 
     if not username:
-        flash("Username is required.", "danger")
+        flash("Account email is required.", "danger")
+        return redirect(url_for('add_admin'))
+
+    if not is_allowed_staff_email(username):
+        flash(staff_email_rule_message(), "danger")
         return redirect(url_for('add_admin'))
 
     if Admin.query.filter(Admin.id != admin.id, db.func.lower(Admin.username) == username).first():
-        flash(f"Username '{username}' already exists.", "danger")
-        return redirect(url_for('add_admin'))
-
-    if admin.role in ('hod', 'teacher') and not is_allowed_staff_email(username):
-        flash(staff_email_rule_message(), "danger")
+        flash(f"Account email '{username}' already exists.", "danger")
         return redirect(url_for('add_admin'))
 
     try:
@@ -2177,10 +2319,30 @@ with app.app_context():
     ensure_class_session_columns()
     ensure_department_columns()
     ensure_subject_columns()
+    ensure_attendance_unique_index()
     backfill_subject_teacher_assignments()
+    default_principal_username = 'principal@rcciit.org.in'
+    default_principal_password = 'RCC@qr2026'
     if not Admin.query.first():
-        db.session.add(Admin(username='admin', password=generate_password_hash('admin123'), role='super_admin'))
+        db.session.add(Admin(
+            username=default_principal_username,
+            password=generate_password_hash(default_principal_password),
+            role='super_admin',
+            is_active=True,
+            must_change_password=False,
+            failed_login_attempts=0
+        ))
         db.session.commit()
+    else:
+        old_default = Admin.query.filter_by(username='admin', role='super_admin').first()
+        if old_default and not Admin.query.filter(db.func.lower(Admin.username) == default_principal_username).first():
+            old_default.username = default_principal_username
+            old_default.password = generate_password_hash(default_principal_password)
+            old_default.is_active = True
+            old_default.must_change_password = False
+            old_default.failed_login_attempts = 0
+            old_default.locked_until = None
+            db.session.commit()
     ensure_existing_student_accounts()
 
 if __name__ == '__main__':
