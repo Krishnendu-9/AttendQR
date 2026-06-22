@@ -1890,23 +1890,64 @@ def scan_qr(token):
         'expires_at': format_12h(cs.expires_at)
     }
     is_active = now_ist <= cs.expires_at
+
+    if is_active and not current_user.is_authenticated:
+        return redirect(url_for('login', next=request.path))
+
+    can_mark_attendance = bool(
+        is_active
+        and current_user.is_authenticated
+        and user_role() == 'student'
+        and current_user.student
+    )
+    student_scope_error = None
+    already_marked = False
+
+    if can_mark_attendance:
+        student = current_user.student
+        if student.department_id != cs.subject.department_id or student.semester_id != cs.subject.semester_id:
+            can_mark_attendance = False
+            student_scope_error = f'This QR code is only for {cs.subject.department.display_name} - {cs.subject.semester.name}.'
+        else:
+            already_marked = bool(Attendance.query.filter_by(student_id=student.id, session_id=cs.id).first())
+
+    if is_active and current_user.is_authenticated and user_role() != 'student':
+        status_title = 'Student Login Required'
+        status_message = 'Attendance marking is only available for student accounts.'
+    elif is_active and student_scope_error:
+        status_title = 'Wrong Class'
+        status_message = student_scope_error
+    elif is_active and already_marked:
+        status_title = 'Attendance Already Marked'
+        status_message = 'Your attendance has already been marked for this QR session.'
+    else:
+        status_title = 'Mark Attendance' if is_active else 'QR Expired'
+        status_message = 'Confirm your student account to register attendance for this session.' if is_active else 'This QR code has expired. Please ask your teacher for a new QR code.'
+
     return render_template(
         'scan_qr.html',
         token=token,
         is_active=is_active,
-        status_title='Mark Attendance' if is_active else 'QR Expired',
-        status_message='Enter your roll number to register attendance for this session.' if is_active else 'This QR code has expired. Please ask your teacher for a new QR code.',
+        can_mark_attendance=can_mark_attendance and not already_marked,
+        already_marked=already_marked,
+        student=current_user.student if current_user.is_authenticated and user_role() == 'student' else None,
+        status_title=status_title,
+        status_message=status_message,
         session_info=session_info
     )
 
 @app.route('/mark_attendance', methods=['POST'])
 def mark_attendance():
+    if not current_user.is_authenticated:
+        return jsonify({'success': False, 'message': 'Please log in with your student account before marking attendance.'}), 401
+    if user_role() != 'student' or not current_user.student:
+        return jsonify({'success': False, 'message': 'Attendance marking is only available for student accounts.'}), 403
+
     data = request.get_json(silent=True) or {}
     token = normalize_text(data.get('token'))
-    roll_no = normalize_roll_no(data.get('roll_no'))
 
-    if not token or not roll_no:
-        return jsonify({'success': False, 'message': 'Roll number and QR token are required'}), 400
+    if not token:
+        return jsonify({'success': False, 'message': 'QR token is required'}), 400
 
     cs = ClassSession.query.filter_by(token=token).first()
     
@@ -1920,16 +1961,11 @@ def mark_attendance():
     if not subject:
         return jsonify({'success': False, 'message': 'QR code expired or invalid'})
 
-    student = Student.query.filter(
-        db.func.upper(Student.roll_no) == roll_no,
-        Student.department_id == subject.department_id,
-        Student.semester_id == subject.semester_id
-    ).first()
-    
-    if not student:
+    student = current_user.student
+    if student.department_id != subject.department_id or student.semester_id != subject.semester_id:
         return jsonify({
             'success': False,
-            'message': f'This QR code is only for {subject.department.display_name} - {subject.semester.name}. Please check your roll number.'
+            'message': f'This QR code is only for {subject.department.display_name} - {subject.semester.name}.'
         })
     
     if Attendance.query.filter_by(student_id=student.id, session_id=cs.id).first():

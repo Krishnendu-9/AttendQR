@@ -28,3 +28,6 @@ chat_*.md
 # OS Files
 .DS_Store
 Thumbs.db
+
+# For any temporary files related to submissions, if needed
+submission/*
