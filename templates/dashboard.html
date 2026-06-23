@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Dashboard | AttendQR{% endblock %}
+{% block main_class %}page-dashboard{% endblock %}
 {% block page_title %}Dashboard{% endblock %}
 {% block page_subtitle %}Overview of departments, students, sessions, and attendance records{% endblock %}
 {% block content %}
@@ -125,7 +126,7 @@
             {% else %}
             <span class="badge text-bg-secondary">Expired</span>
             {% endif %}
-            <span class="text-muted small d-block mt-2">{{ session.attendance_count }} marked</span>
+            <span class="text-muted small d-block">{{ session.attendance_count }} marked</span>
           </span>
         </a>
         {% endfor %}
