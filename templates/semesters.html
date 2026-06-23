@@ -58,7 +58,7 @@
           <td>{{ loop.index }}</td>
           <td class="fw-semibold">{{ s.name }}</td>
           <td>{{ s.department.display_name }}</td>
-          <td class="text-end">
+          <td class="text-end text-nowrap">
             <button type="button" class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit semester"
               onclick='openEdit({{ s.id|tojson }}, {{ s.name|tojson }}, {{ s.department_id|tojson }})'>
               <i class="bi bi-pencil-square"></i>

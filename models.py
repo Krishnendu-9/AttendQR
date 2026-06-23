@@ -40,6 +40,17 @@ class Department(db.Model):
 
     @property
     def display_name(self):
+        import re
+        if self.branch_name == 'M.TECH':
+            return f"{self.branch_name} - {self.course_name}"
+            
+        match = re.search(r'\((.*?)\)', self.course_name)
+        if match:
+            short_form = match.group(1).strip()
+            if self.branch_name:
+                return f"{self.branch_name} - {short_form}"
+            return short_form
+            
         if self.branch_name:
             return f"{self.branch_name} - {self.course_name}"
         return self.course_name

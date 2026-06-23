@@ -28,11 +28,13 @@
   <div class="row g-3 align-items-end">
     <div class="col-md-3">
       <label class="form-label" for="department_branch">Branch</label>
-      <input class="form-control text-uppercase" id="department_branch" name="branch" placeholder="Example: BCA" required>
+      <input class="form-control text-uppercase" id="department_branch" name="branch" placeholder="Example: MCA"
+        required>
     </div>
     <div class="col-md-9 col-lg-7">
       <label class="form-label" for="department_name">Course Name</label>
-      <input class="form-control" id="department_name" name="name" placeholder="Example: Bachelor of Computer Application (BCA)" required>
+      <input class="form-control" id="department_name" name="name"
+        placeholder="Example: Master of Computer Applications" required>
     </div>
     <div class="col-md-auto">
       <button type="submit" class="btn btn-success">
@@ -47,7 +49,12 @@
   <div class="table-responsive">
     <table class="table table-hover align-middle" id="departmentsTable">
       <thead>
-        <tr><th>#</th><th>Branch</th><th>Course Name</th><th class="text-end">Actions</th></tr>
+        <tr>
+          <th>#</th>
+          <th>Branch</th>
+          <th>Course Name</th>
+          <th class="text-end">Actions</th>
+        </tr>
       </thead>
       <tbody>
         {% for d in departments %}
@@ -55,12 +62,15 @@
           <td>{{ loop.index }}</td>
           <td><span class="badge text-bg-primary">{{ d.branch_name or 'N/A' }}</span></td>
           <td class="fw-semibold">{{ d.course_name }}</td>
-          <td class="text-end">
+          <td class="text-end text-nowrap">
             {% if current_user.role == 'super_admin' %}
-            <button type="button" class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit department" onclick='openEdit({{ d.id }}, {{ d.branch_name|tojson }}, {{ d.course_name|tojson }})'>
+            <button type="button" class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip"
+              title="Edit department"
+              onclick='openEdit({{ d.id }}, {{ d.branch_name|tojson }}, {{ d.course_name|tojson }})'>
               <i class="bi bi-pencil-square"></i>
             </button>
-            <button type="button" class="btn btn-sm btn-danger btn-icon" data-bs-toggle="tooltip" title="Delete department"
+            <button type="button" class="btn btn-sm btn-danger btn-icon" data-bs-toggle="tooltip"
+              title="Delete department"
               onclick='if(confirm({{ ("Delete " ~ d.display_name ~ "?")|tojson }})) { document.getElementById("del-dept-{{ d.id }}").submit(); }'>
               <i class="bi bi-trash"></i>
             </button>
@@ -74,7 +84,9 @@
         </tr>
         {% endfor %}
         {% if not departments %}
-        <tr id="noDepartments"><td colspan="4" class="text-center text-muted py-4">No departments added yet.</td></tr>
+        <tr id="noDepartments">
+          <td colspan="4" class="text-center text-muted py-4">No departments added yet.</td>
+        </tr>
         {% endif %}
       </tbody>
     </table>
@@ -105,43 +117,43 @@
   </div>
 </div>
 <script>
-function openEdit(id, branch, name) {
-  document.getElementById('edit_branch').value = branch || '';
-  document.getElementById('edit_name').value = name;
-  document.getElementById('editForm').action = '/departments/edit/' + id;
-  new bootstrap.Modal(document.getElementById('editModal')).show();
-}
+  function openEdit(id, branch, name) {
+    document.getElementById('edit_branch').value = branch || '';
+    document.getElementById('edit_name').value = name;
+    document.getElementById('editForm').action = '/departments/edit/' + id;
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+  }
 
-const departmentSearchInput = document.getElementById('searchInput');
-const departmentResultCount = document.getElementById('resultCount');
+  const departmentSearchInput = document.getElementById('searchInput');
+  const departmentResultCount = document.getElementById('resultCount');
 
-function filterDepartments() {
-  const searchTerm = departmentSearchInput.value.toLowerCase();
-  const rows = document.querySelectorAll('.department-row');
-  let visibleCount = 0;
+  function filterDepartments() {
+    const searchTerm = departmentSearchInput.value.toLowerCase();
+    const rows = document.querySelectorAll('.department-row');
+    let visibleCount = 0;
 
-  rows.forEach(row => {
-    const branch = row.getAttribute('data-branch');
-    const course = row.getAttribute('data-course');
-    const matches = branch.includes(searchTerm) || course.includes(searchTerm);
+    rows.forEach(row => {
+      const branch = row.getAttribute('data-branch');
+      const course = row.getAttribute('data-course');
+      const matches = branch.includes(searchTerm) || course.includes(searchTerm);
 
-    if (matches) {
-      row.style.display = '';
-      visibleCount++;
-      row.querySelector('td:first-child').textContent = visibleCount;
-    } else {
-      row.style.display = 'none';
-    }
-  });
+      if (matches) {
+        row.style.display = '';
+        visibleCount++;
+        row.querySelector('td:first-child').textContent = visibleCount;
+      } else {
+        row.style.display = 'none';
+      }
+    });
 
-  departmentResultCount.textContent = `Showing: ${visibleCount} of {{ departments|length }} departments`;
-}
+    departmentResultCount.textContent = `Showing: ${visibleCount} of {{ departments|length }} departments`;
+  }
 
-function clearFilters() {
-  departmentSearchInput.value = '';
-  filterDepartments();
-}
+  function clearFilters() {
+    departmentSearchInput.value = '';
+    filterDepartments();
+  }
 
-departmentSearchInput.addEventListener('keyup', filterDepartments);
+  departmentSearchInput.addEventListener('keyup', filterDepartments);
 </script>
 {% endblock %}

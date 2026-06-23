@@ -183,7 +183,7 @@
               <span class="badge text-bg-secondary">Expired</span>
             {% endif %}
           </td>
-          <td class="text-end">
+          <td class="text-end text-nowrap">
             <a href="{{ url_for('generate_qr', session_id=cs.id) }}" class="btn btn-sm btn-info btn-icon" data-bs-toggle="tooltip" title="View QR">
               <i class="bi bi-qr-code"></i>
             </a>

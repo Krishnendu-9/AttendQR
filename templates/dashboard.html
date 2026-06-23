@@ -74,93 +74,71 @@
 </section>
 {% endif %}
 
-<div class="row g-4">
-  <div class="col-xl-7">
-    <div class="card h-100">
-      <div class="card-header">
-        <h2 class="section-title">Quick Actions</h2>
-        <p class="section-subtitle">Common tasks for the attendance workflow</p>
+<div class="dashboard-activity-grid">
+  <div class="card">
+    <div class="card-header">
+      <h2 class="section-title">Recent Account Activity</h2>
+      <p class="section-subtitle">RBAC-scoped audit trail for account and session changes</p>
+    </div>
+    <div class="card-body d-flex flex-column">
+      {% if recent_account_logs %}
+      <div class="activity-log-list">
+        {% for log in recent_account_logs %}
+        <div class="activity-log-item">
+          <div class="activity-log-meta">{{ format_12h(log.created_at) }} - {{ log.actor_username }}</div>
+          <div class="activity-log-text">{{ log.description }}</div>
+        </div>
+        {% endfor %}
       </div>
-      <div class="card-body">
-        <div class="row g-3">
-          <div class="col-md-6">
-            <a href="/generate_qr" class="quick-action">
-              <i class="bi bi-qr-code"></i>
-              <span>
-                <span class="fw-bold d-block">Generate QR Session</span>
-                <span class="text-muted small">Create attendance link for a class</span>
-              </span>
-            </a>
-          </div>
-          {% if current_user.role in ['super_admin', 'hod', 'teacher'] %}
-          <div class="col-md-6">
-            <a href="/students" class="quick-action">
-              <i class="bi bi-people"></i>
-              <span>
-                <span class="fw-bold d-block">Manage Students</span>
-                <span class="text-muted small">Add, edit, and organize records</span>
-              </span>
-            </a>
-          </div>
-          {% endif %}
-          <div class="col-md-6">
-            <a href="/reports" class="quick-action">
-              <i class="bi bi-file-earmark-bar-graph"></i>
-              <span>
-                <span class="fw-bold d-block">Attendance Report</span>
-                <span class="text-muted small">Analyze attendance by class</span>
-              </span>
-            </a>
-          </div>
-          {% if current_user.role in ['super_admin', 'hod'] %}
-          <div class="col-md-6">
-            <a href="/teachers" class="quick-action">
-              <i class="bi bi-person-video3"></i>
-              <span>
-                <span class="fw-bold d-block">Manage Teachers</span>
-                <span class="text-muted small">Maintain faculty details</span>
-              </span>
-            </a>
-          </div>
-          {% endif %}
+      {% else %}
+      <div class="empty-panel compact">
+        <i class="bi bi-activity"></i>
+        <div>
+          <div class="fw-semibold">No account activity recorded yet</div>
+          <div class="text-muted small">Account and session changes will appear here.</div>
         </div>
       </div>
+      {% endif %}
     </div>
   </div>
 
-  <div class="col-xl-5">
-    <div class="card h-100">
-      <div class="card-header">
-        <h2 class="section-title">System Summary</h2>
-        <p class="section-subtitle">Current academic setup and session activity</p>
+  <div class="card">
+    <div class="card-header">
+      <h2 class="section-title">Recent Session Activity</h2>
+      <p class="section-subtitle">Latest QR sessions and attendance response</p>
+    </div>
+    <div class="card-body d-flex flex-column">
+      {% if recent_sessions %}
+      <div class="activity-stack">
+        {% for session in recent_sessions %}
+        <a href="/generate_qr?session_id={{ session.id }}" class="session-activity-item">
+          <span class="session-activity-icon">
+            <i class="bi bi-qr-code"></i>
+          </span>
+          <span class="session-activity-body">
+            <span class="fw-semibold d-block">{{ session.name }}</span>
+            <span class="text-muted small d-block">{{ session.department }} - {{ session.semester }} &bull; {{ format_12h(session.created_at) }}</span>
+          </span>
+          <span class="session-activity-meta">
+            {% if session.is_active %}
+            <span class="badge text-bg-success">Active</span>
+            {% else %}
+            <span class="badge text-bg-secondary">Expired</span>
+            {% endif %}
+            <span class="text-muted small d-block mt-2">{{ session.attendance_count }} marked</span>
+          </span>
+        </a>
+        {% endfor %}
       </div>
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center py-3 border-bottom">
-          <div>
-            <div class="fw-semibold">Class Sessions</div>
-            <div class="text-muted small">QR sessions generated so far</div>
-          </div>
-          <span class="badge text-bg-primary">{{ sessions }}</span>
-        </div>
-        <div class="d-flex justify-content-between align-items-center py-3 border-bottom">
-          <div>
-            <div class="fw-semibold">Registered Students</div>
-            <div class="text-muted small">Students eligible for attendance</div>
-          </div>
-          <span class="badge text-bg-success">{{ students }}</span>
-        </div>
-        <div class="d-flex justify-content-between align-items-center py-3">
-          <div>
-            <div class="fw-semibold">Attendance Entries</div>
-            <div class="text-muted small">Total marked records</div>
-          </div>
-          <span class="badge text-bg-dark">{{ attendance }}</span>
-        </div>
-        <div class="alert alert-info mt-3 mb-0">
-          <i class="bi bi-info-circle me-1"></i>
-          Generate a QR session, let students scan it, then review records from Attendance Report.
+      {% else %}
+      <div class="empty-panel compact">
+        <i class="bi bi-clock-history"></i>
+        <div>
+          <div class="fw-semibold">No recent activity</div>
+          <div class="text-muted small">Generated QR sessions will appear here.</div>
         </div>
       </div>
+      {% endif %}
     </div>
   </div>
 </div>

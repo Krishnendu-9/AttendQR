@@ -142,7 +142,7 @@
           <td>{{ s.email }}</td>
           <td>{{ s.department.display_name }}</td>
           <td>{{ s.semester.name }}</td>
-          <td class="text-end">
+          <td class="text-end text-nowrap">
             <form method="POST" action="/students/reset-password/{{ s.id }}" class="d-inline"
               onsubmit='return confirm({{ ("Reset password for " ~ s.name ~ " to the roll number?")|tojson }})'>
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">

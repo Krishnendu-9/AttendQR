@@ -258,7 +258,8 @@ def log_activity(action, description, target_type=None, target_id=None, departme
         action=action,
         target_type=target_type,
         target_id=target_id,
-        description=description
+        description=description,
+        created_at=get_ist_now()
     ))
 
 
@@ -943,14 +944,38 @@ def dashboard():
         summary = build_student_attendance_summary(current_user.student)
         return render_template('student_dashboard.html', student=current_user.student, summary=summary)
 
+    now_ist = get_ist_now()
+
+    def session_panel_rows(sessions):
+        rows = []
+        for session in sessions:
+            rows.append({
+                'id': session.id,
+                'name': session_display_name(session),
+                'department': session.subject.department.display_name if session.subject and session.subject.department else '',
+                'semester': session.subject.semester.name if session.subject and session.subject.semester else '',
+                'teacher': session.teacher.name if session.teacher else 'Unassigned',
+                'created_at': session.created_at,
+                'expires_at': session.expires_at,
+                'is_active': session.expires_at > now_ist,
+                'attendance_count': Attendance.query.filter_by(session_id=session.id).count()
+            })
+        return rows
+
+    scoped_sessions = visible_sessions_query().all()
+    recent_sessions = visible_sessions_query().order_by(ClassSession.created_at.desc()).limit(3).all()
+    recent_account_logs = visible_activity_logs_query().order_by(ActivityLog.created_at.desc()).limit(3).all()
+
     return render_template('dashboard.html',
         departments=visible_departments_query().count(),
         semesters=visible_semesters_query().count(),
         subjects=visible_subjects_query().count(),
         teachers=visible_teachers_query().count(),
         students=visible_students_query().count(),
-        sessions=visible_sessions_query().count(),
-        attendance=sum(Attendance.query.filter_by(session_id=s.id).count() for s in visible_sessions_query().all()))
+        sessions=len(scoped_sessions),
+        attendance=sum(Attendance.query.filter_by(session_id=s.id).count() for s in scoped_sessions),
+        recent_sessions=session_panel_rows(recent_sessions),
+        recent_account_logs=recent_account_logs)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -1795,6 +1820,7 @@ def generate_qr():
         # Use IST timezone (stored as naive datetime)
         now_ist = get_ist_now()
         expires_ist = now_ist + timedelta(minutes=duration)
+        created_session_name = special_title or subject_display_name(subject)
 
         cs = ClassSession(
             subject_id=subject.id,
@@ -1807,7 +1833,7 @@ def generate_qr():
         db.session.add(cs)
         log_activity(
             'qr_session_created',
-            f"Generated QR session for '{session_display_name(cs)}'.",
+            f"Generated QR session for '{created_session_name}'.",
             'class_session',
             None,
             department_id

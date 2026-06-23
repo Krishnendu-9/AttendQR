@@ -77,7 +77,7 @@
           <td>{{ s.teacher.name if s.teacher else 'Not assigned' }}</td>
           <td>{{ s.department.display_name }}</td>
           <td>{{ s.semester.name }}</td>
-          <td class="text-end">
+          <td class="text-end text-nowrap">
             <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit subject"
               onclick='openEdit({{ s.id|tojson }}, {{ s.name|tojson }}, {{ (s.paper_code or '')|tojson }}, {{ s.department_id|tojson }}, {{ s.semester_id|tojson }}, {{ (s.teacher_id or '')|tojson }})'>
               <i class="bi bi-pencil-square"></i>
