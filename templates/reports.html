@@ -4,7 +4,14 @@
 {% block page_subtitle %}Filter, analyze, and export attendance records{% endblock %}
 {% block content %}
 
-<form method="GET" class="form-panel">
+{% if date_error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+  <i class="bi bi-exclamation-triangle me-2"></i><strong>Invalid date range:</strong> {{ date_error }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<form method="GET" class="form-panel" id="reportForm">
   <div class="row g-3">
     <div class="col-md-6 col-xl-3">
       <label class="form-label" for="dept_select">Department</label>
@@ -35,11 +42,13 @@
     </div>
     <div class="col-md-6 col-xl-3">
       <label class="form-label" for="date_from">From Date</label>
-      <input type="date" class="form-control" id="date_from" name="date_from" value="{{ date_from }}">
+      <input type="date" class="form-control" id="date_from" name="date_from" value="{{ date_from }}" max="{{ today }}">
+      <div class="invalid-feedback" id="date_from_err"></div>
     </div>
     <div class="col-md-6 col-xl-3">
       <label class="form-label" for="date_to">To Date</label>
-      <input type="date" class="form-control" id="date_to" name="date_to" value="{{ date_to }}">
+      <input type="date" class="form-control" id="date_to" name="date_to" value="{{ date_to }}" max="{{ today }}">
+      <div class="invalid-feedback" id="date_to_err"></div>
     </div>
     <div class="col-md-6 col-xl-3 d-flex align-items-end">
       <button class="btn btn-primary w-100" type="submit">
@@ -77,10 +86,11 @@
   <a href="/reports/detailed?department_id={{ selected_dept }}&semester_id={{ selected_sem }}" class="btn btn-info">
     <i class="bi bi-table me-1"></i> Detailed View
   </a>
-  <a href="/export/{{ selected_dept }}/{{ selected_sem }}/excel" class="btn btn-success">
+  {% set export_qs = '?subject_id=' ~ (selected_subject or '') ~ '&date_from=' ~ date_from ~ '&date_to=' ~ date_to %}
+  <a href="/export/{{ selected_dept }}/{{ selected_sem }}/excel{{ export_qs }}" class="btn btn-success">
     <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
   </a>
-  <a href="/export/{{ selected_dept }}/{{ selected_sem }}/pdf" class="btn btn-danger">
+  <a href="/export/{{ selected_dept }}/{{ selected_sem }}/pdf{{ export_qs }}" class="btn btn-danger">
     <i class="bi bi-file-earmark-pdf me-1"></i> Export PDF
   </a>
 </div>
@@ -260,6 +270,56 @@ function viewAttendance(sessionId) {
 }
 
 window.addEventListener('DOMContentLoaded', function() {
+  const today = '{{ today }}';
+  const fromInput = document.getElementById('date_from');
+  const toInput = document.getElementById('date_to');
+
+  // Enforce max=today dynamically in case the attribute is bypassed
+  function validateDates() {
+    const fromErr = document.getElementById('date_from_err');
+    const toErr = document.getElementById('date_to_err');
+    let valid = true;
+
+    fromInput.classList.remove('is-invalid');
+    toInput.classList.remove('is-invalid');
+    fromErr.textContent = '';
+    toErr.textContent = '';
+
+    if (fromInput.value && fromInput.value > today) {
+      fromInput.classList.add('is-invalid');
+      fromErr.textContent = 'From Date cannot be a future date.';
+      valid = false;
+    }
+    if (toInput.value && toInput.value > today) {
+      toInput.classList.add('is-invalid');
+      toErr.textContent = 'To Date cannot be a future date.';
+      valid = false;
+    }
+    if (fromInput.value && toInput.value && fromInput.value > toInput.value) {
+      fromInput.classList.add('is-invalid');
+      toInput.classList.add('is-invalid');
+      fromErr.textContent = 'From Date cannot be later than To Date.';
+      valid = false;
+    }
+    return valid;
+  }
+
+  fromInput.addEventListener('change', function() {
+    validateDates();
+    // Auto-update to_date min to match from_date
+    if (toInput.value && toInput.value < fromInput.value) {
+      toInput.value = fromInput.value;
+    }
+  });
+
+  toInput.addEventListener('change', validateDates);
+
+  document.getElementById('reportForm').addEventListener('submit', function(e) {
+    if (!validateDates()) {
+      e.preventDefault();
+    }
+  });
+
   const deptId = document.getElementById('dept_select').value;
   if (deptId) {
     loadSemesters(deptId);

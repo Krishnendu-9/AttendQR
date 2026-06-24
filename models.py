@@ -96,6 +96,7 @@ class ClassSession(db.Model):
     token = db.Column(db.String(100), unique=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
     subject = db.relationship('Subject', backref=db.backref('sessions', lazy=True))
     teacher = db.relationship('Teacher', backref=db.backref('sessions', lazy=True))
 

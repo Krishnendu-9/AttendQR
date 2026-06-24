@@ -37,6 +37,12 @@
             <span>{{ 'My Attendance' if current_user.role == 'student' else 'Dashboard' }}</span>
           </a>
         </li>
+        <li>
+          <a href="/subjects" class="{{ 'active' if '/subjects' in request.path }}">
+            <i class="bi bi-book"></i>
+            <span>Subjects</span>
+          </a>
+        </li>
         {% if current_user.role in ['super_admin', 'hod'] %}
         <li>
           <a href="/departments" class="{{ 'active' if '/departments' in request.path }}">
@@ -48,12 +54,6 @@
           <a href="/semesters" class="{{ 'active' if '/semesters' in request.path }}">
             <i class="bi bi-calendar-range"></i>
             <span>Semesters</span>
-          </a>
-        </li>
-        <li>
-          <a href="/subjects" class="{{ 'active' if '/subjects' in request.path }}">
-            <i class="bi bi-book"></i>
-            <span>Subjects</span>
           </a>
         </li>
         <li>

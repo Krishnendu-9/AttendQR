@@ -26,51 +26,72 @@
 <section class="stat-grid">
   <a href="/departments" class="stat-card">
     <div class="stat-icon"><i class="bi bi-building"></i></div>
-    <div class="stat-label">Departments</div>
-    <div class="stat-value">{{ departments }}</div>
+    <div class="stat-body">
+      <div class="stat-label">Departments</div>
+      <div class="stat-value">{{ departments }}</div>
+    </div>
   </a>
   <a href="/semesters" class="stat-card">
     <div class="stat-icon accent"><i class="bi bi-calendar-range"></i></div>
-    <div class="stat-label">Semesters</div>
-    <div class="stat-value">{{ semesters }}</div>
+    <div class="stat-body">
+      <div class="stat-label">Semesters</div>
+      <div class="stat-value">{{ semesters }}</div>
+    </div>
   </a>
   <a href="/subjects" class="stat-card">
     <div class="stat-icon"><i class="bi bi-book"></i></div>
-    <div class="stat-label">Subjects</div>
-    <div class="stat-value">{{ subjects }}</div>
+    <div class="stat-body">
+      <div class="stat-label">Subjects</div>
+      <div class="stat-value">{{ subjects }}</div>
+    </div>
   </a>
   <a href="/teachers" class="stat-card">
     <div class="stat-icon warning"><i class="bi bi-person-video3"></i></div>
-    <div class="stat-label">Teachers</div>
-    <div class="stat-value">{{ teachers }}</div>
+    <div class="stat-body">
+      <div class="stat-label">Teachers</div>
+      <div class="stat-value">{{ teachers }}</div>
+    </div>
   </a>
   <a href="/students" class="stat-card">
     <div class="stat-icon accent"><i class="bi bi-people"></i></div>
-    <div class="stat-label">Students</div>
-    <div class="stat-value">{{ students }}</div>
+    <div class="stat-body">
+      <div class="stat-label">Students</div>
+      <div class="stat-value">{{ students }}</div>
+    </div>
   </a>
-  <a href="/reports" class="stat-card">
-    <div class="stat-icon danger"><i class="bi bi-check2-square"></i></div>
-    <div class="stat-label">Attendance Report</div>
-    <div class="stat-value">{{ attendance }}</div>
+  <a href="/add_admin" class="stat-card">
+    <div class="stat-icon warning"><i class="bi bi-person-gear"></i></div>
+    <div class="stat-body">
+      <div class="stat-label">Accounts</div>
+      <div class="stat-value">{{ accounts.total }}</div>
+      {% if accounts.principals is not none %}
+      <div class="stat-meta">{{ accounts.principals }}P &bull; {{ accounts.hods }}H &bull; {{ accounts.teachers }}T</div>
+      {% endif %}
+    </div>
   </a>
 </section>
 {% else %}
 <section class="stat-grid report-stats">
-  <a href="/generate_qr" class="stat-card">
+  <a href="/subjects" class="stat-card">
     <div class="stat-icon"><i class="bi bi-book"></i></div>
-    <div class="stat-label">Available Subjects</div>
-    <div class="stat-value">{{ subjects }}</div>
+    <div class="stat-body">
+      <div class="stat-label">Available Subjects</div>
+      <div class="stat-value">{{ subjects }}</div>
+    </div>
   </a>
-  <a href="/reports" class="stat-card">
+  <a href="/generate_qr" class="stat-card">
     <div class="stat-icon accent"><i class="bi bi-calendar-check"></i></div>
-    <div class="stat-label">My Sessions</div>
-    <div class="stat-value">{{ sessions }}</div>
+    <div class="stat-body">
+      <div class="stat-label">My Sessions</div>
+      <div class="stat-value">{{ sessions }}</div>
+    </div>
   </a>
   <a href="/reports" class="stat-card">
     <div class="stat-icon danger"><i class="bi bi-check2-square"></i></div>
-    <div class="stat-label">Attendance Records</div>
-    <div class="stat-value">{{ attendance }}</div>
+    <div class="stat-body">
+      <div class="stat-label">Attendance Records</div>
+      <div class="stat-value">{{ attendance }}</div>
+    </div>
   </a>
 </section>
 {% endif %}

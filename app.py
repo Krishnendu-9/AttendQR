@@ -14,8 +14,9 @@ import sqlite3
 import qrcode, uuid, os, io, socket, re, secrets
 import openpyxl
 from urllib.parse import urlsplit
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table
+from reportlab.lib.pagesizes import letter, landscape, A4
+from reportlab.platypus import SimpleDocTemplate, Table, Spacer
+from reportlab.lib.units import cm
 import pytz
 
 # Define IST timezone
@@ -966,6 +967,26 @@ def dashboard():
     recent_sessions = visible_sessions_query().order_by(ClassSession.created_at.desc()).limit(3).all()
     recent_account_logs = visible_activity_logs_query().order_by(ActivityLog.created_at.desc()).limit(3).all()
 
+    if is_super_admin():
+        acc_principals = Admin.query.filter_by(role='super_admin').count()
+        acc_hods = Admin.query.filter_by(role='hod').count()
+        acc_teachers = Admin.query.filter_by(role='teacher').count()
+        accounts = {
+            'total': acc_principals + acc_hods + acc_teachers,
+            'principals': acc_principals,
+            'hods': acc_hods,
+            'teachers': acc_teachers,
+        }
+    else:
+        dept_id = current_department_id()
+        acc_teachers = Admin.query.filter_by(role='teacher', department_id=dept_id).count()
+        accounts = {
+            'total': acc_teachers,
+            'principals': None,
+            'hods': None,
+            'teachers': acc_teachers,
+        }
+
     return render_template('dashboard.html',
         departments=visible_departments_query().count(),
         semesters=visible_semesters_query().count(),
@@ -975,7 +996,8 @@ def dashboard():
         sessions=len(scoped_sessions),
         attendance=sum(Attendance.query.filter_by(session_id=s.id).count() for s in scoped_sessions),
         recent_sessions=session_panel_rows(recent_sessions),
-        recent_account_logs=recent_account_logs)
+        recent_account_logs=recent_account_logs,
+        accounts=accounts)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -1226,9 +1248,11 @@ def delete_semester(id):
 # ── Subjects ─────────────────────────────────────────────────
 @app.route('/subjects', methods=['GET', 'POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('super_admin', 'hod', 'teacher')
 def subjects():
     if request.method == 'POST':
+        if user_role() == 'teacher':
+            abort(403)
         department_id = parse_int_value(request.form.get('department_id')) if is_super_admin() else current_department_id()
         semester_id = parse_int_value(request.form.get('semester_id'))
         teacher_id = parse_int_value(request.form.get('teacher_id'))
@@ -1862,6 +1886,50 @@ def generate_qr():
 
 
 
+@app.route('/deactivate_session/<int:id>', methods=['POST'])
+@login_required
+@role_required('super_admin', 'hod', 'teacher')
+def deactivate_session(id):
+    cs = ClassSession.query.get_or_404(id)
+    if not can_access_session(cs):
+        abort(403)
+    
+    if cs.is_active and cs.expires_at > get_ist_now():
+        cs.is_active = False
+        log_activity(
+            'qr_session_deactivated',
+            f"Deactivated QR session for '{session_display_name(cs)}'.",
+            'class_session',
+            cs.id,
+            cs.subject.department_id if cs.subject else None
+        )
+        db.session.commit()
+        flash("Session deactivated successfully.", "success")
+        
+    return redirect(url_for('generate_qr'))
+
+@app.route('/reactivate_session/<int:id>', methods=['POST'])
+@login_required
+@role_required('super_admin', 'hod', 'teacher')
+def reactivate_session(id):
+    cs = ClassSession.query.get_or_404(id)
+    if not can_access_session(cs):
+        abort(403)
+    
+    if not cs.is_active and cs.expires_at > get_ist_now():
+        cs.is_active = True
+        log_activity(
+            'qr_session_reactivated',
+            f"Reactivated QR session for '{session_display_name(cs)}'.",
+            'class_session',
+            cs.id,
+            cs.subject.department_id if cs.subject else None
+        )
+        db.session.commit()
+        flash("Session reactivated successfully.", "success")
+        
+    return redirect(url_for('generate_qr'))
+
 @app.route('/delete_session/<int:id>', methods=['POST'])
 @login_required
 @role_required('super_admin', 'hod', 'teacher')
@@ -1915,7 +1983,7 @@ def scan_qr(token):
         'created_at': format_12h(cs.created_at),
         'expires_at': format_12h(cs.expires_at)
     }
-    is_active = now_ist <= cs.expires_at
+    is_active = cs.is_active and now_ist <= cs.expires_at
 
     if is_active and not current_user.is_authenticated:
         return redirect(url_for('login', next=request.path))
@@ -1947,8 +2015,15 @@ def scan_qr(token):
         status_title = 'Attendance Already Marked'
         status_message = 'Your attendance has already been marked for this QR session.'
     else:
-        status_title = 'Mark Attendance' if is_active else 'QR Expired'
-        status_message = 'Confirm your student account to register attendance for this session.' if is_active else 'This QR code has expired. Please ask your teacher for a new QR code.'
+        if is_active:
+            status_title = 'Mark Attendance'
+            status_message = 'Confirm your student account to register attendance for this session.'
+        elif now_ist > cs.expires_at:
+            status_title = 'QR Expired'
+            status_message = 'This QR code has expired. Please ask your teacher for a new QR code.'
+        else:
+            status_title = 'QR Deactivated'
+            status_message = 'This QR session has been deactivated by the teacher.'
 
     return render_template(
         'scan_qr.html',
@@ -2015,7 +2090,37 @@ def reports():
     subject_id = request.args.get('subject_id', type=int)
     date_from = request.args.get('date_from')
     date_to = request.args.get('date_to')
-    
+    date_error = None
+    today = get_ist_now().date()
+
+    # Validate dates
+    parsed_from = None
+    parsed_to = None
+    if date_from:
+        try:
+            parsed_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+            if parsed_from > today:
+                date_error = "From Date cannot be a future date."
+                parsed_from = None
+                date_from = ''
+        except ValueError:
+            date_from = ''
+    if date_to:
+        try:
+            parsed_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+            if parsed_to > today:
+                date_error = "To Date cannot be a future date."
+                parsed_to = None
+                date_to = ''
+        except ValueError:
+            date_to = ''
+    if parsed_from and parsed_to and parsed_from > parsed_to:
+        date_error = "From Date cannot be later than To Date."
+        parsed_from = None
+        parsed_to = None
+        date_from = ''
+        date_to = ''
+
     sessions = []
     stats = {}
     
@@ -2033,16 +2138,10 @@ def reports():
         # Apply filters
         if subject_id:
             query = query.filter(Subject.id == subject_id)
-        if date_from:
-            try:
-                query = query.filter(ClassSession.created_at >= datetime.strptime(date_from, '%Y-%m-%d'))
-            except:
-                pass
-        if date_to:
-            try:
-                query = query.filter(ClassSession.created_at < datetime.strptime(date_to, '%Y-%m-%d') + timedelta(days=1))
-            except:
-                pass
+        if parsed_from:
+            query = query.filter(ClassSession.created_at >= datetime.combine(parsed_from, datetime.min.time()))
+        if parsed_to:
+            query = query.filter(ClassSession.created_at < datetime.combine(parsed_to, datetime.min.time()) + timedelta(days=1))
         
         sessions = query.order_by(ClassSession.created_at.desc()).all()
         
@@ -2068,7 +2167,9 @@ def reports():
         selected_sem=sem_id,
         selected_subject=subject_id,
         date_from=date_from or '',
-        date_to=date_to or '')
+        date_to=date_to or '',
+        date_error=date_error,
+        today=today.isoformat())
 
 @app.route('/api/session_attendance/<int:session_id>')
 @login_required
@@ -2168,6 +2269,31 @@ def export(department_id, semester_id, fmt):
     sem = Semester.query.get_or_404(semester_id)
     if sem.department_id != department_id:
         abort(403)
+    # Read optional filters from query string (forwarded from the reports page)
+    subject_id = request.args.get('subject_id', type=int)
+    date_from  = request.args.get('date_from', '')
+    date_to    = request.args.get('date_to', '')
+
+    parsed_from = None
+    parsed_to   = None
+    today = get_ist_now().date()
+    if date_from:
+        try:
+            parsed_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+            if parsed_from > today:
+                parsed_from = None
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            parsed_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+            if parsed_to > today:
+                parsed_to = None
+        except ValueError:
+            pass
+    if parsed_from and parsed_to and parsed_from > parsed_to:
+        parsed_from = parsed_to = None
+
     students = Student.query.filter_by(department_id=department_id, semester_id=semester_id).all()
     sessions = db.session.query(ClassSession).join(Subject).filter(
         Subject.department_id == department_id,
@@ -2175,10 +2301,27 @@ def export(department_id, semester_id, fmt):
     )
     if user_role() == 'teacher':
         sessions = sessions.filter(ClassSession.teacher_id == current_teacher_id())
+    if subject_id:
+        sessions = sessions.filter(Subject.id == subject_id)
+    if parsed_from:
+        sessions = sessions.filter(ClassSession.created_at >= datetime.combine(parsed_from, datetime.min.time()))
+    if parsed_to:
+        sessions = sessions.filter(ClassSession.created_at < datetime.combine(parsed_to, datetime.min.time()) + timedelta(days=1))
     sessions = sessions.order_by(ClassSession.created_at.desc()).all()
     
-    # Build data
-    headers = ['Roll No', 'Name', 'Email'] + [f"{session_display_name(s)}\n{s.created_at.strftime('%d/%m')}" for s in sessions] + ['Total', '%']
+    # Build session column headers: paper code on line 1, subject name on line 2 (no date)
+    def session_col_header(s):
+        if getattr(s, 'special_title', None):
+            return s.special_title
+        sub = s.subject
+        if not sub:
+            return 'Special Class'
+        paper_code = normalize_paper_code(getattr(sub, 'paper_code', None))
+        if paper_code:
+            return f"{sub.name}<br/>{paper_code}"
+        return sub.name
+
+    headers = ['Roll No', 'Name', 'Email'] + [session_col_header(s) for s in sessions] + ['Total', '%']
     data = [headers]
     
     for student in students:
@@ -2193,7 +2336,17 @@ def export(department_id, semester_id, fmt):
         row.append(f"{round(total/len(sessions)*100, 1)}%" if sessions else "0%")
         data.append(row)
     
-    filename = f'{(dept.branch_name or dept.course_name).replace(" ", "_")}_{sem.name}_attendance'
+    # Use subject paper code in filename when a specific subject is filtered
+    if subject_id and sessions:
+        _fsub = sessions[0].subject
+        _fcode = normalize_paper_code(getattr(_fsub, 'paper_code', None)) if _fsub else None
+        _fbase = _fcode or (_fsub.name if _fsub else (dept.branch_name or dept.course_name))
+    else:
+        _fbase = dept.branch_name or dept.course_name
+    if subject_id and sessions:
+        filename = f'{_fbase.replace(" ", "_")}_attendance'
+    else:
+        filename = f'{_fbase.replace(" ", "_")}_{sem.name}_attendance'
     
     if fmt == 'excel':
         wb = openpyxl.Workbook()
@@ -2215,26 +2368,135 @@ def export(department_id, semester_id, fmt):
     
     elif fmt == 'pdf':
         from reportlab.lib import colors
-        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.platypus import Paragraph
-        
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
         buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=letter)
-        
-        # Style table
-        table = Table(data)
+
+        # Portrait A4 — subject filter keeps column count manageable
+        PAGE_SIZE = A4
+        LEFT_MARGIN = RIGHT_MARGIN = 1.5 * cm
+        TOP_MARGIN = BOTTOM_MARGIN = 1.5 * cm
+        usable_width = PAGE_SIZE[0] - LEFT_MARGIN - RIGHT_MARGIN
+
+        doc = SimpleDocTemplate(
+            buf,
+            pagesize=PAGE_SIZE,
+            leftMargin=LEFT_MARGIN,
+            rightMargin=RIGHT_MARGIN,
+            topMargin=TOP_MARGIN,
+            bottomMargin=BOTTOM_MARGIN
+        )
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'ReportTitle',
+            parent=styles['Heading1'],
+            fontSize=14,
+            textColor=colors.HexColor('#366092'),
+            spaceAfter=8,
+            alignment=TA_LEFT
+        )
+        header_cell_style = ParagraphStyle(
+            'HeaderCell',
+            fontSize=7,
+            textColor=colors.whitesmoke,
+            alignment=TA_CENTER,
+            leading=9
+        )
+        body_cell_style = ParagraphStyle(
+            'BodyCell',
+            fontSize=8,
+            alignment=TA_CENTER,
+            leading=10
+        )
+
+        # Wrap header cells in Paragraphs so long subject names word-wrap
+        wrapped_data = []
+        for row_idx, row in enumerate(data):
+            wrapped_row = []
+            for col_idx, cell in enumerate(row):
+                cell_str = str(cell) if cell is not None else ''
+                if row_idx == 0:
+                    wrapped_row.append(Paragraph(cell_str, header_cell_style))
+                else:
+                    wrapped_row.append(Paragraph(cell_str, body_cell_style))
+            wrapped_data.append(wrapped_row)
+
+        # --- Dynamic column widths ---
+        # Fixed narrow columns for Roll No, Name, Email, Total, %
+        # Session columns take whatever is left — narrows them to prevent overflow
+        num_cols     = len(data[0]) if data else 1
+        num_sessions = max(num_cols - 5, 0)  # subtract Roll, Name, Email, Total, %
+
+        col_roll  = 2.0 * cm   # enough for 'MCA2026006'
+        col_name  = 3.2 * cm   # first/last name
+        col_email = 4.2 * cm   # email
+        col_total = 1.1 * cm   # 'Total'
+        col_pct   = 1.6 * cm   # '%' — wide enough for '100.0%' on one line
+        fixed_width = col_roll + col_name + col_email + col_total + col_pct
+
+        if num_sessions > 0:
+            # cap session width so it never exceeds 3.5 cm but takes equal share of rest
+            session_col_width = min(
+                max((usable_width - fixed_width) / num_sessions, 1.5 * cm),
+                3.5 * cm
+            )
+        else:
+            session_col_width = 0
+
+        col_widths = (
+            [col_roll, col_name, col_email]
+            + [session_col_width] * num_sessions
+            + [col_total, col_pct]
+        )
+
+        # Always stretch the table to fill the full page width
+        total_w = sum(col_widths)
+        if total_w > 0 and total_w < usable_width:
+            scale = usable_width / total_w
+            col_widths = [w * scale for w in col_widths]
+
+        table = Table(wrapped_data, colWidths=col_widths, repeatRows=1)
         table.setStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#366092')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            # Header row
+            ('BACKGROUND',    (0, 0), (-1, 0),  colors.HexColor('#366092')),
+            ('TEXTCOLOR',     (0, 0), (-1, 0),  colors.whitesmoke),
+            ('FONTNAME',      (0, 0), (-1, 0),  'Helvetica-Bold'),
+            ('FONTSIZE',      (0, 0), (-1, 0),  7),
+            ('BOTTOMPADDING', (0, 0), (-1, 0),  8),
+            ('TOPPADDING',    (0, 0), (-1, 0),  8),
+            # Data rows — alternating background
+            ('BACKGROUND',    (0, 1), (-1, -1), colors.white),
+            ('ROWBACKGROUNDS',(0, 1), (-1, -1), [colors.white, colors.HexColor('#EEF3FA')]),
+            # Alignment
+            ('ALIGN',         (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            # Padding
+            ('TOPPADDING',    (0, 1), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
+            # Grid
+            ('GRID',          (0, 0), (-1, -1), 0.5, colors.HexColor('#AAAAAA')),
+            ('LINEBELOW',     (0, 0), (-1, 0),  1.5, colors.HexColor('#1E3F66')),
         ])
-        
-        doc.build([table])
+
+        export_date = get_ist_now().strftime('%d/%m/%Y')
+
+        # Show subject code in title when a specific subject is filtered
+        if subject_id and sessions:
+            filtered_subject = sessions[0].subject
+            sub_paper_code = normalize_paper_code(getattr(filtered_subject, 'paper_code', None)) if filtered_subject else None
+            title_subject = sub_paper_code or (filtered_subject.name if filtered_subject else dept.display_name)
+        else:
+            title_subject = dept.display_name
+
+        report_title = Paragraph(
+            f"Attendance Report \u2014 {title_subject} | {sem.name} | Exported on {export_date}",
+            title_style
+        )
+
+        doc.build([report_title, Spacer(1, 0.3 * cm), table])
         buf.seek(0)
         return send_file(buf, download_name=f'{filename}.pdf', as_attachment=True)
 

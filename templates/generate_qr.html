@@ -5,21 +5,29 @@
 {% block content %}
 
 {% if qr_image %}
-<div class="card mb-4">
-  <div class="card-body text-center p-4">
-    <div class="auth-mark mx-auto">
+<div class="card mb-3">
+  <div class="card-body text-center p-3 position-relative">
+    <div class="auth-mark position-absolute top-0 start-0 m-3" style="transform: scale(0.7); transform-origin: top left;">
       <i class="bi bi-qr-code"></i>
     </div>
-    <h2 class="h4 fw-bold mb-1">{{ subject }}</h2>
-    <div class="text-muted mb-3">
+    <h2 class="h5 fw-bold mb-1 px-5">{{ subject }}</h2>
+    <div class="text-muted mb-2 small">
       <div>Valid for {{ duration }} minutes</div>
       {% if view_session %}
       <div>Created at: {{ format_12h(view_session.created_at) }}</div>
       <div>Expired at: {{ format_12h(view_session.expires_at) }}</div>
+      {% set current_time = now() if now else None %}
+      {% if view_session.expires_at > current_time and view_session.is_active %}
+      <div class="mt-1"><span class="badge text-bg-success px-2 py-1"><i class="bi bi-check-circle me-1"></i>Active</span></div>
+      {% elif view_session.expires_at > current_time and not view_session.is_active %}
+      <div class="mt-1"><span class="badge text-bg-warning text-dark px-2 py-1"><i class="bi bi-pause-circle me-1"></i>Deactivated</span></div>
+      {% else %}
+      <div class="mt-1"><span class="badge text-bg-secondary px-2 py-1"><i class="bi bi-x-circle me-1"></i>Expired</span></div>
+      {% endif %}
       {% endif %}
     </div>
     <img src="/{{ qr_image }}" class="qr-preview mb-3" alt="Generated QR code">
-    <div class="small text-muted text-break mb-3">{{ scan_url }}</div>
+    <div class="small text-muted text-break mb-2" style="font-size: 0.75rem;">{{ scan_url }}</div>
     <div class="d-flex flex-wrap justify-content-center gap-2">
       <a href="{{ url_for('generate_qr') }}" class="btn btn-primary">
         <i class="bi bi-plus-circle me-1"></i> New QR
@@ -27,7 +35,27 @@
       <a href="#qr-attendance" class="btn btn-info">
         <i class="bi bi-eye me-1"></i> View Attendance
       </a>
-      <form method="POST" action="/delete_session/{{ session_id }}" onsubmit="return confirm('Delete this QR session and all attendance records?')">
+      {% if view_session and view_session.expires_at > current_time %}
+      {% if view_session.is_active %}
+      <form method="POST" action="/deactivate_session/{{ session_id }}"
+        onsubmit="return confirm('Deactivate this session? Students will no longer be able to scan the QR.')">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-warning" type="submit">
+          <i class="bi bi-power me-1"></i> Deactivate
+        </button>
+      </form>
+      {% else %}
+      <form method="POST" action="/reactivate_session/{{ session_id }}"
+        onsubmit="return confirm('Reactivate this session?')">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-success" type="submit">
+          <i class="bi bi-play-fill me-1"></i> Reactivate
+        </button>
+      </form>
+      {% endif %}
+      {% endif %}
+      <form method="POST" action="/delete_session/{{ session_id }}"
+        onsubmit="return confirm('Delete this QR session and all attendance records?')">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-danger" type="submit">
           <i class="bi bi-trash me-1"></i> Delete Session
@@ -99,7 +127,8 @@
     </div>
     <div class="col-md-6 col-xl">
       <label class="form-label" for="sem_select">Semester</label>
-      <select class="form-select" name="semester_id" id="sem_select" required onchange="loadSubjects(this.value,'sub_select')">
+      <select class="form-select" name="semester_id" id="sem_select" required
+        onchange="loadSubjects(this.value,'sub_select')">
         <option value="">Select semester</option>
       </select>
     </div>
@@ -111,7 +140,8 @@
     </div>
     <div class="col-md-6 col-xl d-none" id="specialTitleField">
       <label class="form-label" for="special_title">Special Class Details</label>
-      <input class="form-control" name="special_title" id="special_title" placeholder="Example: Aptitude Class / Spoken English Workshop">
+      <input class="form-control" name="special_title" id="special_title"
+        placeholder="Example: Aptitude Class / Spoken English Workshop">
     </div>
     {% if current_teacher %}
     <div class="col-md-6 col-xl">
@@ -129,7 +159,8 @@
     {% endif %}
     <div class="col-md-6 col-xl">
       <label class="form-label" for="duration">Duration</label>
-      <input class="form-control" id="duration" name="duration" type="number" min="1" max="180" placeholder="Minutes" value="30" required>
+      <input class="form-control" id="duration" name="duration" type="number" min="1" max="180" placeholder="Minutes"
+        value="30" required>
     </div>
     <div class="col-md-6 col-xl-auto d-flex align-items-end">
       <button class="btn btn-primary w-100" type="submit">
@@ -176,21 +207,46 @@
           <td>{{ cs.teacher.name if cs.teacher else 'N/A' }}</td>
           <td>{{ format_12h(cs.created_at) }}</td>
           <td>
-            {% set now = now() if now else None %}
-            {% if cs.expires_at > now %}
-              <span class="badge text-bg-success">Active</span>
+            {% set current_time = now() if now else None %}
+            {% if cs.expires_at > current_time and cs.is_active %}
+            <span class="badge text-bg-success">Active</span>
+            {% elif cs.expires_at > current_time and not cs.is_active %}
+            <span class="badge text-bg-warning text-dark">Deactivated</span>
             {% else %}
-              <span class="badge text-bg-secondary">Expired</span>
+            <span class="badge text-bg-secondary">Expired</span>
             {% endif %}
           </td>
           <td class="text-end text-nowrap">
-            <a href="{{ url_for('generate_qr', session_id=cs.id) }}" class="btn btn-sm btn-info btn-icon" data-bs-toggle="tooltip" title="View QR">
+            <a href="{{ url_for('generate_qr', session_id=cs.id) }}" class="btn btn-sm btn-info btn-icon"
+              data-bs-toggle="tooltip" title="View QR">
               <i class="bi bi-qr-code"></i>
             </a>
-            <form method="POST" action="/delete_session/{{ cs.id }}" class="d-inline"
-                  onsubmit='return confirm({{ ("Delete this session and all attendance records for " ~ session_display_name(cs) ~ "?")|tojson }})'>
+            {% if cs.expires_at > current_time %}
+            {% if cs.is_active %}
+            <form method="POST" action="/deactivate_session/{{ cs.id }}" class="d-inline"
+              onsubmit='return confirm("Deactivate this session? Students will no longer be able to scan the QR.")'>
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete session">
+              <button class="btn btn-sm btn-warning btn-icon" type="submit" data-bs-toggle="tooltip"
+                title="Deactivate session">
+                <i class="bi bi-power"></i>
+              </button>
+            </form>
+            {% else %}
+            <form method="POST" action="/reactivate_session/{{ cs.id }}" class="d-inline"
+              onsubmit='return confirm("Reactivate this session?")'>
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-success btn-icon" type="submit" data-bs-toggle="tooltip"
+                title="Reactivate session">
+                <i class="bi bi-play-fill"></i>
+              </button>
+            </form>
+            {% endif %}
+            {% endif %}
+            <form method="POST" action="/delete_session/{{ cs.id }}" class="d-inline"
+              onsubmit='return confirm({{ ("Delete this session and all attendance records for " ~ session_display_name(cs) ~ "?")|tojson }})'>
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip"
+                title="Delete session">
                 <i class="bi bi-trash"></i>
               </button>
             </form>
@@ -207,98 +263,98 @@
 {% endif %}
 
 <script>
-function loadSemesters(dept_id, target_id) {
-  if (!dept_id) return;
-  fetch('/api/semesters/' + dept_id)
-    .then(r => r.json())
-    .then(data => {
-      const sel = document.getElementById(target_id);
-      sel.innerHTML = '<option value="">Select semester</option>';
-      data.forEach(s => sel.add(new Option(s.name, s.id)));
-    });
-}
-function loadSubjects(sem_id, target_id) {
-  if (!sem_id) return;
-  fetch('/api/subjects/' + sem_id)
-    .then(r => r.json())
-    .then(data => {
-      const sel = document.getElementById(target_id);
-      sel.innerHTML = '<option value="">Select subject</option>';
-      data.forEach(s => {
-        const option = new Option(s.display_name, s.id);
-        option.dataset.teacherId = s.teacher_id || '';
-        option.dataset.teacherName = s.teacher_name || '';
-        sel.add(option);
+  function loadSemesters(dept_id, target_id) {
+    if (!dept_id) return;
+    fetch('/api/semesters/' + dept_id)
+      .then(r => r.json())
+      .then(data => {
+        const sel = document.getElementById(target_id);
+        sel.innerHTML = '<option value="">Select semester</option>';
+        data.forEach(s => sel.add(new Option(s.name, s.id)));
       });
-      syncTeacherToSubject();
-    });
-}
-
-function loadTeachers(dept_id, target_id) {
-  if (!dept_id) return;
-  fetch('/api/teachers/' + dept_id)
-    .then(r => r.json())
-    .then(data => {
-      const sel = document.getElementById(target_id);
-      if (!sel) return;
-      sel.innerHTML = '<option value="">Select teacher</option>';
-      data.forEach(t => sel.add(new Option(t.name, t.id)));
-      syncTeacherToSubject();
-    });
-}
-
-function syncTeacherToSubject() {
-  const teacherSelect = document.getElementById('teacher_select');
-  const subjectSelect = document.getElementById('sub_select');
-  if (!teacherSelect || !subjectSelect) return;
-
-  const selectedSubject = subjectSelect.options[subjectSelect.selectedIndex];
-  const assignedTeacherId = selectedSubject ? selectedSubject.dataset.teacherId : '';
-  const assignedTeacherName = selectedSubject ? selectedSubject.dataset.teacherName : '';
-
-  if (assignedTeacherId) {
-    teacherSelect.innerHTML = `<option value="${assignedTeacherId}">${assignedTeacherName}</option>`;
-    teacherSelect.value = assignedTeacherId;
-    teacherSelect.setAttribute('data-locked', 'true');
-    teacherSelect.disabled = false;
-  } else if (teacherSelect.getAttribute('data-locked') === 'true') {
-    loadTeachers(document.getElementById('dept_select').value, 'teacher_select');
-    teacherSelect.removeAttribute('data-locked');
   }
-}
-
-function toggleClassMode() {
-  const classMode = document.getElementById('class_mode').value;
-  const subjectField = document.getElementById('subjectField');
-  const subjectSelect = document.getElementById('sub_select');
-  const specialTitleField = document.getElementById('specialTitleField');
-  const specialTitleInput = document.getElementById('special_title');
-  const teacherSelect = document.getElementById('teacher_select');
-
-  const isSpecial = classMode === 'special';
-
-  subjectField.classList.toggle('d-none', isSpecial);
-  specialTitleField.classList.toggle('d-none', !isSpecial);
-  subjectSelect.required = !isSpecial;
-  if (isSpecial) {
-    subjectSelect.value = '';
+  function loadSubjects(sem_id, target_id) {
+    if (!sem_id) return;
+    fetch('/api/subjects/' + sem_id)
+      .then(r => r.json())
+      .then(data => {
+        const sel = document.getElementById(target_id);
+        sel.innerHTML = '<option value="">Select subject</option>';
+        data.forEach(s => {
+          const option = new Option(s.display_name, s.id);
+          option.dataset.teacherId = s.teacher_id || '';
+          option.dataset.teacherName = s.teacher_name || '';
+          sel.add(option);
+        });
+        syncTeacherToSubject();
+      });
   }
 
-  specialTitleInput.required = isSpecial;
+  function loadTeachers(dept_id, target_id) {
+    if (!dept_id) return;
+    fetch('/api/teachers/' + dept_id)
+      .then(r => r.json())
+      .then(data => {
+        const sel = document.getElementById(target_id);
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Select teacher</option>';
+        data.forEach(t => sel.add(new Option(t.name, t.id)));
+        syncTeacherToSubject();
+      });
+  }
 
-  if (teacherSelect) {
-    teacherSelect.required = !isSpecial;
-    if (isSpecial && teacherSelect.getAttribute('data-locked') === 'true') {
-      teacherSelect.removeAttribute('data-locked');
+  function syncTeacherToSubject() {
+    const teacherSelect = document.getElementById('teacher_select');
+    const subjectSelect = document.getElementById('sub_select');
+    if (!teacherSelect || !subjectSelect) return;
+
+    const selectedSubject = subjectSelect.options[subjectSelect.selectedIndex];
+    const assignedTeacherId = selectedSubject ? selectedSubject.dataset.teacherId : '';
+    const assignedTeacherName = selectedSubject ? selectedSubject.dataset.teacherName : '';
+
+    if (assignedTeacherId) {
+      teacherSelect.innerHTML = `<option value="${assignedTeacherId}">${assignedTeacherName}</option>`;
+      teacherSelect.value = assignedTeacherId;
+      teacherSelect.setAttribute('data-locked', 'true');
+      teacherSelect.disabled = false;
+    } else if (teacherSelect.getAttribute('data-locked') === 'true') {
       loadTeachers(document.getElementById('dept_select').value, 'teacher_select');
+      teacherSelect.removeAttribute('data-locked');
     }
   }
-}
 
-document.getElementById('sub_select')?.addEventListener('change', syncTeacherToSubject);
-document.addEventListener('DOMContentLoaded', function() {
-  toggleClassMode();
-  syncTeacherToSubject();
-});
+  function toggleClassMode() {
+    const classMode = document.getElementById('class_mode').value;
+    const subjectField = document.getElementById('subjectField');
+    const subjectSelect = document.getElementById('sub_select');
+    const specialTitleField = document.getElementById('specialTitleField');
+    const specialTitleInput = document.getElementById('special_title');
+    const teacherSelect = document.getElementById('teacher_select');
+
+    const isSpecial = classMode === 'special';
+
+    subjectField.classList.toggle('d-none', isSpecial);
+    specialTitleField.classList.toggle('d-none', !isSpecial);
+    subjectSelect.required = !isSpecial;
+    if (isSpecial) {
+      subjectSelect.value = '';
+    }
+
+    specialTitleInput.required = isSpecial;
+
+    if (teacherSelect) {
+      teacherSelect.required = !isSpecial;
+      if (isSpecial && teacherSelect.getAttribute('data-locked') === 'true') {
+        teacherSelect.removeAttribute('data-locked');
+        loadTeachers(document.getElementById('dept_select').value, 'teacher_select');
+      }
+    }
+  }
+
+  document.getElementById('sub_select')?.addEventListener('change', syncTeacherToSubject);
+  document.addEventListener('DOMContentLoaded', function () {
+    toggleClassMode();
+    syncTeacherToSubject();
+  });
 </script>
 {% endblock %}

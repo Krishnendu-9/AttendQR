@@ -22,6 +22,8 @@
   </div>
 </div>
 
+{% if current_user.role != 'teacher' %}
+
 <form method="POST" class="form-panel">
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3 align-items-end">
@@ -61,12 +63,21 @@
     </div>
   </div>
 </form>
+{% endif %}
 
 <div class="table-card">
   <div class="table-responsive">
     <table class="table table-hover align-middle" id="subjectsTable">
       <thead>
-        <tr><th>#</th><th>Paper Code</th><th>Subject</th><th>Assigned Teacher</th><th>Department</th><th>Semester</th><th class="text-end">Actions</th></tr>
+        <tr>
+          <th>#</th>
+          <th>Paper Code</th>
+          <th>Subject</th>
+          {% if current_user.role != 'teacher' %}<th>Assigned Teacher</th>{% endif %}
+          <th>Department</th>
+          <th>Semester</th>
+          {% if current_user.role != 'teacher' %}<th class="text-end">Actions</th>{% endif %}
+        </tr>
       </thead>
       <tbody>
         {% for s in subjects %}
@@ -74,9 +85,10 @@
           <td>{{ loop.index }}</td>
           <td><span class="badge text-bg-secondary">{{ s.paper_code or 'N/A' }}</span></td>
           <td class="fw-semibold">{{ s.name }}</td>
-          <td>{{ s.teacher.name if s.teacher else 'Not assigned' }}</td>
+          {% if current_user.role != 'teacher' %}<td>{{ s.teacher.name if s.teacher else 'Not assigned' }}</td>{% endif %}
           <td>{{ s.department.display_name }}</td>
           <td>{{ s.semester.name }}</td>
+          {% if current_user.role != 'teacher' %}
           <td class="text-end text-nowrap">
             <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit subject"
               onclick='openEdit({{ s.id|tojson }}, {{ s.name|tojson }}, {{ (s.paper_code or '')|tojson }}, {{ s.department_id|tojson }}, {{ s.semester_id|tojson }}, {{ (s.teacher_id or '')|tojson }})'>
@@ -90,6 +102,7 @@
               </button>
             </form>
           </td>
+          {% endif %}
         </tr>
         {% endfor %}
         {% if not subjects %}
@@ -100,6 +113,7 @@
   </div>
 </div>
 
+{% if current_user.role != 'teacher' %}
 <div class="modal fade" id="editModal" tabindex="-1">
   <div class="modal-dialog">
     <form method="POST" id="editForm" class="modal-content">
@@ -148,6 +162,8 @@
     </form>
   </div>
 </div>
+{% endif %}
+
 <script>
 function loadSemesters(dept_id, target_id) {
   if (!dept_id) return;
