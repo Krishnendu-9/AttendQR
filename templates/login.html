@@ -18,7 +18,7 @@
     </div>
     <div class="text-center mb-2 fw-bold">AttendQR</div>
     <h1 class="h4 fw-bold mb-1">Login</h1>
-    <p class="text-muted mb-4">Sign in with your username or email to access the QR-based attendance system.</p>
+    <p class="text-muted mb-4">Sign in with your email to access the QR-based attendance system.</p>
 
     {% if error %}
     <div class="alert alert-danger" role="alert">
@@ -30,8 +30,8 @@
       <input type="hidden" name="next" value="{{ next_url or '' }}">
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       <div class="mb-3">
-        <label class="form-label" for="username">Username or Email</label>
-        <input class="form-control" id="username" name="username" placeholder="Enter username or email" autocomplete="username" required>
+        <label class="form-label" for="username">Email</label>
+        <input class="form-control" id="username" name="username" placeholder="Enter email" autocomplete="username" required>
       </div>
       <div class="mb-4">
         <label class="form-label" for="password">Password</label>
