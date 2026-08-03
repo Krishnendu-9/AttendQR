@@ -8,3 +8,4 @@ reportlab
 Pillow
 pytz
 
+# .\venv\Scripts\python.exe app.py //command to run the application
