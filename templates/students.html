@@ -150,6 +150,13 @@
                 <i class="bi bi-key"></i>
               </button>
             </form>
+            <form method="POST" action="/students/reset-device/{{ s.id }}" class="d-inline"
+              onsubmit='return confirm({{ ("Reset registered device lock for " ~ s.name ~ "?")|tojson }})'>
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-secondary btn-icon" type="submit" data-bs-toggle="tooltip" title="Reset device lock">
+                <i class="bi bi-phone"></i>
+              </button>
+            </form>
             {% if current_user.role in ['super_admin', 'hod'] %}
             <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit student"
               onclick='openEdit({{ s.id|tojson }}, {{ s.name|tojson }}, {{ s.roll_no|tojson }}, {{ s.email|tojson }}, {{ s.department_id|tojson }}, {{ s.semester_id|tojson }})'>

@@ -26,8 +26,8 @@
       {% endif %}
       {% endif %}
     </div>
-    <img src="/{{ qr_image }}" class="qr-preview mb-3" alt="Generated QR code">
-    <div class="small text-muted text-break mb-2" style="font-size: 0.75rem;">{{ scan_url }}</div>
+    <img id="qrCodeImage" src="/{{ qr_image }}" class="qr-preview mb-3" alt="Generated QR code">
+    <div id="scanUrlText" class="small text-muted text-break mb-2" style="font-size: 0.75rem;">{{ scan_url }}</div>
     <div class="d-flex flex-wrap justify-content-center gap-2">
       <a href="{{ url_for('generate_qr') }}" class="btn btn-primary">
         <i class="bi bi-plus-circle me-1"></i> New QR
@@ -104,6 +104,36 @@
   <div class="p-4 text-center text-muted">No attendance has been marked for this QR session yet.</div>
   {% endif %}
 </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const qrImg = document.getElementById('qrCodeImage');
+    const scanUrlText = document.getElementById('scanUrlText');
+    const sessionId = {{ session_id|tojson if session_id else 'null' }};
+    
+    if (sessionId) {
+      function refreshQR() {
+        fetch('/api/session/' + sessionId + '/scan-url')
+          .then(response => {
+            if (!response.ok) throw new Error("Session expired or inactive");
+            return response.json();
+          })
+          .then(data => {
+            if (data.success) {
+              qrImg.src = '/qr-code-image?text=' + encodeURIComponent(data.scan_url);
+              scanUrlText.textContent = data.scan_url;
+            }
+          })
+          .catch(err => {
+            console.error("Error refreshing QR:", err);
+          });
+      }
+      
+      // Refresh every 10 seconds
+      setInterval(refreshQR, 10000);
+    }
+  });
+</script>
 {% else %}
 <form method="POST" class="form-panel">
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">

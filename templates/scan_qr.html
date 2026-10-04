@@ -61,8 +61,12 @@
     })
     .then(r => r.json())
     .then(data => {
-      document.getElementById('msg').innerHTML =
-        `<div class="alert alert-${data.success ? 'success' : 'danger'}">${data.message}</div>`;
+      const msgContainer = document.getElementById('msg');
+      msgContainer.innerHTML = '';
+      const alertDiv = document.createElement('div');
+      alertDiv.className = `alert alert-${data.success ? 'success' : 'danger'}`;
+      alertDiv.textContent = data.message;
+      msgContainer.appendChild(alertDiv);
 
       if (data.success) {
         setTimeout(() => window.close(), 3000);
