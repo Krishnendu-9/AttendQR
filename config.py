@@ -20,12 +20,20 @@ class Config:
 
     DEFAULT_PRINCIPAL_EMAIL = os.environ.get(
         "DEFAULT_PRINCIPAL_EMAIL",
-        "principal@rcciit.org.in"
+        "principal@example.com"
     )
 
     DEFAULT_PRINCIPAL_PASSWORD = os.environ.get(
         "DEFAULT_PRINCIPAL_PASSWORD",
-        "RCC@qr2026"
+        "ChangeMe123!"
     )
+
+    ALLOWED_STAFF_DOMAINS = [
+        d.strip().lower()
+        for d in os.environ.get("ALLOWED_STAFF_DOMAINS", "@rcciit.org.in,@gmail.com").split(",")
+        if d.strip()
+    ]
+
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB max upload size
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
