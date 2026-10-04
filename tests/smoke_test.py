@@ -17,7 +17,13 @@ def assert_status(client, path, expected):
         raise AssertionError(f"{path}: expected {expected}, got {actual}")
 
 
+def clear_login_cache():
+    from flask import g
+    g.__dict__.pop('_login_user', None)
+
+
 def csrf_data(client, data=None):
+    clear_login_cache()
     data = dict(data or {})
     with client.session_transaction() as sess:
         token = sess.get("_csrf_token")
@@ -30,6 +36,7 @@ def csrf_data(client, data=None):
 
 
 def login(client, username, password):
+    clear_login_cache()
     client.get("/login")
     response = client.post(
         "/login",
@@ -184,13 +191,13 @@ def main():
     if "<option value=\"student\"" in principal_accounts_html:
         raise AssertionError("Accounts page should not offer Student creation.")
 
-    app.Admin.query.filter_by(username="_smoke_principal").delete()
+    app.Admin.query.filter_by(username="_smoke_principal@gmail.com").delete()
     app.db.session.commit()
 
     created_principal = fresh_principal_client.post(
         "/add_admin",
         data=csrf_data(fresh_principal_client, {
-            "username": "_smoke_principal",
+            "username": "_smoke_principal@gmail.com",
             "role": "super_admin",
             "password": "test123",
             "confirm_password": "test123",
@@ -198,7 +205,7 @@ def main():
         follow_redirects=True,
     )
     created_principal_html = created_principal.get_data(as_text=True)
-    if created_principal.status_code != 200 or "Principal account" not in created_principal_html or "_smoke_principal" not in created_principal_html:
+    if created_principal.status_code != 200 or "Principal account" not in created_principal_html or "_smoke_principal@gmail.com" not in created_principal_html:
         raise AssertionError("Principal account creation from Accounts page should be allowed.")
 
     current_principal = app.Admin.query.filter_by(username="_smoke_principal_root", role="super_admin").first()
@@ -208,7 +215,7 @@ def main():
     ).status_code != 403:
         raise AssertionError("Principal accounts should be protected from Accounts deletion.")
 
-    extra_principal = app.Admin.query.filter_by(username="_smoke_principal", role="super_admin").first()
+    extra_principal = app.Admin.query.filter_by(username="_smoke_principal@gmail.com", role="super_admin").first()
     if not extra_principal:
         raise AssertionError("Created Principal account should exist.")
     delete_extra_principal = fresh_principal_client.post(
@@ -221,7 +228,7 @@ def main():
 
     teacher_client = app.app.test_client()
     login(teacher_client, "_smoke_teacher@gmail.com", "test123")
-    teacher_department = app.Department.query.get(teacher.department_id)
+    teacher_department = app.db.session.get(app.Department, teacher.department_id)
     teacher_semester = app.Semester.query.filter_by(department_id=teacher.department_id).first()
     if not teacher_semester:
         raise AssertionError("Smoke test requires a semester in the smoke teacher department.")
@@ -307,6 +314,7 @@ def main():
     if password_change.status_code != 200 or "Password updated successfully." not in password_change.get_data(as_text=True):
         raise AssertionError("My Account page should allow the logged-in user to change password.")
 
+    clear_login_cache()
     old_login_client = app.app.test_client()
     old_login_client.get("/login")
     old_login_response = old_login_client.post(
@@ -324,7 +332,7 @@ def main():
 
     app.Admin.query.filter_by(username=import_email).delete()
     app.Student.query.filter_by(email=import_email).delete()
-    app.Admin.query.filter_by(username="_smoke_principal").delete()
+    app.Admin.query.filter_by(username="_smoke_principal@gmail.com").delete()
     app.Admin.query.filter_by(username="_smoke_principal_root").delete()
     app.Admin.query.filter_by(username="_smoke_student_access@gmail.com").delete()
     app.Admin.query.filter_by(username=temp_teacher_email).delete()
