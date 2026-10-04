@@ -14,7 +14,7 @@ import sqlite3
 import qrcode, uuid, os, io, socket, re, secrets
 import openpyxl
 from urllib.parse import urlsplit
-from reportlab.lib.pagesizes import letter, landscape, A4
+from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, Spacer
 from reportlab.lib.units import cm
 import pytz
@@ -169,11 +169,17 @@ ROLE_LABELS = {
 }
 
 ATTENDANCE_TARGET = 80
-ALLOWED_STAFF_EMAIL_DOMAINS = ('@rcciit.org.in', '@gmail.com')
 SPECIAL_CLASS_SUBJECT_NAME = '__SPECIAL_CLASS__'
 MIN_QR_DURATION = 1
 MAX_QR_DURATION = 180
 EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}$")
+
+
+def get_allowed_staff_domains():
+    configured = app.config.get('ALLOWED_STAFF_DOMAINS')
+    if configured:
+        return tuple(configured)
+    return ('@rcciit.org.in', '@gmail.com')
 
 
 def normalize_text(value):
@@ -197,7 +203,8 @@ def is_valid_email(value):
 
 def is_allowed_staff_email(value):
     email = normalize_email(value)
-    return is_valid_email(email) and any(email.endswith(domain) for domain in ALLOWED_STAFF_EMAIL_DOMAINS)
+    allowed = get_allowed_staff_domains()
+    return is_valid_email(email) and any(email.endswith(domain) for domain in allowed)
 
 
 def email_format_rule_message():
@@ -205,7 +212,8 @@ def email_format_rule_message():
 
 
 def staff_email_rule_message():
-    return "Use a valid email ending with @rcciit.org.in or @gmail.com."
+    allowed = get_allowed_staff_domains()
+    return f"Use a valid email ending with {' or '.join(allowed)}."
 
 
 def normalize_branch(value):
@@ -723,6 +731,13 @@ def ensure_subject_columns():
         db.session.commit()
 
 
+def ensure_student_columns():
+    columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(student)")).fetchall()}
+    if 'device_id' not in columns:
+        db.session.execute(text("ALTER TABLE student ADD COLUMN device_id VARCHAR(100)"))
+        db.session.commit()
+
+
 def backfill_subject_teacher_assignments():
     updated = False
     for subject in Subject.query.filter(Subject.name != SPECIAL_CLASS_SUBJECT_NAME, Subject.teacher_id.is_(None)).all():
@@ -792,7 +807,11 @@ def parse_student_import(file_storage):
     filename = (file_storage.filename or '').lower()
     file_storage.stream.seek(0)
     if filename.endswith('.csv'):
-        content = file_storage.stream.read().decode('utf-8-sig').splitlines()
+        raw_bytes = file_storage.stream.read()
+        try:
+            content = raw_bytes.decode('utf-8-sig').splitlines()
+        except UnicodeDecodeError:
+            content = raw_bytes.decode('latin-1', errors='replace').splitlines()
         return list(csv.DictReader(content))
 
     if filename.endswith('.xlsx'):
@@ -949,17 +968,17 @@ def dashboard():
 
     def session_panel_rows(sessions):
         rows = []
-        for session in sessions:
+        for sess in sessions:
             rows.append({
-                'id': session.id,
-                'name': session_display_name(session),
-                'department': session.subject.department.display_name if session.subject and session.subject.department else '',
-                'semester': session.subject.semester.name if session.subject and session.subject.semester else '',
-                'teacher': session.teacher.name if session.teacher else 'Unassigned',
-                'created_at': session.created_at,
-                'expires_at': session.expires_at,
-                'is_active': session.expires_at > now_ist,
-                'attendance_count': Attendance.query.filter_by(session_id=session.id).count()
+                'id': sess.id,
+                'name': session_display_name(sess),
+                'department': sess.subject.department.display_name if sess.subject and sess.subject.department else '',
+                'semester': sess.subject.semester.name if sess.subject and sess.subject.semester else '',
+                'teacher': sess.teacher.name if sess.teacher else 'Unassigned',
+                'created_at': sess.created_at,
+                'expires_at': sess.expires_at,
+                'is_active': sess.expires_at > now_ist,
+                'attendance_count': Attendance.query.filter_by(session_id=sess.id).count()
             })
         return rows
 
@@ -987,6 +1006,13 @@ def dashboard():
             'teachers': acc_teachers,
         }
 
+    scoped_session_ids = [s.id for s in scoped_sessions]
+    total_attendance = (
+        db.session.query(db.func.count(Attendance.id))
+        .filter(Attendance.session_id.in_(scoped_session_ids))
+        .scalar() or 0
+    ) if scoped_session_ids else 0
+
     return render_template('dashboard.html',
         departments=visible_departments_query().count(),
         semesters=visible_semesters_query().count(),
@@ -994,7 +1020,7 @@ def dashboard():
         teachers=visible_teachers_query().count(),
         students=visible_students_query().count(),
         sessions=len(scoped_sessions),
-        attendance=sum(Attendance.query.filter_by(session_id=s.id).count() for s in scoped_sessions),
+        attendance=total_attendance,
         recent_sessions=session_panel_rows(recent_sessions),
         recent_account_logs=recent_account_logs,
         accounts=accounts)
@@ -1711,6 +1737,28 @@ def reset_student_password(id):
     flash(f"Password for {student.name} was reset to the roll number ({student.roll_no}).", 'success')
     return redirect(url_for('students'))
 
+
+@app.route('/students/reset-device/<int:id>', methods=['POST'])
+@login_required
+@role_required('super_admin', 'hod', 'teacher')
+def reset_student_device(id):
+    student = Student.query.get_or_404(id)
+    if not can_access_student(student):
+        abort(403)
+
+    student.device_id = None
+    log_activity(
+        'student_device_reset',
+        f"Reset registered device for student '{student.name}' ({student.roll_no}).",
+        'student',
+        student.id,
+        student.department_id
+    )
+    db.session.commit()
+    flash(f"Device lock reset successfully for {student.name}.", "success")
+    return redirect(url_for('students'))
+
+
 # ── API: filtered dropdowns ───────────────────────────────────
 @app.route('/api/semesters/<int:department_id>')
 @login_required
@@ -1771,6 +1819,44 @@ def api_teachers(department_id):
     rows = rows.order_by(Teacher.name).all()
     return jsonify([{'id': r.id, 'name': r.name} for r in rows])
 
+
+@app.route('/api/session/<int:id>/scan-url')
+@login_required
+@role_required('super_admin', 'hod', 'teacher')
+def api_session_scan_url(id):
+    from itsdangerous import URLSafeTimedSerializer
+    import secrets
+
+    cs = ClassSession.query.get_or_404(id)
+    if not can_access_session(cs):
+        abort(403)
+
+    if not cs.is_active or get_ist_now() > cs.expires_at:
+        return jsonify({'success': False, 'message': 'Session is not active or has expired'}), 400
+
+    # Generate short-lived signed token
+    serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+    payload = {'session_id': cs.id, 'rand': secrets.token_hex(4)}
+    signed_token = serializer.dumps(payload, salt='qr-scan-salt')
+
+    scan_url = build_scan_url(signed_token)
+    return jsonify({'success': True, 'scan_url': scan_url})
+
+
+@app.route('/qr-code-image')
+@login_required
+def qr_code_image():
+    text = request.args.get('text', '')
+    if not text:
+        abort(400, description='Text parameter is required')
+
+    img = qrcode.make(text)
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return send_file(buf, mimetype='image/png')
+
+
 # ── QR & Attendance ──────────────────────────────────────────
 @app.route('/generate_qr', methods=['GET', 'POST'])
 @login_required
@@ -1787,10 +1873,14 @@ def generate_qr():
         if cs:
             if not can_access_session(cs):
                 abort(403)
-            qr_image = f"static/qrcodes/{cs.token}.png"
+            from itsdangerous import URLSafeTimedSerializer
+            serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+            payload = {'session_id': cs.id, 'rand': secrets.token_hex(4)}
+            signed_token = serializer.dumps(payload, salt='qr-scan-salt')
+            scan_url = build_scan_url(signed_token)
+            qr_image = f"qr-code-image?text={scan_url}"
             session_id = cs.id
             subject_name = session_display_name(cs)
-            scan_url = build_scan_url(cs.token)
             duration = int((cs.expires_at - cs.created_at).total_seconds() / 60)
             view_session = cs
             attendance_records = Attendance.query.filter_by(session_id=cs.id).order_by(Attendance.timestamp.desc()).all()
@@ -1963,16 +2053,32 @@ def delete_session(id):
 
 @app.route('/scan/<token>')
 def scan_qr(token):
-    cs = ClassSession.query.filter_by(token=token).first()
+    from flask import make_response
+    from itsdangerous import URLSafeTimedSerializer, SignatureExpired
+
+    serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+    is_token_expired = False
+    cs = None
+
+    try:
+        # Check if it is a signed timed token. Max age 30 seconds
+        payload = serializer.loads(token, salt='qr-scan-salt', max_age=30)
+        session_id = payload['session_id']
+        cs = ClassSession.query.get(session_id)
+    except SignatureExpired:
+        is_token_expired = True
+    except Exception:
+        cs = ClassSession.query.filter_by(token=token).first()
+
     now_ist = get_ist_now()
 
-    if not cs or not cs.subject:
+    if is_token_expired or not cs or not cs.subject:
         return render_template(
             'scan_qr.html',
             token=token,
             is_active=False,
             status_title='QR Expired',
-            status_message='This QR code is expired or invalid. Please ask your teacher for a new QR code.',
+            status_message='This QR code has expired or is invalid. Please scan the newly refreshed QR code on the screen.',
             session_info=None
         )
 
@@ -1995,13 +2101,19 @@ def scan_qr(token):
         and current_user.student
     )
     student_scope_error = None
+    device_error = None
     already_marked = False
+
+    device_id_cookie = request.cookies.get('device_id')
 
     if can_mark_attendance:
         student = current_user.student
         if student.department_id != cs.subject.department_id or student.semester_id != cs.subject.semester_id:
             can_mark_attendance = False
             student_scope_error = f'This QR code is only for {cs.subject.department.display_name} - {cs.subject.semester.name}.'
+        elif student.device_id and device_id_cookie and student.device_id != device_id_cookie:
+            can_mark_attendance = False
+            device_error = 'This account is locked to a different device. You can only mark attendance from your registered device.'
         else:
             already_marked = bool(Attendance.query.filter_by(student_id=student.id, session_id=cs.id).first())
 
@@ -2011,6 +2123,9 @@ def scan_qr(token):
     elif is_active and student_scope_error:
         status_title = 'Wrong Class'
         status_message = student_scope_error
+    elif is_active and device_error:
+        status_title = 'Device Verification Failed'
+        status_message = device_error
     elif is_active and already_marked:
         status_title = 'Attendance Already Marked'
         status_message = 'Your attendance has already been marked for this QR session.'
@@ -2025,7 +2140,7 @@ def scan_qr(token):
             status_title = 'QR Deactivated'
             status_message = 'This QR session has been deactivated by the teacher.'
 
-    return render_template(
+    response_content = render_template(
         'scan_qr.html',
         token=token,
         is_active=is_active,
@@ -2036,6 +2151,13 @@ def scan_qr(token):
         status_message=status_message,
         session_info=session_info
     )
+
+    resp = make_response(response_content)
+    if not device_id_cookie:
+        import uuid
+        device_id_cookie = str(uuid.uuid4())
+        resp.set_cookie('device_id', device_id_cookie, max_age=315360000, httponly=True, samesite='Lax')
+    return resp
 
 @app.route('/mark_attendance', methods=['POST'])
 def mark_attendance():
@@ -2050,12 +2172,23 @@ def mark_attendance():
     if not token:
         return jsonify({'success': False, 'message': 'QR token is required'}), 400
 
-    cs = ClassSession.query.filter_by(token=token).first()
-    
-    # Use IST timezone for comparison (naive datetime)
+    # Verification of Token (Timed Signature)
+    from itsdangerous import URLSafeTimedSerializer
+    serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+    cs = None
+    try:
+        # Check if it is a signed timed token. Max age 30 seconds
+        payload = serializer.loads(token, salt='qr-scan-salt', max_age=30)
+        session_id = payload.get('session_id')
+        if session_id:
+            cs = ClassSession.query.get(session_id)
+    except Exception:
+        # Fallback to legacy static token check
+        cs = ClassSession.query.filter_by(token=token).first()
+
     now_ist = get_ist_now()
-    
-    if not cs or now_ist > cs.expires_at:
+
+    if not cs or now_ist > cs.expires_at or not cs.is_active:
         return jsonify({'success': False, 'message': 'QR code expired or invalid'})
 
     subject = cs.subject
@@ -2068,17 +2201,45 @@ def mark_attendance():
             'success': False,
             'message': f'This QR code is only for {subject.department.display_name} - {subject.semester.name}.'
         })
-    
+
+    # Device ID Lock Checks
+    device_id_cookie = request.cookies.get('device_id')
+
+    if student.device_id:
+        # If student already has a device ID registered
+        if not device_id_cookie or student.device_id != device_id_cookie:
+            return jsonify({
+                'success': False,
+                'message': 'This account is locked to a different device. You can only mark attendance from your registered device.'
+            }), 403
+
+    # If student does not have a device ID registered yet
+    new_device_id_cookie = None
+    if not student.device_id:
+        if not device_id_cookie:
+            import uuid
+            device_id_cookie = str(uuid.uuid4())
+            new_device_id_cookie = device_id_cookie
+        student.device_id = device_id_cookie
+        db.session.add(student)
+        db.session.flush()
+
     if Attendance.query.filter_by(student_id=student.id, session_id=cs.id).first():
         return jsonify({'success': False, 'message': 'Attendance already marked'})
-    
+
     db.session.add(Attendance(student_id=student.id, session_id=cs.id, timestamp=now_ist))
     try:
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
         return jsonify({'success': False, 'message': 'Attendance already marked'})
-    return jsonify({'success': True, 'message': f'Attendance marked for {student.name}'})
+
+    response_data = {'success': True, 'message': f'Attendance marked for {student.name}'}
+    resp = jsonify(response_data)
+    if new_device_id_cookie:
+        # Save device_id cookie for 10 years (315360000 seconds)
+        resp.set_cookie('device_id', new_device_id_cookie, max_age=315360000, httponly=True, samesite='Lax')
+    return resp
 
 
 @app.route('/reports')
@@ -2148,7 +2309,12 @@ def reports():
         # Calculate statistics
         total_students = Student.query.filter_by(department_id=dept_id, semester_id=sem_id).count()
         total_sessions = len(sessions)
-        total_attendance = sum([Attendance.query.filter_by(session_id=s.id).count() for s in sessions])
+        session_ids = [s.id for s in sessions]
+        total_attendance = (
+            db.session.query(db.func.count(Attendance.id))
+            .filter(Attendance.session_id.in_(session_ids))
+            .scalar() or 0
+        ) if session_ids else 0
         
         stats = {
             'total_students': total_students,
@@ -2231,6 +2397,13 @@ def detailed_report():
     sessions = sessions.order_by(ClassSession.created_at.desc()).all()
     
     # Build attendance matrix
+    session_ids = [s.id for s in sessions]
+    attended_set = set(
+        db.session.query(Attendance.student_id, Attendance.session_id)
+        .filter(Attendance.session_id.in_(session_ids))
+        .all()
+    ) if session_ids else set()
+
     attendance_data = []
     for student in students:
         row = {
@@ -2239,12 +2412,9 @@ def detailed_report():
             'total': 0,
             'percentage': 0
         }
-        for session in sessions:
-            attended = Attendance.query.filter_by(
-                student_id=student.id,
-                session_id=session.id
-            ).first()
-            row['attendance'][session.id] = bool(attended)
+        for sess in sessions:
+            attended = (student.id, sess.id) in attended_set
+            row['attendance'][sess.id] = attended
             if attended:
                 row['total'] += 1
         
@@ -2324,11 +2494,18 @@ def export(department_id, semester_id, fmt):
     headers = ['Roll No', 'Name', 'Email'] + [session_col_header(s) for s in sessions] + ['Total', '%']
     data = [headers]
     
+    session_ids = [s.id for s in sessions]
+    attended_set = set(
+        db.session.query(Attendance.student_id, Attendance.session_id)
+        .filter(Attendance.session_id.in_(session_ids))
+        .all()
+    ) if session_ids else set()
+
     for student in students:
         row = [student.roll_no, student.name, student.email]
         total = 0
-        for session in sessions:
-            attended = Attendance.query.filter_by(student_id=student.id, session_id=session.id).first()
+        for sess in sessions:
+            attended = (student.id, sess.id) in attended_set
             row.append('P' if attended else 'A')
             if attended:
                 total += 1
@@ -2825,6 +3002,7 @@ with app.app_context():
     ensure_class_session_columns()
     ensure_department_columns()
     ensure_subject_columns()
+    ensure_student_columns()
     ensure_attendance_unique_index()
     backfill_subject_teacher_assignments()
     default_principal_username = normalize_email(app.config['DEFAULT_PRINCIPAL_EMAIL'])
