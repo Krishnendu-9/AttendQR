@@ -1,4 +1,4 @@
-﻿# QR-Based Smart Attendance Management System
+# QR-Based Smart Attendance Management System
 
 A Flask-based web application for managing classroom attendance through time-bound QR sessions, role-based access control, and downloadable attendance reports.
 
@@ -40,7 +40,7 @@ The application also manages departments, semesters, subjects, teacher profiles,
 ## Project Structure
 
 ```text
-QR code Generator/
+AttendQR/
   app.py                  Main Flask application and routes
   models.py               SQLAlchemy database models
   config.py               Configuration
@@ -48,12 +48,15 @@ QR code Generator/
   wsgi.py                 WSGI entrypoint
   requirements.txt        Python dependencies
   README.md               Project overview and setup guide
+  LICENSE                 Open source MIT license
+  SECURITY.md             Vulnerability reporting policy
   .env.example            Example environment values
   templates/              Jinja2 templates
   static/                 CSS and generated QR code assets
   instance/               Runtime SQLite database
   docs/                   RBAC and structure notes
   tests/                  Smoke tests
+  .github/workflows/      CI test automation
 ```
 
 ## Database
@@ -265,3 +268,7 @@ This verifies application import and core route access for major roles.
 - stronger attendance authenticity checks such as location or campus network validation
 - deployment on a dedicated internal server
 - richer analytics for attendance trends and shortage forecasting
+
+## License
+
+This project is open source and available under the [MIT License](LICENSE).
