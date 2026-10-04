@@ -1,11 +1,10 @@
-Flask
-Flask-SQLAlchemy
-Flask-Login
-python-dotenv
-qrcode[pil]
-openpyxl
-reportlab
-Pillow
-pytz
-
-# .\venv\Scripts\python.exe app.py //command to run the application
+Flask>=3.1.0,<4.0.0
+Flask-SQLAlchemy>=3.1.0,<4.0.0
+Flask-Login>=0.6.3,<1.0.0
+python-dotenv>=1.0.0
+qrcode[pil]>=8.0
+openpyxl>=3.1.0
+reportlab>=4.0.0
+Pillow>=10.0.0
+pytz>=2024.1
+itsdangerous>=2.2.0
