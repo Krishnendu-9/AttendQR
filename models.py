@@ -1,6 +1,15 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from datetime import datetime
+import pytz
+
+IST = pytz.timezone('Asia/Kolkata')
+
+
+def get_current_time():
+    """Get current time in IST as naive datetime, matching application timestamp storage."""
+    return datetime.now(IST).replace(tzinfo=None)
+
 
 db = SQLAlchemy()
 
@@ -87,6 +96,7 @@ class Student(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
     semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
+    device_id = db.Column(db.String(100), nullable=True)
 
 class ClassSession(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -94,7 +104,7 @@ class ClassSession(db.Model):
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id', ondelete='SET NULL'), nullable=True)
     special_title = db.Column(db.String(200), nullable=True)
     token = db.Column(db.String(100), unique=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=get_current_time)
     expires_at = db.Column(db.DateTime, nullable=False)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     subject = db.relationship('Subject', backref=db.backref('sessions', lazy=True))
@@ -107,7 +117,7 @@ class Attendance(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False)
     session_id = db.Column(db.Integer, db.ForeignKey('class_session.id', ondelete='CASCADE'), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=get_current_time)
     student = db.relationship('Student', backref=db.backref('attendances', cascade='all, delete-orphan'))
     session = db.relationship('ClassSession', backref=db.backref('attendances', cascade='all, delete-orphan'))
 
@@ -121,7 +131,7 @@ class ActivityLog(db.Model):
     target_type = db.Column(db.String(40), nullable=True)
     target_id = db.Column(db.Integer, nullable=True)
     description = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=get_current_time, nullable=False)
 
     actor = db.relationship('Admin', foreign_keys=[actor_admin_id])
     department = db.relationship('Department', foreign_keys=[department_id])
