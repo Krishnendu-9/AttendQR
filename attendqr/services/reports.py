@@ -2,7 +2,6 @@
 import io
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from math import ceil
 from typing import Optional
 from xml.sax.saxutils import escape
 
@@ -57,10 +56,16 @@ def total_attendance(session_query):
 
 
 def classes_needed_for_target(attended, total, target):
-    if total == 0 or attended / total * 100 >= target:
+    """Consecutive classes to attend so that attended/total reaches target percent.
+
+    Solves (attended + n) / (total + n) >= target / 100 in integers; float maths
+    rounds 0.8 * 6 up to 4.800000000000001 and over-counts by one.
+    """
+    if total == 0 or attended * 100 >= target * total:
         return 0
-    target_ratio = target / 100
-    return max(0, ceil((target_ratio * total - attended) / (1 - target_ratio)))
+    if target >= 100:
+        return 0
+    return -(-(target * total - 100 * attended) // (100 - target))  # integer ceiling division
 
 
 def build_student_attendance_summary(student):
@@ -195,15 +200,18 @@ def build_attendance_matrix(filters):
         .order_by(Student.roll_no)
         .all()
     )
-    attended = set(
-        db.session.query(Attendance.student_id, Attendance.session_id)
-        .filter(Attendance.session_id.in_(session_ids_select(session_query)))
-    ) if sessions else set()
+    # (student_id, session_id) -> 'scan' or 'manual'; absent pairs are missing.
+    attended = {
+        (student_id, session_id): source
+        for student_id, session_id, source in db.session.query(
+            Attendance.student_id, Attendance.session_id, Attendance.source
+        ).filter(Attendance.session_id.in_(session_ids_select(session_query)))
+    } if sessions else {}
 
     rows = []
     for student in students:
-        marks = {s.id: (student.id, s.id) in attended for s in sessions}
-        present = sum(marks.values())
+        marks = {s.id: attended.get((student.id, s.id)) for s in sessions}
+        present = sum(1 for mark in marks.values() if mark)
         rows.append({
             'student': student,
             'attendance': marks,
@@ -243,23 +251,32 @@ def export_filename(department, semester, sessions, filters):
     return ''.join(ch if ch.isalnum() or ch in '-_.' else '_' for ch in name)
 
 
+MANUAL_MARK_LEGEND = "P = present (QR scan), P* = present (entered manually by staff), A = absent"
+
+
+def attendance_mark(source):
+    if not source:
+        return 'A'
+    return 'P*' if source == Attendance.SOURCE_MANUAL else 'P'
+
+
 def build_export_rows(sessions, rows):
     headers = ['Roll No', 'Name', 'Email'] + [session_header_lines(s) for s in sessions] + ['Total', '%']
     data = []
     for row in rows:
         student = row['student']
         line = [student.roll_no, student.name, student.email]
-        line += ['P' if row['attendance'][s.id] else 'A' for s in sessions]
+        line += [attendance_mark(row['attendance'][s.id]) for s in sessions]
         line.append(row['total'])
         line.append(f"{round(row['total'] / len(sessions) * 100, 1)}%" if sessions else "0%")
         data.append(line)
     return headers, data
 
 
-def render_excel(headers, data):
+def render_excel(headers, data, notes=(), title="Attendance Report"):
     workbook = openpyxl.Workbook()
     sheet = workbook.active
-    sheet.title = "Attendance Report"
+    sheet.title = title
     header_font = openpyxl.styles.Font(color="FFFFFF", bold=True)
     header_fill = openpyxl.styles.PatternFill(start_color="366092", end_color="366092", fill_type="solid")
 
@@ -271,6 +288,9 @@ def render_excel(headers, data):
     for row_idx, row in enumerate(data, 2):
         for col_idx, value in enumerate(row, 1):
             sheet.cell(row=row_idx, column=col_idx, value=_excel_safe(value))
+    for offset, note in enumerate(notes):
+        cell = sheet.cell(row=len(data) + 3 + offset, column=1, value=_excel_safe(note))
+        cell.font = openpyxl.styles.Font(italic=True, color="555555")
 
     buffer = io.BytesIO()
     workbook.save(buffer)
@@ -278,7 +298,7 @@ def render_excel(headers, data):
     return buffer
 
 
-def render_pdf(headers, data, title):
+def render_pdf(headers, data, title, notes=()):
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER, TA_LEFT
     from reportlab.lib.pagesizes import A4
@@ -336,6 +356,125 @@ def render_pdf(headers, data, title):
         ('LINEBELOW', (0, 0), (-1, 0), 1.5, colors.HexColor('#1E3F66')),
     ])
 
-    doc.build([Paragraph(escape(title), title_style), Spacer(1, 0.3 * cm), table])
+    note_style = ParagraphStyle('Note', parent=styles['Normal'], fontSize=7, textColor=colors.HexColor('#555555'))
+    story = [Paragraph(escape(title), title_style), Spacer(1, 0.3 * cm), table]
+    if notes:
+        story.append(Spacer(1, 0.3 * cm))
+        story += [Paragraph(escape(note), note_style) for note in notes]
+    doc.build(story)
     buffer.seek(0)
     return buffer
+
+
+# ── Shortage list ────────────────────────────────────────────
+
+def parse_threshold(value, default):
+    """Attendance percentage (1-99) to compare against; falls back to the default for invalid input.
+
+    100 is excluded: after one absence it can never be reached, so "classes needed" is undefined.
+    """
+    try:
+        threshold = int(value)
+    except (TypeError, ValueError):
+        return default
+    return threshold if 1 <= threshold <= 99 else default
+
+
+def build_shortage_report(filters, threshold):
+    """Students below `threshold` percent overall or in any subject, worst first.
+
+    Uses the same rules as the student dashboard: special classes are excluded and
+    void sessions do not count. Teachers only see their own sessions.
+    """
+    session_query = report_sessions_query(filters, countable_only=True).filter(
+        Subject.name != SPECIAL_CLASS_SUBJECT_NAME
+    )
+    session_ids = session_ids_select(session_query)
+
+    subject_totals = dict(
+        db.session.query(ClassSession.subject_id, func.count(ClassSession.id))
+        .filter(ClassSession.id.in_(session_ids))
+        .group_by(ClassSession.subject_id)
+    )
+    subjects = (
+        Subject.query.filter(Subject.id.in_(list(subject_totals)))
+        .order_by(Subject.paper_code, Subject.name)
+        .all()
+    ) if subject_totals else []
+
+    attended = {
+        (student_id, subject_id): count
+        for student_id, subject_id, count in db.session.query(
+            Attendance.student_id, ClassSession.subject_id, func.count(Attendance.id)
+        )
+        .join(ClassSession, ClassSession.id == Attendance.session_id)
+        .filter(Attendance.session_id.in_(session_ids))
+        .group_by(Attendance.student_id, ClassSession.subject_id)
+    }
+
+    students = (
+        Student.query.filter_by(department_id=filters.department_id, semester_id=filters.semester_id)
+        .order_by(Student.roll_no)
+        .all()
+    )
+    overall_total = sum(subject_totals.values())
+
+    rows = []
+    for student in students:
+        cells = []
+        overall_attended = 0
+        for subject in subjects:
+            total = subject_totals[subject.id]
+            present = attended.get((student.id, subject.id), 0)
+            percentage = round(present / total * 100, 2)
+            overall_attended += present
+            cells.append({
+                'subject': subject,
+                'attended': present,
+                'total': total,
+                'percentage': percentage,
+                'short': percentage < threshold,
+                'needed': classes_needed_for_target(present, total, threshold),
+            })
+        if not overall_total:
+            continue
+        overall_percentage = round(overall_attended / overall_total * 100, 2)
+        short_subjects = [cell for cell in cells if cell['short']]
+        if overall_percentage < threshold or short_subjects:
+            rows.append({
+                'student': student,
+                'cells': cells,
+                'attended': overall_attended,
+                'total': overall_total,
+                'percentage': overall_percentage,
+                'short': overall_percentage < threshold,
+                'needed': classes_needed_for_target(overall_attended, overall_total, threshold),
+                'short_subjects': short_subjects,
+            })
+
+    rows.sort(key=lambda row: (row['percentage'], row['student'].roll_no))
+    return {
+        'subjects': subjects,
+        'rows': rows,
+        'class_size': len(students),
+        'classes_held': overall_total,
+        'threshold': threshold,
+    }
+
+
+def build_shortage_export_rows(report):
+    headers = ['Roll No', 'Name', 'Email', 'Overall Attended', 'Classes Held', 'Overall %', 'Classes Needed']
+    headers += [f"{normalize_paper_code(s.paper_code) or s.name} %" for s in report['subjects']]
+    headers.append('Short In')
+    data = []
+    for row in report['rows']:
+        student = row['student']
+        line = [student.roll_no, student.name, student.email,
+                row['attended'], row['total'], row['percentage'], row['needed']]
+        line += [cell['percentage'] for cell in row['cells']]
+        line.append(', '.join(
+            f"{normalize_paper_code(c['subject'].paper_code) or c['subject'].name} (needs {c['needed']})"
+            for c in row['short_subjects']
+        ) or 'Overall only')
+        data.append(line)
+    return headers, data
