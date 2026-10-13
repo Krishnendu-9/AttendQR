@@ -106,7 +106,7 @@
             <div class="fw-semibold">{{ session_display_name(attendance.session) }}</div>
             <div class="text-muted small">{{ format_12h(attendance.timestamp) }}</div>
           </div>
-          <span class="badge text-bg-success align-self-start">Present</span>
+          <span class="badge {{ 'text-bg-info' if attendance.is_manual else 'text-bg-success' }} align-self-start">{{ 'Present (marked by staff)' if attendance.is_manual else 'Present' }}</span>
         </div>
         {% endfor %}
         {% if not summary.recent %}
