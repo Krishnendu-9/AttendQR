@@ -3,19 +3,8 @@
 {% block page_title %}Accounts{% endblock %}
 {% block page_subtitle %}Manage role-based login access for the system{% endblock %}
 {% block content %}
-{% if message %}
-<div class="alert alert-success alert-dismissible fade show" role="alert">
-  <i class="bi bi-check-circle me-1"></i> {{ message }}
-  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
-
-{% if error %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-  <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
-  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
+{% set email_pattern = staff_email_pattern() %}
+{% set email_hint = 'Use an account email ending with ' ~ (staff_domains|join(' or ')) ~ '.' %}
 
 <div class="row g-4 align-items-start">
   <div class="col-lg-5">
@@ -25,16 +14,16 @@
         <p class="section-subtitle">Create a role-based login account</p>
       </div>
       <div class="card-body">
-        <form method="POST" id="addAccountForm">
+        <form method="POST" action="{{ url_for('accounts.index') }}" id="addAccountForm">
           <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
             <label for="username" class="form-label">Account Email</label>
-            <input type="email" class="form-control" id="username" name="username" placeholder="name@rcciit.org.in" pattern="^[^@\s]+@(rcciit\.org\.in|gmail\.com)$" title="Use a valid email ending with @rcciit.org.in or @gmail.com" required>
-            <div class="form-text">Use an account email ending with @rcciit.org.in or @gmail.com.</div>
+            <input type="email" class="form-control" id="username" name="username" placeholder="name{{ staff_domains[0] if staff_domains else '@example.com' }}" pattern="{{ email_pattern }}" title="{{ email_hint }}" maxlength="80" required>
+            <div class="form-text">{{ email_hint }}</div>
           </div>
           <div class="mb-3">
             <label for="role" class="form-label">Role</label>
-            <select class="form-select" id="role" name="role" required onchange="toggleRoleFields()">
+            <select class="form-select" id="role" name="role" required>
               {% for key, label in roles.items() %}
               <option value="{{ key }}">{{ label }}</option>
               {% endfor %}
@@ -42,11 +31,11 @@
           </div>
           <div class="mb-3 role-field" id="teacherNameField">
             <label for="teacher_name" class="form-label">Teacher Name</label>
-            <input type="text" class="form-control" id="teacher_name" name="teacher_name" placeholder="Teacher full name">
+            <input type="text" class="form-control" id="teacher_name" name="teacher_name" placeholder="Teacher full name" maxlength="100">
           </div>
           <div class="mb-3 role-field" id="departmentField">
             <label for="department_id" class="form-label">Department</label>
-            <select class="form-select" id="department_id" name="department_id" onchange="handleDepartmentChange()">
+            <select class="form-select" id="department_id" name="department_id">
               <option value="">Select department</option>
               {% for d in departments %}
               <option value="{{ d.id }}">{{ d.display_name }}</option>
@@ -61,9 +50,9 @@
             <div class="form-text">Optional. You can assign more subjects later from the Subjects page.</div>
           </div>
           <div class="mb-3">
-            <label for="password" class="form-label">Password</label>
+            <label for="password" class="form-label">Initial Password</label>
             <div class="input-group password-field">
-              <input type="password" class="form-control" id="password" name="password" placeholder="Minimum 6 characters" autocomplete="new-password" required minlength="6">
+              <input type="password" class="form-control" id="password" name="password" placeholder="At least {{ min_password_length }} characters, letters and numbers" autocomplete="new-password" required minlength="{{ min_password_length }}">
               <button class="btn btn-outline-secondary password-toggle" type="button" data-target="password" aria-label="Show password">
                 <i class="bi bi-eye"></i>
               </button>
@@ -74,7 +63,7 @@
               </div>
               <div class="password-strength-meta">
                 <span class="password-strength-label" id="passwordStrengthLabel">Strength: not checked</span>
-                <span class="password-strength-hint" id="passwordStrengthHint">Add uppercase, lowercase, number, and symbol for a stronger password.</span>
+                <span class="password-strength-hint" id="passwordStrengthHint"></span>
               </div>
             </div>
           </div>
@@ -106,7 +95,7 @@
           </div>
           <div class="account-search-wrap">
             <label for="accountSearchInput" class="visually-hidden">Search current accounts</label>
-            <input type="text" class="form-control" id="accountSearchInput" placeholder="Search accounts">
+            <input type="search" class="form-control" id="accountSearchInput" placeholder="Search accounts">
           </div>
         </div>
       </div>
@@ -123,60 +112,52 @@
           </thead>
           <tbody>
             {% for admin in admins %}
+            {% set is_locked = admin.username in locked %}
+            {% if admin.role == 'super_admin' %}
+              {% set scope = 'All departments' %}
+            {% elif admin.role == 'teacher' and admin.teacher %}
+              {% set scope = department_scope_label(admin.teacher.department) %}
+            {% elif admin.department %}
+              {% set scope = department_scope_label(admin.department) %}
+            {% else %}
+              {% set scope = 'Not assigned' %}
+            {% endif %}
+            {% set status = 'Locked' if is_locked else ('Active' if admin.is_active else 'Inactive') %}
             <tr class="account-row"
                 data-username="{{ admin.username|lower }}"
                 data-role="{{ role_label(admin.role)|lower }}"
-                data-status="{{ ('locked' if admin.locked_until and admin.locked_until > now() else ('active' if admin.is_active else 'inactive'))|lower }}"
-                data-scope="{% if admin.role == 'hod' and admin.department %}{{ department_scope_label(admin.department)|lower }}{% elif admin.role == 'teacher' and admin.teacher %}{{ department_scope_label(admin.teacher.department)|lower }}{% elif admin.role == 'super_admin' %}all departments{% elif admin.department %}{{ department_scope_label(admin.department)|lower }}{% else %}not assigned{% endif %}">
-              <td class="fw-semibold">
-                {{ admin.username }}
-              </td>
+                data-status="{{ status|lower }}"
+                data-scope="{{ scope|lower }}">
+              <td class="fw-semibold">{{ admin.username }}</td>
               <td class="account-col-role"><span class="badge text-bg-primary">{{ role_label(admin.role) }}</span></td>
               <td class="account-col-status">
-                {% set locked = admin.locked_until and admin.locked_until > now() %}
                 <div class="account-status-stack">
-                  <span class="badge {{ 'text-bg-danger' if locked else ('text-bg-success' if admin.is_active else 'text-bg-secondary') }}">
-                    {{ 'Locked' if locked else ('Active' if admin.is_active else 'Inactive') }}
-                  </span>
+                  <span class="badge {{ 'text-bg-danger' if is_locked else ('text-bg-success' if admin.is_active else 'text-bg-secondary') }}">{{ status }}</span>
                   {% if admin.must_change_password %}
                   <span class="badge text-bg-warning">Change Password Pending</span>
                   {% endif %}
-                  {% if locked %}
-                  <div class="small text-muted">Until {{ format_12h(admin.locked_until, include_date=False) }}</div>
+                  {% if is_locked %}
+                  <div class="small text-muted">Too many failed logins; resetting the password unlocks it.</div>
                   {% endif %}
                 </div>
               </td>
-              <td class="account-col-scope">
-                {% if admin.role == 'hod' and admin.department %}
-                  {{ department_scope_label(admin.department) }}
-                {% elif admin.role == 'teacher' and admin.teacher %}
-                  {{ department_scope_label(admin.teacher.department) }}
-                {% else %}
-                  {% if admin.role == 'super_admin' %}
-                    All departments
-                  {% elif admin.department %}
-                    {{ department_scope_label(admin.department) }}
-                  {% else %}
-                    Not assigned
-                  {% endif %}
-                {% endif %}
-              </td>
+              <td class="account-col-scope">{{ scope }}</td>
               <td class="account-col-actions text-end">
                 <div class="account-actions">
                 {% if can_edit_account(admin) %}
-                <button class="btn btn-sm btn-warning btn-icon" type="button" data-bs-toggle="tooltip" title="Edit account"
-                        data-admin-id="{{ admin.id }}"
+                <button class="btn btn-sm btn-warning btn-icon edit-account" type="button" data-bs-toggle="tooltip" title="Edit account"
+                        data-action="{{ url_for('accounts.edit', id=admin.id) }}"
                         data-role="{{ admin.role }}"
+                        data-role-label="{{ role_label(admin.role) }}"
                         data-username="{{ admin.username }}"
                         data-teacher-name="{{ admin.teacher.name if admin.teacher else '' }}"
-                        data-department-id="{{ admin.department_id or '' }}"
-                        onclick="openEditAccount(this)">
+                        data-department-id="{{ admin.department_id or '' }}">
                   <i class="bi bi-pencil-square"></i>
                 </button>
                 {% endif %}
                 {% if can_reset_staff_account(admin) %}
-                <form method="POST" action="/reset_admin_password/{{ admin.id }}" class="d-inline"
-                      onsubmit='return confirm({{ ("Reset password for " ~ admin.username ~ "? A temporary password will be shown once.")|tojson }})'>
+                <form method="POST" action="{{ url_for('accounts.reset_password', id=admin.id) }}" class="d-inline"
+                      data-confirm="Reset password for {{ admin.username }}? A temporary password will be shown once.">
                   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                   <button class="btn btn-sm btn-info btn-icon" type="submit" data-bs-toggle="tooltip" title="Reset password">
                     <i class="bi bi-key"></i>
@@ -184,8 +165,8 @@
                 </form>
                 {% endif %}
                 {% if can_toggle_account_status(admin) %}
-                <form method="POST" action="/toggle_admin_status/{{ admin.id }}" class="d-inline"
-                      onsubmit='return confirm({{ (("Deactivate" if admin.is_active else "Activate") ~ " " ~ admin.username ~ "?")|tojson }})'>
+                <form method="POST" action="{{ url_for('accounts.toggle_status', id=admin.id) }}" class="d-inline"
+                      data-confirm="{{ 'Deactivate' if admin.is_active else 'Activate' }} {{ admin.username }}?">
                   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                   <button class="btn btn-sm {{ 'btn-secondary' if admin.is_active else 'btn-success' }} btn-icon" type="submit" data-bs-toggle="tooltip" title="{{ 'Deactivate' if admin.is_active else 'Activate' }} account">
                     <i class="bi {{ 'bi-pause-circle' if admin.is_active else 'bi-play-circle' }}"></i>
@@ -193,8 +174,8 @@
                 </form>
                 {% endif %}
                 {% if can_manage_account(admin) %}
-                <form method="POST" action="/delete_admin/{{ admin.id }}" class="d-inline"
-                      onsubmit='return confirm({{ ("Delete account '" ~ admin.username ~ "'?")|tojson }})'>
+                <form method="POST" action="{{ url_for('accounts.delete', id=admin.id) }}" class="d-inline"
+                      data-confirm="Delete account '{{ admin.username }}'?">
                   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                   <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete account">
                     <i class="bi bi-trash"></i>
@@ -231,7 +212,7 @@
       <div class="modal-body">
         <div class="mb-3">
           <label for="edit_username" class="form-label">Account Email</label>
-          <input type="email" class="form-control" id="edit_username" name="username" placeholder="name@rcciit.org.in" pattern="^[^@\s]+@(rcciit\.org\.in|gmail\.com)$" title="Use a valid email ending with @rcciit.org.in or @gmail.com" required>
+          <input type="email" class="form-control" id="edit_username" name="username" pattern="{{ email_pattern }}" title="{{ email_hint }}" maxlength="80" required>
         </div>
         <div class="mb-3">
           <label for="edit_role_label" class="form-label">Role</label>
@@ -239,11 +220,11 @@
         </div>
         <div class="mb-3" id="editTeacherNameField">
           <label for="edit_teacher_name" class="form-label">Teacher Name</label>
-          <input type="text" class="form-control" id="edit_teacher_name" name="teacher_name" placeholder="Teacher full name">
+          <input type="text" class="form-control" id="edit_teacher_name" name="teacher_name" placeholder="Teacher full name" maxlength="100">
         </div>
         <div class="mb-3" id="editDepartmentField">
           <label for="edit_department_id" class="form-label">Department</label>
-          <select class="form-select" id="edit_department_id" name="department_id" onchange="loadEditSubjects(this.value)">
+          <select class="form-select" id="edit_department_id" name="department_id">
             <option value="">Select department</option>
             {% for d in departments %}
             <option value="{{ d.id }}">{{ d.display_name }}</option>
@@ -294,218 +275,91 @@
   {% if current_user.role == 'hod' %}
   HODs can create only Teacher accounts for their assigned department. Student accounts stay on the Students page, and teacher passwords can be reset from here when needed.
   {% else %}
-  Passwords must be at least 6 characters. Only one active HOD is allowed per department, and new accounts are reminded to change their password after login.
+  Passwords need at least {{ min_password_length }} characters with letters and numbers. Only one active HOD is allowed per department, and new or reset accounts must change their password at first login.
   {% endif %}
 </div>
-<script>
-function toggleRoleFields() {
-  const role = document.getElementById('role').value;
-  const teacherNameField = document.getElementById('teacherNameField');
-  const departmentField = document.getElementById('departmentField');
-  const subjectField = document.getElementById('subjectField');
 
-  teacherNameField.style.display = role === 'teacher' ? '' : 'none';
-  departmentField.style.display = role === 'hod' || role === 'teacher' ? '' : 'none';
-  subjectField.style.display = role === 'teacher' ? '' : 'none';
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const role = document.getElementById('role');
+  const department = document.getElementById('department_id');
+  const subject = document.getElementById('subject_id');
 
-  document.getElementById('teacher_name').required = role === 'teacher';
-  document.getElementById('department_id').required = role === 'hod' || role === 'teacher';
-  document.getElementById('subject_id').required = false;
-
-  if (role === 'teacher') {
-    handleDepartmentChange();
-  } else {
-    document.getElementById('subject_id').innerHTML = '<option value="">Assign later</option>';
-  }
-}
-
-function handleDepartmentChange() {
-  const role = document.getElementById('role').value;
-  const departmentId = document.getElementById('department_id').value;
-  const subjectSelect = document.getElementById('subject_id');
-
-  if (role !== 'teacher') {
-    subjectSelect.innerHTML = '<option value="">Assign later</option>';
-    return;
+  function toggleRoleFields() {
+    const value = role.value;
+    const isTeacher = value === 'teacher';
+    const needsDepartment = value === 'hod' || isTeacher;
+    document.getElementById('teacherNameField').style.display = isTeacher ? '' : 'none';
+    document.getElementById('departmentField').style.display = needsDepartment ? '' : 'none';
+    document.getElementById('subjectField').style.display = isTeacher ? '' : 'none';
+    document.getElementById('teacher_name').required = isTeacher;
+    department.required = needsDepartment;
+    loadCreateSubjects();
   }
 
-  if (!departmentId) {
-    subjectSelect.innerHTML = '<option value="">Select department first</option>';
-    return;
-  }
-
-  subjectSelect.innerHTML = '<option value="">Loading subjects...</option>';
-  fetch('/api/department-subjects/' + departmentId)
-    .then(r => r.json())
-    .then(data => {
-      subjectSelect.innerHTML = '<option value="">Assign later</option>';
-      data.forEach(subject => {
-        const teacherSuffix = subject.teacher_name ? ` - assigned to ${subject.teacher_name}` : '';
-        subjectSelect.add(new Option(`${subject.display_name} (${subject.semester})${teacherSuffix}`, subject.id));
-      });
-    })
-    .catch(() => {
-      subjectSelect.innerHTML = '<option value="">Unable to load subjects</option>';
-    });
-}
-
-function loadEditSubjects(departmentId) {
-  const subjectSelect = document.getElementById('edit_subject_id');
-
-  if (!departmentId) {
-    subjectSelect.innerHTML = '<option value="">No change</option>';
-    return;
-  }
-
-  subjectSelect.innerHTML = '<option value="">Loading subjects...</option>';
-  fetch('/api/department-subjects/' + departmentId)
-    .then(r => r.json())
-    .then(data => {
-      subjectSelect.innerHTML = '<option value="">No change</option>';
-      data.forEach(subject => {
-        const teacherSuffix = subject.teacher_name ? ` - assigned to ${subject.teacher_name}` : '';
-        subjectSelect.add(new Option(`${subject.display_name} (${subject.semester})${teacherSuffix}`, subject.id));
-      });
-    })
-    .catch(() => {
-      subjectSelect.innerHTML = '<option value="">Unable to load subjects</option>';
-    });
-}
-
-function openEditAccount(button) {
-  const id = button.dataset.adminId;
-  const role = button.dataset.role || '';
-  const username = button.dataset.username || '';
-  const teacherName = button.dataset.teacherName || '';
-  const departmentId = button.dataset.departmentId || '';
-
-  document.getElementById('editAccountForm').action = '/edit_admin/' + id;
-  document.getElementById('edit_username').value = username;
-  document.getElementById('edit_role_label').value = role.charAt(0).toUpperCase() + role.slice(1).replace('_', ' ');
-  document.getElementById('edit_teacher_name').value = teacherName;
-  document.getElementById('edit_department_id').value = departmentId;
-  document.getElementById('edit_subject_id').innerHTML = '<option value="">No change</option>';
-
-  const isTeacher = role === 'teacher';
-  const needsDepartment = role === 'teacher' || role === 'hod';
-
-  document.getElementById('editTeacherNameField').style.display = isTeacher ? '' : 'none';
-  document.getElementById('editDepartmentField').style.display = needsDepartment ? '' : 'none';
-  document.getElementById('editSubjectField').style.display = isTeacher ? '' : 'none';
-  document.getElementById('edit_teacher_name').required = isTeacher;
-  document.getElementById('edit_department_id').required = needsDepartment;
-
-  if (isTeacher && departmentId) {
-    loadEditSubjects(departmentId);
-  }
-
-  new bootstrap.Modal(document.getElementById('editAccountModal')).show();
-}
-
-const accountSearchInput = document.getElementById('accountSearchInput');
-
-function filterAccountsTable() {
-  if (!accountSearchInput) return;
-
-  const searchTerm = accountSearchInput.value.toLowerCase().trim();
-  const rows = document.querySelectorAll('.account-row');
-  const noMatchRow = document.getElementById('noAccountsMatch');
-  let visibleCount = 0;
-
-  rows.forEach(row => {
-    const username = row.getAttribute('data-username');
-    const role = row.getAttribute('data-role');
-    const status = row.getAttribute('data-status');
-    const scope = row.getAttribute('data-scope');
-    const matches = !searchTerm || username.includes(searchTerm) || role.includes(searchTerm) || status.includes(searchTerm) || scope.includes(searchTerm);
-
-    if (matches) {
-      row.style.display = '';
-      visibleCount++;
+  function loadCreateSubjects() {
+    if (role.value !== 'teacher') {
+      AttendQR.fillSelect(subject, [], { placeholder: 'Assign later' });
+    } else if (!department.value) {
+      AttendQR.fillSelect(subject, [], { placeholder: 'Select department first' });
     } else {
-      row.style.display = 'none';
+      AttendQR.loadDepartmentSubjects(subject, department.value);
     }
+  }
+
+  role.addEventListener('change', toggleRoleFields);
+  department.addEventListener('change', loadCreateSubjects);
+  toggleRoleFields();
+
+  AttendQR.bindPasswordMeter({
+    password: 'password',
+    confirm: 'confirm_password',
+    submit: 'addAccountButton',
+    bar: 'passwordStrengthBar',
+    label: 'passwordStrengthLabel',
+    hint: 'passwordStrengthHint',
+    match: 'passwordMatchStatus'
   });
 
-  if (noMatchRow) {
-    noMatchRow.classList.toggle('d-none', visibleCount !== 0);
-  }
-}
+  const editDepartment = document.getElementById('edit_department_id');
+  const editSubject = document.getElementById('edit_subject_id');
+  editDepartment.addEventListener('change', function () {
+    AttendQR.loadDepartmentSubjects(editSubject, editDepartment.value, { placeholder: 'No change' });
+  });
 
-(function() {
-  const passwordInput = document.getElementById('password');
-  const confirmInput = document.getElementById('confirm_password');
-  const strengthBar = document.getElementById('passwordStrengthBar');
-  const strengthLabel = document.getElementById('passwordStrengthLabel');
-  const strengthHint = document.getElementById('passwordStrengthHint');
-  const matchStatus = document.getElementById('passwordMatchStatus');
-  const submitButton = document.getElementById('addAccountButton');
+  document.querySelectorAll('.edit-account').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const data = button.dataset;
+      const isTeacher = data.role === 'teacher';
+      const needsDepartment = isTeacher || data.role === 'hod';
 
-  function evaluatePassword(value) {
-    let score = 0;
-    if (value.length >= 6) score += 1;
-    if (value.length >= 8) score += 1;
-    if (/[a-z]/.test(value)) score += 1;
-    if (/[A-Z]/.test(value)) score += 1;
-    if (/\d/.test(value)) score += 1;
-    if (/[^A-Za-z0-9]/.test(value)) score += 1;
+      document.getElementById('editAccountForm').action = data.action;
+      document.getElementById('edit_username').value = data.username;
+      document.getElementById('edit_role_label').value = data.roleLabel;
+      document.getElementById('edit_teacher_name').value = data.teacherName;
+      editDepartment.value = data.departmentId;
+      document.getElementById('editTeacherNameField').style.display = isTeacher ? '' : 'none';
+      document.getElementById('editDepartmentField').style.display = needsDepartment ? '' : 'none';
+      document.getElementById('editSubjectField').style.display = isTeacher ? '' : 'none';
+      document.getElementById('edit_teacher_name').required = isTeacher;
+      editDepartment.required = needsDepartment;
 
-    if (!value) {
-      return { label: 'Not checked', width: '0%', tone: 'is-empty', hint: 'Add uppercase, lowercase, number, and symbol for a stronger password.', strongEnough: false };
-    }
-    if (value.length < 6) {
-      return { label: 'Too short', width: '18%', tone: 'is-weak', hint: 'Password must be at least 6 characters long.', strongEnough: false };
-    }
-    if (score <= 3) {
-      return { label: 'Weak', width: '34%', tone: 'is-weak', hint: 'Allowed, but uppercase letters, numbers, or a symbol are recommended.', strongEnough: true };
-    }
-    if (score <= 5) {
-      return { label: 'Medium', width: '68%', tone: 'is-medium', hint: 'Good start. A symbol or longer phrase will make it stronger.', strongEnough: true };
-    }
-    return { label: 'Strong', width: '100%', tone: 'is-strong', hint: '', strongEnough: true };
-  }
-
-  function updatePasswordFeedback() {
-    const passwordValue = passwordInput.value;
-    const confirmValue = confirmInput.value;
-    const strength = evaluatePassword(passwordValue);
-    const matches = !!confirmValue && passwordValue === confirmValue;
-
-    strengthBar.className = `password-strength-bar ${strength.tone}`;
-    strengthBar.style.width = strength.width;
-    strengthLabel.textContent = `Strength: ${strength.label}`;
-    strengthHint.textContent = strength.hint;
-
-    if (!confirmValue) {
-      matchStatus.className = 'password-match-status';
-      matchStatus.textContent = 'Re-enter the password to confirm it.';
-    } else if (matches) {
-      matchStatus.className = 'password-match-status is-match';
-      matchStatus.textContent = 'Confirm password matched.';
-    } else {
-      matchStatus.className = 'password-match-status is-mismatch';
-      matchStatus.textContent = 'Confirm password does not match.';
-    }
-
-    submitButton.disabled = !(strength.strongEnough && matches);
-  }
-
-  [passwordInput, confirmInput].forEach(function(input) {
-    input.addEventListener('input', updatePasswordFeedback);
-    input.addEventListener('paste', function() {
-      setTimeout(updatePasswordFeedback, 0);
+      if (isTeacher && data.departmentId) {
+        AttendQR.loadDepartmentSubjects(editSubject, data.departmentId, { placeholder: 'No change' });
+      } else {
+        AttendQR.fillSelect(editSubject, [], { placeholder: 'No change' });
+      }
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('editAccountModal')).show();
     });
   });
 
-  document.addEventListener('DOMContentLoaded', function() {
-    toggleRoleFields();
-    updatePasswordFeedback();
-    filterAccountsTable();
+  AttendQR.bindTableSearch({
+    input: 'accountSearchInput',
+    rows: '.account-row',
+    fields: ['username', 'role', 'status', 'scope'],
+    indexSelector: null,
+    noMatch: 'noAccountsMatch'
   });
 })();
-
-if (accountSearchInput) {
-  accountSearchInput.addEventListener('input', filterAccountsTable);
-}
 </script>
 {% endblock %}
