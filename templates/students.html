@@ -1,67 +1,71 @@
 {% extends 'base.html' %}
+{% from '_pagination.html' import render_pagination %}
 {% block title %}Students | AttendQR{% endblock %}
 {% block page_title %}Students{% endblock %}
 {% block page_subtitle %}Manage student records, roll numbers, and semester assignments{% endblock %}
 {% block content %}
+{% set return_to = url_for('students.index', page=page.page, **filter_args) %}
 <div class="page-heading">
-  <span id="resultCount" class="badge text-bg-info align-self-start">Total: {{ students|length }} students</span>
+  <span class="badge text-bg-info align-self-start">
+    {% if filter_args %}Showing: {{ page.total }} of {{ total_students }} students{% else %}Total: {{ total_students }} students{% endif %}
+  </span>
 </div>
 
-{% if error %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-  <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
-  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
-
-<div class="form-panel">
+<form method="GET" action="{{ url_for('students.index') }}" class="form-panel" id="filterForm">
   <div class="row g-3">
     <div class="col-lg-3 col-md-6">
       <label class="form-label" for="searchInput">Search</label>
-      <input type="text" id="searchInput" class="form-control" placeholder="Search by name or roll no">
+      <input type="search" id="searchInput" name="q" class="form-control" value="{{ filters.q }}" placeholder="Name, roll no, or email">
     </div>
     <div class="col-lg-3 col-md-6">
       <label class="form-label" for="filterDept">Department</label>
-      <select id="filterDept" class="form-select">
+      <select id="filterDept" name="department_id" class="form-select">
         <option value="">All Departments</option>
         {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.display_name }}</option>
+        <option value="{{ d.id }}" {{ 'selected' if filters.department_id == d.id }}>{{ d.display_name }}</option>
         {% endfor %}
       </select>
     </div>
-    <div class="col-lg-3 col-md-6">
+    <div class="col-lg-2 col-md-6">
       <label class="form-label" for="filterSem">Semester</label>
-      <select id="filterSem" class="form-select">
+      <select id="filterSem" name="semester_id" class="form-select">
         <option value="">All Semesters</option>
+        {% for s in filter_semesters %}
+        <option value="{{ s.id }}" {{ 'selected' if filters.semester_id == s.id }}>
+          {{ s.name }}{% if not filters.department_id and departments|length > 1 %} ({{ s.department.display_name }}){% endif %}
+        </option>
+        {% endfor %}
       </select>
     </div>
-    <div class="col-lg-3 col-md-6 d-flex align-items-end">
-      <button class="btn btn-secondary w-100" type="button" onclick="clearFilters()">
-        <i class="bi bi-x-circle me-1"></i> Clear Filters
-      </button>
+    <div class="col-lg-2 col-md-3 d-flex align-items-end">
+      <button class="btn btn-primary w-100" type="submit"><i class="bi bi-search me-1"></i> Apply</button>
+    </div>
+    <div class="col-lg-2 col-md-3 d-flex align-items-end">
+      <a class="btn btn-secondary w-100" href="{{ url_for('students.index') }}"><i class="bi bi-x-circle me-1"></i> Clear</a>
     </div>
   </div>
-</div>
+</form>
 
-<form method="POST" class="form-panel" id="studentForm">
+<form method="POST" action="{{ url_for('students.index') }}" class="form-panel" id="studentForm">
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="return_to" value="{{ return_to }}">
   <div class="row g-3 align-items-end">
     <div class="col-md-4 col-xl">
       <label class="form-label" for="student_name">Name</label>
-      <input class="form-control" id="student_name" name="name" placeholder="Student name" required>
+      <input class="form-control" id="student_name" name="name" placeholder="Student name" maxlength="100" required>
     </div>
     <div class="col-md-4 col-xl">
       <label class="form-label" for="roll_no">Roll No</label>
-      <input class="form-control" id="roll_no" name="roll_no" placeholder="Roll number" required>
+      <input class="form-control" id="roll_no" name="roll_no" placeholder="Roll number" maxlength="20" required>
     </div>
     <div class="col-md-4 col-xl">
       <label class="form-label" for="email">Email</label>
-      <input class="form-control" id="email" name="email" placeholder="student@example.com" type="email" required>
+      <input class="form-control" id="email" name="email" placeholder="student@example.com" type="email" maxlength="120" required>
     </div>
     <div class="col-md-6 col-xl">
       <label class="form-label" for="dept_select">Department</label>
-      <select class="form-select" name="department_id" id="dept_select" required onchange="loadSemesters(this.value,'sem_select')">
-        <option value="">Select department</option>
+      <select class="form-select" name="department_id" id="dept_select" required>
+        {% if departments|length != 1 %}<option value="">Select department</option>{% endif %}
         {% for d in departments %}
         <option value="{{ d.id }}">{{ d.display_name }}</option>
         {% endfor %}
@@ -88,12 +92,12 @@
       <p class="section-subtitle mb-3">
         Upload CSV or XLSX with columns: name, roll_no, email, semester.
         {% if current_user.role == 'super_admin' %}
-        Principal uploads also need department or department_id.
+        Principal uploads also need department (as shown in the template) or department_id.
         {% else %}
         Department is automatically set to your assigned department.
         {% endif %}
       </p>
-      <form method="POST" action="/students/import" enctype="multipart/form-data" class="row g-2">
+      <form method="POST" action="{{ url_for('students.import_students') }}" enctype="multipart/form-data" class="row g-2">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="col-md">
           <input class="form-control" type="file" name="student_file" accept=".csv,.xlsx" required>
@@ -104,7 +108,7 @@
           </button>
         </div>
         <div class="col-md-auto">
-          <a class="btn btn-info w-100" href="/students/import-template">
+          <a class="btn btn-info w-100" href="{{ url_for('students.import_template') }}">
             <i class="bi bi-download me-1"></i> Template
           </a>
         </div>
@@ -113,7 +117,7 @@
     <div class="col-lg-4">
       <div class="alert alert-info mb-0">
         <i class="bi bi-shield-check me-1"></i>
-        Student accounts are managed here, not from Accounts. Initial password = roll number.
+        Student accounts are managed here, not from Accounts. Initial password = roll number; students must change it at first login.
       </div>
     </div>
   </div>
@@ -130,83 +134,92 @@
           <th>Email</th>
           <th>Department</th>
           <th>Semester</th>
+          <th>Device</th>
           <th class="text-end">Actions</th>
         </tr>
       </thead>
       <tbody>
-        {% for s in students %}
-        <tr class="student-row" data-name="{{ s.name|lower }}" data-roll="{{ s.roll_no|lower }}" data-dept-id="{{ s.department_id }}" data-dept="{{ s.department.display_name }}" data-sem-id="{{ s.semester_id }}" data-sem="{{ s.semester.name }}">
-          <td>{{ loop.index }}</td>
+        {% for s in page.items %}
+        <tr>
+          <td>{{ (page.page - 1) * page.per_page + loop.index }}</td>
           <td class="fw-semibold">{{ s.name }}</td>
           <td>{{ s.roll_no }}</td>
           <td>{{ s.email }}</td>
           <td>{{ s.department.display_name }}</td>
           <td>{{ s.semester.name }}</td>
+          <td>
+            {% if s.device_id %}<span class="badge text-bg-success">Registered</span>{% else %}<span class="badge text-bg-secondary">None</span>{% endif %}
+          </td>
           <td class="text-end text-nowrap">
-            <form method="POST" action="/students/reset-password/{{ s.id }}" class="d-inline"
-              onsubmit='return confirm({{ ("Reset password for " ~ s.name ~ " to the roll number?")|tojson }})'>
+            <form method="POST" action="{{ url_for('students.reset_password', id=s.id) }}" class="d-inline"
+              data-confirm="Reset password for {{ s.name }} to the roll number?">
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ return_to }}">
               <button class="btn btn-sm btn-info btn-icon" type="submit" data-bs-toggle="tooltip" title="Reset password">
                 <i class="bi bi-key"></i>
               </button>
             </form>
-            <form method="POST" action="/students/reset-device/{{ s.id }}" class="d-inline"
-              onsubmit='return confirm({{ ("Reset registered device lock for " ~ s.name ~ "?")|tojson }})'>
+            <form method="POST" action="{{ url_for('students.reset_device', id=s.id) }}" class="d-inline"
+              data-confirm="Reset registered device lock for {{ s.name }}?">
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ return_to }}">
               <button class="btn btn-sm btn-secondary btn-icon" type="submit" data-bs-toggle="tooltip" title="Reset device lock">
                 <i class="bi bi-phone"></i>
               </button>
             </form>
             {% if current_user.role in ['super_admin', 'hod'] %}
-            <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit student"
-              onclick='openEdit({{ s.id|tojson }}, {{ s.name|tojson }}, {{ s.roll_no|tojson }}, {{ s.email|tojson }}, {{ s.department_id|tojson }}, {{ s.semester_id|tojson }})'>
+            <button class="btn btn-sm btn-warning btn-icon edit-student" type="button" data-bs-toggle="tooltip" title="Edit student"
+              data-action="{{ url_for('students.edit', id=s.id) }}"
+              data-name="{{ s.name }}" data-roll="{{ s.roll_no }}" data-email="{{ s.email }}"
+              data-department-id="{{ s.department_id }}" data-semester-id="{{ s.semester_id }}">
               <i class="bi bi-pencil-square"></i>
             </button>
-            <form method="POST" action="/students/delete/{{ s.id }}" class="d-inline"
-              onsubmit='return confirm({{ ("Delete " ~ s.name ~ "?")|tojson }})'>
+            <form method="POST" action="{{ url_for('students.delete', id=s.id) }}" class="d-inline"
+              data-confirm="Delete {{ s.name }}? Their attendance records will also be deleted.">
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ return_to }}">
               <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete student">
                 <i class="bi bi-trash"></i>
               </button>
             </form>
-            {% else %}
-            <span class="badge text-bg-secondary">Password reset only</span>
             {% endif %}
           </td>
         </tr>
         {% endfor %}
-        {% if not students %}
-        <tr id="noStudents"><td colspan="7" class="text-center text-muted py-4">No students added yet.</td></tr>
+        {% if not page.items %}
+        <tr><td colspan="8" class="text-center text-muted py-4">{{ 'No students match these filters.' if filter_args else 'No students added yet.' }}</td></tr>
         {% endif %}
       </tbody>
     </table>
   </div>
+  {{ render_pagination(page, 'students.index', filter_args) }}
 </div>
 
-<div class="modal fade" id="editModal" tabindex="-1">
+<div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <form method="POST" id="editForm" class="modal-content">
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
       <div class="modal-header">
         <h5 class="modal-title">Edit Student</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <div class="mb-3">
           <label class="form-label" for="edit_name">Name</label>
-          <input class="form-control" name="name" id="edit_name" required>
+          <input class="form-control" name="name" id="edit_name" maxlength="100" required>
         </div>
         <div class="mb-3">
           <label class="form-label" for="edit_roll_no">Roll No</label>
-          <input class="form-control" name="roll_no" id="edit_roll_no" required>
+          <input class="form-control" name="roll_no" id="edit_roll_no" maxlength="20" required>
         </div>
         <div class="mb-3">
           <label class="form-label" for="edit_email">Email</label>
-          <input class="form-control" name="email" id="edit_email" type="email" required>
+          <input class="form-control" name="email" id="edit_email" type="email" maxlength="120" required>
         </div>
         <div class="mb-3">
           <label class="form-label" for="edit_dept">Department</label>
-          <select class="form-select" name="department_id" id="edit_dept" required onchange="loadSemesters(this.value,'edit_sem')">
+          <select class="form-select" name="department_id" id="edit_dept" required>
             {% for d in departments %}
             <option value="{{ d.id }}">{{ d.display_name }}</option>
             {% endfor %}
@@ -225,119 +238,37 @@
   </div>
 </div>
 
-<script>
-function loadSemesters(dept_id, target_id) {
-  const sel = document.getElementById(target_id);
-  sel.innerHTML = '<option value="">Loading...</option>';
-  sel.disabled = true;
-  sel.value = '';
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const deptSelect = document.getElementById('dept_select');
+  const semSelect = document.getElementById('sem_select');
+  deptSelect.addEventListener('change', function () { AttendQR.loadSemesters(semSelect, deptSelect.value); });
+  if (deptSelect.value) AttendQR.loadSemesters(semSelect, deptSelect.value);
 
-  if (!dept_id) {
-    sel.innerHTML = '<option value="">Select semester</option>';
-    sel.disabled = false;
-    return;
-  }
+  const editDept = document.getElementById('edit_dept');
+  const editSem = document.getElementById('edit_sem');
+  editDept.addEventListener('change', function () { AttendQR.loadSemesters(editSem, editDept.value); });
 
-  fetch('/api/semesters/' + dept_id)
-    .then(r => r.json())
-    .then(data => {
-      sel.innerHTML = '<option value="">Select semester</option>';
-      if (data.length === 0) {
-        sel.innerHTML += '<option value="" disabled>No semesters available</option>';
-      }
-      data.forEach(s => sel.add(new Option(s.name, s.id)));
-      sel.disabled = false;
-    })
-    .catch(() => {
-      sel.innerHTML = '<option value="">Error loading</option>';
-      sel.disabled = false;
-      alert('Error loading semesters. Please refresh the page.');
+  document.querySelectorAll('.edit-student').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const data = button.dataset;
+      document.getElementById('editForm').action = data.action;
+      document.getElementById('edit_name').value = data.name;
+      document.getElementById('edit_roll_no').value = data.roll;
+      document.getElementById('edit_email').value = data.email;
+      editDept.value = data.departmentId;
+      AttendQR.loadSemesters(editSem, data.departmentId, { selected: data.semesterId });
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
     });
-}
-
-function loadFilterSemesters(dept_id) {
-  const sel = document.getElementById('filterSem');
-
-  if (!dept_id) {
-    sel.innerHTML = '<option value="">All Semesters</option>';
-    filterTable();
-    return;
-  }
-
-  sel.innerHTML = '<option value="">Loading...</option>';
-
-  fetch('/api/semesters/' + dept_id)
-    .then(r => r.json())
-    .then(data => {
-      sel.innerHTML = '<option value="">All Semesters</option>';
-      data.forEach(s => sel.add(new Option(s.name, s.id)));
-      filterTable();
-    })
-    .catch(() => {
-      sel.innerHTML = '<option value="">All Semesters</option>';
-    });
-}
-
-function openEdit(id, name, roll_no, email, dept_id, sem_id) {
-  document.getElementById('edit_name').value = name;
-  document.getElementById('edit_roll_no').value = roll_no;
-  document.getElementById('edit_email').value = email;
-  document.getElementById('edit_dept').value = dept_id;
-  loadSemesters(dept_id, 'edit_sem');
-  setTimeout(() => document.getElementById('edit_sem').value = sem_id, 500);
-  document.getElementById('editForm').action = '/students/edit/' + id;
-  new bootstrap.Modal(document.getElementById('editModal')).show();
-}
-
-document.getElementById('studentForm').addEventListener('reset', function() {
-  document.getElementById('sem_select').innerHTML = '<option value="">Select semester</option>';
-});
-
-const searchInput = document.getElementById('searchInput');
-const filterDept = document.getElementById('filterDept');
-const filterSem = document.getElementById('filterSem');
-const resultCount = document.getElementById('resultCount');
-
-function filterTable() {
-  const searchTerm = searchInput.value.toLowerCase();
-  const deptFilter = filterDept.value;
-  const semFilter = filterSem.value;
-  const rows = document.querySelectorAll('.student-row');
-  let visibleCount = 0;
-
-  rows.forEach(row => {
-    const name = row.getAttribute('data-name');
-    const roll = row.getAttribute('data-roll');
-    const deptId = row.getAttribute('data-dept-id');
-    const semId = row.getAttribute('data-sem-id');
-    const matchSearch = name.includes(searchTerm) || roll.includes(searchTerm);
-    const matchDept = !deptFilter || deptId === deptFilter;
-    const matchSem = !semFilter || semId === semFilter;
-
-    if (matchSearch && matchDept && matchSem) {
-      row.style.display = '';
-      visibleCount++;
-      row.querySelector('td:first-child').textContent = visibleCount;
-    } else {
-      row.style.display = 'none';
-    }
   });
 
-  resultCount.textContent = `Showing: ${visibleCount} of {{ students|length }} students`;
-}
-
-function clearFilters() {
-  searchInput.value = '';
-  filterDept.value = '';
-  filterSem.innerHTML = '<option value="">All Semesters</option>';
-  filterSem.value = '';
-  filterTable();
-}
-
-searchInput.addEventListener('keyup', filterTable);
-filterDept.addEventListener('change', function() {
-  loadFilterSemesters(this.value);
-});
-filterSem.addEventListener('change', filterTable);
+  // Changing the department filter resets the semester filter and reloads.
+  const filterForm = document.getElementById('filterForm');
+  document.getElementById('filterDept').addEventListener('change', function () {
+    document.getElementById('filterSem').value = '';
+    filterForm.submit();
+  });
+  document.getElementById('filterSem').addEventListener('change', function () { filterForm.submit(); });
+})();
 </script>
 {% endblock %}
