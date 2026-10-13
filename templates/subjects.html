@@ -15,7 +15,7 @@
       <input type="text" id="searchInput" class="form-control" placeholder="Search by paper code, subject, department, or semester">
     </div>
     <div class="col-md-4 col-lg-3 d-flex align-items-end">
-      <button class="btn btn-secondary w-100" type="button" onclick="clearFilters()">
+      <button class="btn btn-secondary w-100" type="button" id="clearSearch">
         <i class="bi bi-x-circle me-1"></i> Clear Search
       </button>
     </div>
@@ -24,7 +24,7 @@
 
 {% if current_user.role != 'teacher' %}
 
-<form method="POST" class="form-panel">
+<form method="POST" action="{{ url_for('academics.subjects') }}" class="form-panel">
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3 align-items-end">
     <div class="col-md-6 col-xl">
@@ -33,11 +33,11 @@
     </div>
     <div class="col-md-6 col-xl">
       <label class="form-label" for="subject_name">Subject Name</label>
-      <input class="form-control" id="subject_name" name="name" placeholder="DBMS" required>
+      <input class="form-control" id="subject_name" name="name" placeholder="DBMS" maxlength="100" required>
     </div>
     <div class="col-md-6 col-xl">
       <label class="form-label" for="dept_select">Department</label>
-      <select class="form-select" name="department_id" id="dept_select" required onchange="loadSemesters(this.value, 'sem_select'); loadTeachers(this.value, 'teacher_select')">
+      <select class="form-select" name="department_id" id="dept_select" required>
         <option value="">Select department</option>
         {% for d in departments %}
         <option value="{{ d.id }}">{{ d.display_name }}</option>
@@ -90,12 +90,15 @@
           <td>{{ s.semester.name }}</td>
           {% if current_user.role != 'teacher' %}
           <td class="text-end text-nowrap">
-            <button class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit subject"
-              onclick='openEdit({{ s.id|tojson }}, {{ s.name|tojson }}, {{ (s.paper_code or '')|tojson }}, {{ s.department_id|tojson }}, {{ s.semester_id|tojson }}, {{ (s.teacher_id or '')|tojson }})'>
+            <button class="btn btn-sm btn-warning btn-icon edit-subject" type="button" data-bs-toggle="tooltip" title="Edit subject"
+              data-action="{{ url_for('academics.edit_subject', id=s.id) }}"
+              data-name="{{ s.name }}" data-paper-code="{{ s.paper_code or '' }}"
+              data-department-id="{{ s.department_id }}" data-semester-id="{{ s.semester_id }}"
+              data-teacher-id="{{ s.teacher_id or '' }}">
               <i class="bi bi-pencil-square"></i>
             </button>
-            <form method="POST" action="/subjects/delete/{{ s.id }}" class="d-inline"
-              onsubmit='return confirm({{ ("Delete " ~ subject_display_name(s) ~ "?")|tojson }})'>
+            <form method="POST" action="{{ url_for('academics.delete_subject', id=s.id) }}" class="d-inline"
+              data-confirm="Delete {{ subject_display_name(s) }}?">
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete subject">
                 <i class="bi bi-trash"></i>
@@ -129,11 +132,11 @@
         </div>
         <div class="mb-3">
           <label class="form-label" for="edit_name">Subject Name</label>
-          <input class="form-control" name="name" id="edit_name" required>
+          <input class="form-control" name="name" id="edit_name" maxlength="100" required>
         </div>
         <div class="mb-3">
           <label class="form-label" for="edit_dept">Department</label>
-          <select class="form-select" name="department_id" id="edit_dept" required onchange="loadSemesters(this.value, 'edit_sem'); loadTeachers(this.value, 'edit_teacher')">
+          <select class="form-select" name="department_id" id="edit_dept" required>
             {% for d in departments %}
             <option value="{{ d.id }}">{{ d.display_name }}</option>
             {% endfor %}
@@ -164,79 +167,46 @@
 </div>
 {% endif %}
 
-<script>
-function loadSemesters(dept_id, target_id) {
-  if (!dept_id) return;
-  fetch('/api/semesters/' + dept_id)
-    .then(r => r.json())
-    .then(data => {
-      const sel = document.getElementById(target_id);
-      sel.innerHTML = '<option value="">Select semester</option>';
-      data.forEach(s => sel.add(new Option(s.name, s.id)));
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const teacherOptions = { placeholder: 'Assign later' };
+  const deptSelect = document.getElementById('dept_select');
+  if (deptSelect) {
+    deptSelect.addEventListener('change', function () {
+      AttendQR.loadSemesters('sem_select', deptSelect.value);
+      AttendQR.loadTeachers('teacher_select', deptSelect.value, teacherOptions);
     });
-}
-function loadTeachers(dept_id, target_id, selectedValue = '') {
-  const sel = document.getElementById(target_id);
-  if (!sel) return;
-  sel.innerHTML = '<option value="">Assign later</option>';
-  if (!dept_id) return;
-  fetch('/api/teachers/' + dept_id)
-    .then(r => r.json())
-    .then(data => {
-      sel.innerHTML = '<option value="">Assign later</option>';
-      data.forEach(t => sel.add(new Option(t.name, t.id)));
-      if (selectedValue !== '') {
-        sel.value = selectedValue;
-      }
+  }
+
+  const editDept = document.getElementById('edit_dept');
+  if (editDept) {
+    editDept.addEventListener('change', function () {
+      AttendQR.loadSemesters('edit_sem', editDept.value);
+      AttendQR.loadTeachers('edit_teacher', editDept.value, teacherOptions);
     });
-}
-function openEdit(id, name, paper_code, dept_id, sem_id, teacher_id) {
-  document.getElementById('edit_name').value = name;
-  document.getElementById('edit_paper_code').value = paper_code;
-  document.getElementById('edit_dept').value = dept_id;
-  loadSemesters(dept_id, 'edit_sem');
-  loadTeachers(dept_id, 'edit_teacher', teacher_id);
-  setTimeout(() => document.getElementById('edit_sem').value = sem_id, 300);
-  document.getElementById('editForm').action = '/subjects/edit/' + id;
-  new bootstrap.Modal(document.getElementById('editModal')).show();
-}
+  }
 
-const subjectSearchInput = document.getElementById('searchInput');
-const subjectResultCount = document.getElementById('resultCount');
-
-function filterSubjects() {
-  const searchTerm = subjectSearchInput.value.toLowerCase();
-  const rows = document.querySelectorAll('.subject-row');
-  let visibleCount = 0;
-
-  rows.forEach(row => {
-    const name = row.getAttribute('data-name');
-    const code = row.getAttribute('data-code');
-    const teacher = row.getAttribute('data-teacher');
-    const dept = row.getAttribute('data-dept');
-    const sem = row.getAttribute('data-sem');
-    const matches = name.includes(searchTerm) || code.includes(searchTerm) || teacher.includes(searchTerm) || dept.includes(searchTerm) || sem.includes(searchTerm);
-
-    if (matches) {
-      row.style.display = '';
-      visibleCount++;
-      row.querySelector('td:first-child').textContent = visibleCount;
-    } else {
-      row.style.display = 'none';
-    }
+  document.querySelectorAll('.edit-subject').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const data = button.dataset;
+      document.getElementById('edit_name').value = data.name;
+      document.getElementById('edit_paper_code').value = data.paperCode;
+      editDept.value = data.departmentId;
+      AttendQR.loadSemesters('edit_sem', data.departmentId, { selected: data.semesterId });
+      AttendQR.loadTeachers('edit_teacher', data.departmentId, Object.assign({ selected: data.teacherId }, teacherOptions));
+      document.getElementById('editForm').action = data.action;
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
+    });
   });
 
-  subjectResultCount.textContent = `Showing: ${visibleCount} of {{ subjects|length }} subjects`;
-}
-
-function clearFilters() {
-  subjectSearchInput.value = '';
-  filterSubjects();
-}
-
-subjectSearchInput.addEventListener('keyup', filterSubjects);
-document.getElementById('dept_select').addEventListener('change', function() {
-  loadTeachers(this.value, 'teacher_select');
-});
+  const apply = AttendQR.bindTableSearch({
+    input: 'searchInput', count: 'resultCount', rows: '.subject-row',
+    fields: ['name', 'code', 'teacher', 'dept', 'sem'], noun: 'subjects'
+  });
+  document.getElementById('clearSearch').addEventListener('click', function () {
+    document.getElementById('searchInput').value = '';
+    apply();
+  });
+})();
 </script>
 {% endblock %}

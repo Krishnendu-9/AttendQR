@@ -28,7 +28,7 @@
       </select>
     </div>
     <div class="col-md-3 d-flex align-items-end">
-      <button class="btn btn-secondary w-100" type="button" onclick="clearFilters()">
+      <button class="btn btn-secondary w-100" type="button" id="clearFilters">
         <i class="bi bi-x-circle me-1"></i> Clear Filters
       </button>
     </div>
@@ -103,77 +103,65 @@
   </div>
 </div>
 
-<script>
-const searchInput = document.getElementById('searchInput');
-const filterDept = document.getElementById('filterDept');
-const resultCount = document.getElementById('resultCount');
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const searchInput = document.getElementById('searchInput');
+  const filterDept = document.getElementById('filterDept');
+  const resultCount = document.getElementById('resultCount');
 
-function filterTable() {
-  const searchTerm = searchInput.value.toLowerCase();
-  const deptFilter = filterDept.value;
-  const rows = document.querySelectorAll('.teacher-row');
-  let visibleCount = 0;
+  function filterTable() {
+    const searchTerm = searchInput.value.toLowerCase().trim();
+    const deptFilter = filterDept.value;
+    const rows = document.querySelectorAll('.teacher-row');
+    let visibleCount = 0;
 
-  rows.forEach(row => {
-    const detailRow = document.getElementById(row.getAttribute('data-target'));
-    const name = row.getAttribute('data-name');
-    const email = row.getAttribute('data-email');
-    const deptId = row.getAttribute('data-dept-id');
-    const matchSearch = name.includes(searchTerm) || email.includes(searchTerm);
-    const matchDept = !deptFilter || deptId === deptFilter;
-
-    if (matchSearch && matchDept) {
-      row.style.display = '';
-      if (detailRow) {
-        detailRow.style.display = '';
+    rows.forEach(function (row) {
+      const detailRow = document.getElementById(row.dataset.target);
+      const matches = (row.dataset.name.includes(searchTerm) || row.dataset.email.includes(searchTerm))
+        && (!deptFilter || row.dataset.deptId === deptFilter);
+      row.style.display = matches ? '' : 'none';
+      if (matches) {
+        visibleCount += 1;
+        row.querySelector('.teacher-index-number').textContent = visibleCount;
+        if (detailRow) detailRow.style.display = '';
+      } else {
+        row.setAttribute('aria-expanded', 'false');
+        row.classList.remove('is-open');
+        if (detailRow) {
+          detailRow.classList.add('d-none');
+          detailRow.style.display = 'none';
+        }
       }
-      visibleCount++;
-      row.querySelector('.teacher-index-number').textContent = visibleCount;
-    } else {
-      row.style.display = 'none';
-      row.setAttribute('aria-expanded', 'false');
-      row.classList.remove('is-open');
-      if (detailRow) {
-        detailRow.classList.add('d-none');
-        detailRow.style.display = 'none';
-      }
-    }
-  });
-
-  resultCount.textContent = `Showing: ${visibleCount} of {{ teachers|length }} teachers`;
-}
-
-function clearFilters() {
-  searchInput.value = '';
-  filterDept.value = '';
-  filterTable();
-}
-
-searchInput.addEventListener('keyup', filterTable);
-filterDept.addEventListener('change', filterTable);
-
-document.querySelectorAll('.teacher-row').forEach(function(row) {
-  function toggleRow() {
-    if (row.style.display === 'none') {
-      return;
-    }
-    const detailRow = document.getElementById(row.getAttribute('data-target'));
-    if (!detailRow) {
-      return;
-    }
-    const isOpen = row.getAttribute('aria-expanded') === 'true';
-    row.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
-    row.classList.toggle('is-open', !isOpen);
-    detailRow.classList.toggle('d-none', isOpen);
+    });
+    resultCount.textContent = 'Showing: ' + visibleCount + ' of ' + rows.length + ' teachers';
   }
 
-  row.addEventListener('click', toggleRow);
-  row.addEventListener('keydown', function(event) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      toggleRow();
-    }
+  searchInput.addEventListener('input', filterTable);
+  filterDept.addEventListener('change', filterTable);
+  document.getElementById('clearFilters').addEventListener('click', function () {
+    searchInput.value = '';
+    filterDept.value = '';
+    filterTable();
   });
-});
+
+  document.querySelectorAll('.teacher-row').forEach(function (row) {
+    function toggleRow() {
+      if (row.style.display === 'none') return;
+      const detailRow = document.getElementById(row.dataset.target);
+      if (!detailRow) return;
+      const isOpen = row.getAttribute('aria-expanded') === 'true';
+      row.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+      row.classList.toggle('is-open', !isOpen);
+      detailRow.classList.toggle('d-none', isOpen);
+    }
+    row.addEventListener('click', toggleRow);
+    row.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleRow();
+      }
+    });
+  });
+})();
 </script>
 {% endblock %}
