@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "attendqr"
+version = "1.0.0"
+description = "QR-based attendance management for colleges"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+classifiers = [
+    "Framework :: Flask",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Private :: Do Not Upload",
+]
+# Dependencies stay in requirements.txt (pinned versions in requirements.lock).
+dynamic = ["dependencies"]
+
+[project.urls]
+Repository = "https://github.com/Krishnendu-9/AttendQR"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+# templates/, static/ and migrations/ live beside the package, so install it
+# editable (pip install -e .) rather than as a regular wheel.
+[tool.setuptools.packages.find]
+include = ["attendqr*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+addopts = "-ra"
+filterwarnings = [
+    "error::sqlalchemy.exc.LegacyAPIWarning",
+]
