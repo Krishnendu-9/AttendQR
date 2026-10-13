@@ -4,8 +4,11 @@
 {% block page_subtitle %}Student-wise attendance matrix for selected class sessions{% endblock %}
 {% block content %}
 <div class="page-heading">
-  <span class="text-muted">{{ dept.display_name }} - {{ sem.name }}</span>
-  <a href="{{ url_for('reports', department_id=dept.id, semester_id=sem.id) }}" class="btn btn-secondary">
+  <span class="text-muted">
+    {{ dept.display_name }} - {{ sem.name }}
+    {% if filters.date_from or filters.date_to %} · {{ filters.date_from or '…' }} to {{ filters.date_to or 'today' }}{% endif %}
+  </span>
+  <a href="{{ url_for('reports.index', department_id=dept.id, semester_id=sem.id, **filter_args) }}" class="btn btn-secondary">
     <i class="bi bi-arrow-left me-1"></i> Back
   </a>
 </div>
@@ -15,16 +18,16 @@
     <table class="table table-sm table-hover align-middle">
       <thead>
         <tr>
-          <th rowspan="2" class="align-middle">Roll No</th>
-          <th rowspan="2" class="align-middle">Name</th>
+          <th class="align-middle">Roll No</th>
+          <th class="align-middle">Name</th>
           {% for session in sessions %}
           <th class="text-center session-column">
             <span class="d-block">{{ session_display_name(session) }}</span>
             <span class="text-muted small">{{ session.created_at.strftime('%d/%m/%y') }}</span>
           </th>
           {% endfor %}
-          <th rowspan="2" class="align-middle text-center">Total</th>
-          <th rowspan="2" class="align-middle text-center">%</th>
+          <th class="align-middle text-center">Total</th>
+          <th class="align-middle text-center">%</th>
         </tr>
       </thead>
       <tbody>
@@ -34,7 +37,9 @@
           <td class="fw-semibold">{{ row.student.name }}</td>
           {% for session in sessions %}
           <td class="text-center">
-            {% if row.attendance[session.id] %}
+            {% if row.attendance[session.id] == 'manual' %}
+            <span class="badge text-bg-info" title="Entered manually by staff">P*</span>
+            {% elif row.attendance[session.id] %}
             <span class="badge text-bg-success">P</span>
             {% else %}
             <span class="badge text-bg-danger">A</span>
@@ -43,7 +48,8 @@
           {% endfor %}
           <td class="text-center"><strong>{{ row.total }}/{{ sessions|length }}</strong></td>
           <td class="text-center">
-            <span class="badge {% if row.percentage >= 75 %}text-bg-success{% elif row.percentage >= 50 %}text-bg-warning{% else %}text-bg-danger{% endif %}">
+            {# Green meets the attendance target, amber is within 15 points of it, red is a shortage. #}
+            <span class="badge {% if row.percentage >= attendance_target %}text-bg-success{% elif row.percentage >= attendance_target - 15 %}text-bg-warning{% else %}text-bg-danger{% endif %}">
               {{ row.percentage }}%
             </span>
           </td>
@@ -56,4 +62,9 @@
     </table>
   </div>
 </div>
+<p class="small text-muted mt-2">
+  Target: {{ attendance_target }}%. P = QR scan, P* = entered manually by staff.
+  Sessions deactivated before anyone marked attendance are not counted.
+  <a href="{{ url_for('reports.shortage', department_id=dept.id, semester_id=sem.id, **filter_args) }}">View shortage list</a>
+</p>
 {% endblock %}

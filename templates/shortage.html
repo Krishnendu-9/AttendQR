@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+{% block title %}Shortage List | AttendQR{% endblock %}
+{% block page_title %}Shortage List{% endblock %}
+{% block page_subtitle %}Students below the attendance requirement, overall or in any subject{% endblock %}
+{% block content %}
+
+{% if filters.error %}
+<div class="alert alert-danger" role="alert">
+  <i class="bi bi-exclamation-triangle me-2"></i><strong>Invalid date range:</strong> {{ filters.error }}
+</div>
+{% endif %}
+
+<form method="GET" action="{{ url_for('reports.shortage') }}" class="form-panel" id="shortageForm">
+  <div class="row g-3">
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="dept_select">Department</label>
+      <select class="form-select" name="department_id" id="dept_select" required>
+        <option value="">Select department</option>
+        {% for d in departments %}
+        <option value="{{ d.id }}" {{ 'selected' if filters.department_id == d.id }}>{{ d.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="sem_select">Semester</label>
+      <select class="form-select" name="semester_id" id="sem_select" required>
+        <option value="">Select semester</option>
+        {% for s in semesters %}
+        <option value="{{ s.id }}" {{ 'selected' if filters.semester_id == s.id }}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="subject_select">Subject</label>
+      <select class="form-select" name="subject_id" id="subject_select">
+        <option value="">All subjects</option>
+        {% for sub in subjects %}
+        <option value="{{ sub.id }}" {{ 'selected' if filters.subject_id == sub.id }}>{{ subject_display_name(sub) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="threshold">Required %</label>
+      <input type="number" class="form-control" id="threshold" name="threshold" min="1" max="99" value="{{ threshold }}">
+    </div>
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="date_from">From Date</label>
+      <input type="date" class="form-control" id="date_from" name="date_from" value="{{ filters.date_from }}" max="{{ today }}">
+    </div>
+    <div class="col-md-6 col-xl-3">
+      <label class="form-label" for="date_to">To Date</label>
+      <input type="date" class="form-control" id="date_to" name="date_to" value="{{ filters.date_to }}" max="{{ today }}">
+    </div>
+    <div class="col-md-6 col-xl-3 d-flex align-items-end">
+      <button class="btn btn-primary w-100" type="submit">
+        <i class="bi bi-search me-1"></i> Find Shortages
+      </button>
+    </div>
+  </div>
+</form>
+
+{% if report %}
+<section class="stat-grid report-stats">
+  <div class="stat-card">
+    <div class="stat-icon"><i class="bi bi-people"></i></div>
+    <div class="stat-label">Class Size</div>
+    <div class="stat-value">{{ report.class_size }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon danger"><i class="bi bi-exclamation-triangle"></i></div>
+    <div class="stat-label">Below {{ threshold }}%</div>
+    <div class="stat-value">{{ report.rows|length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon accent"><i class="bi bi-calendar-check"></i></div>
+    <div class="stat-label">Classes Held</div>
+    <div class="stat-value">{{ report.classes_held }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon warning"><i class="bi bi-book"></i></div>
+    <div class="stat-label">Subjects</div>
+    <div class="stat-value">{{ report.subjects|length }}</div>
+  </div>
+</section>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a href="{{ url_for('reports.index', **report_args) }}" class="btn btn-secondary">
+    <i class="bi bi-arrow-left me-1"></i> Attendance Report
+  </a>
+  {% if report.rows %}
+  <a href="{{ url_for('reports.shortage_export', **shortage_args) }}" class="btn btn-success">
+    <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
+  </a>
+  {% endif %}
+</div>
+
+{% if not report.classes_held %}
+<div class="alert alert-info"><i class="bi bi-info-circle me-1"></i> No classes have been held for this selection yet.</div>
+{% elif not report.rows %}
+<div class="alert alert-success"><i class="bi bi-check-circle me-1"></i> Every student in {{ dept.display_name }} - {{ sem.name }} meets {{ threshold }}% for this selection.</div>
+{% else %}
+<div class="table-card">
+  <div class="card-header">
+    <h2 class="section-title">{{ dept.display_name }} - {{ sem.name }}</h2>
+    <p class="section-subtitle">
+      Lowest attendance first. "Needed" is how many consecutive classes the student must attend to reach {{ threshold }}%.
+      Void sessions and special classes are not counted.
+    </p>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Roll No</th>
+          <th>Name</th>
+          <th class="text-center">Overall</th>
+          <th class="text-center">Needed</th>
+          {% for subject in report.subjects %}
+          <th class="text-center session-column">{{ subject_display_name(subject) }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.rows %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="fw-semibold">{{ row.student.roll_no }}</td>
+          <td>
+            {{ row.student.name }}
+            <div class="small text-muted">{{ row.student.email }}</div>
+          </td>
+          <td class="text-center">
+            <span class="badge {{ 'text-bg-danger' if row.short else 'text-bg-success' }}">{{ row.percentage }}%</span>
+            <div class="small text-muted">{{ row.attended }}/{{ row.total }}</div>
+          </td>
+          <td class="text-center fw-semibold">{{ row.needed or '—' }}</td>
+          {% for cell in row.cells %}
+          <td class="text-center">
+            <span class="badge {{ 'text-bg-danger' if cell.short else 'text-bg-light border' }}">{{ cell.percentage }}%</span>
+            <div class="small text-muted">{{ cell.attended }}/{{ cell.total }}{% if cell.short %} · needs {{ cell.needed }}{% endif %}</div>
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const deptSelect = document.getElementById('dept_select');
+  const semSelect = document.getElementById('sem_select');
+  const subjectSelect = document.getElementById('subject_select');
+  deptSelect.addEventListener('change', function () {
+    AttendQR.loadSemesters(semSelect, deptSelect.value);
+    AttendQR.fillSelect(subjectSelect, [], { placeholder: 'All subjects' });
+  });
+  semSelect.addEventListener('change', function () {
+    AttendQR.loadSubjects(subjectSelect, semSelect.value, { placeholder: 'All subjects' });
+  });
+})();
+</script>
+{% endblock %}

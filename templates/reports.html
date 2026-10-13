@@ -1,33 +1,34 @@
 {% extends 'base.html' %}
+{% from '_pagination.html' import render_pagination %}
 {% block title %}Attendance Report | AttendQR{% endblock %}
 {% block page_title %}Attendance Report{% endblock %}
 {% block page_subtitle %}Filter, analyze, and export attendance records{% endblock %}
 {% block content %}
 
-{% if date_error %}
+{% if filters.error %}
 <div class="alert alert-danger alert-dismissible fade show" role="alert">
-  <i class="bi bi-exclamation-triangle me-2"></i><strong>Invalid date range:</strong> {{ date_error }}
-  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  <i class="bi bi-exclamation-triangle me-2"></i><strong>Invalid date range:</strong> {{ filters.error }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
 </div>
 {% endif %}
 
-<form method="GET" class="form-panel" id="reportForm">
+<form method="GET" action="{{ url_for('reports.index') }}" class="form-panel" id="reportForm">
   <div class="row g-3">
     <div class="col-md-6 col-xl-3">
       <label class="form-label" for="dept_select">Department</label>
-      <select class="form-select" name="department_id" id="dept_select" required onchange="loadSemesters(this.value)">
+      <select class="form-select" name="department_id" id="dept_select" required>
         <option value="">Select department</option>
         {% for d in departments %}
-        <option value="{{ d.id }}" {% if selected_dept == d.id %}selected{% endif %}>{{ d.display_name }}</option>
+        <option value="{{ d.id }}" {{ 'selected' if filters.department_id == d.id }}>{{ d.display_name }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="col-md-6 col-xl-3">
       <label class="form-label" for="sem_select">Semester</label>
-      <select class="form-select" name="semester_id" id="sem_select" required onchange="loadSubjects(this.value)">
+      <select class="form-select" name="semester_id" id="sem_select" required>
         <option value="">Select semester</option>
         {% for s in semesters %}
-        <option value="{{ s.id }}" {% if selected_sem == s.id %}selected{% endif %}>{{ s.name }}</option>
+        <option value="{{ s.id }}" {{ 'selected' if filters.semester_id == s.id }}>{{ s.name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -36,18 +37,18 @@
       <select class="form-select" name="subject_id" id="subject_select">
         <option value="">All subjects</option>
         {% for sub in subjects %}
-        <option value="{{ sub.id }}" {% if selected_subject == sub.id %}selected{% endif %}>{{ subject_display_name(sub) }}</option>
+        <option value="{{ sub.id }}" {{ 'selected' if filters.subject_id == sub.id }}>{{ subject_display_name(sub) }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="col-md-6 col-xl-3">
       <label class="form-label" for="date_from">From Date</label>
-      <input type="date" class="form-control" id="date_from" name="date_from" value="{{ date_from }}" max="{{ today }}">
+      <input type="date" class="form-control" id="date_from" name="date_from" value="{{ filters.date_from }}" max="{{ today }}">
       <div class="invalid-feedback" id="date_from_err"></div>
     </div>
     <div class="col-md-6 col-xl-3">
       <label class="form-label" for="date_to">To Date</label>
-      <input type="date" class="form-control" id="date_to" name="date_to" value="{{ date_to }}" max="{{ today }}">
+      <input type="date" class="form-control" id="date_to" name="date_to" value="{{ filters.date_to }}" max="{{ today }}">
       <div class="invalid-feedback" id="date_to_err"></div>
     </div>
     <div class="col-md-6 col-xl-3 d-flex align-items-end">
@@ -67,7 +68,7 @@
   </div>
   <div class="stat-card">
     <div class="stat-icon accent"><i class="bi bi-calendar-check"></i></div>
-    <div class="stat-label">Sessions</div>
+    <div class="stat-label">Classes Held</div>
     <div class="stat-value">{{ stats.total_sessions }}</div>
   </div>
   <div class="stat-card">
@@ -83,23 +84,28 @@
 </section>
 
 <div class="d-flex flex-wrap gap-2 mb-3">
-  <a href="/reports/detailed?department_id={{ selected_dept }}&semester_id={{ selected_sem }}" class="btn btn-info">
+  <a href="{{ url_for('reports.detailed', department_id=filters.department_id, semester_id=filters.semester_id, **filter_args) }}" class="btn btn-info">
     <i class="bi bi-table me-1"></i> Detailed View
   </a>
-  {% set export_qs = '?subject_id=' ~ (selected_subject or '') ~ '&date_from=' ~ date_from ~ '&date_to=' ~ date_to %}
-  <a href="/export/{{ selected_dept }}/{{ selected_sem }}/excel{{ export_qs }}" class="btn btn-success">
+  <a href="{{ url_for('reports.export', department_id=filters.department_id, semester_id=filters.semester_id, fmt='excel', **filter_args) }}" class="btn btn-success">
     <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
   </a>
-  <a href="/export/{{ selected_dept }}/{{ selected_sem }}/pdf{{ export_qs }}" class="btn btn-danger">
+  <a href="{{ url_for('reports.export', department_id=filters.department_id, semester_id=filters.semester_id, fmt='pdf', **filter_args) }}" class="btn btn-danger">
     <i class="bi bi-file-earmark-pdf me-1"></i> Export PDF
+  </a>
+  <a href="{{ url_for('reports.shortage', department_id=filters.department_id, semester_id=filters.semester_id, **filter_args) }}" class="btn btn-warning">
+    <i class="bi bi-exclamation-triangle me-1"></i> Shortage List
   </a>
 </div>
 
-{% if sessions %}
+{% if page and page.items %}
 <div class="table-card">
   <div class="card-header">
     <h2 class="section-title">Class Sessions</h2>
-    <p class="section-subtitle">Attendance sessions matching the selected criteria</p>
+    <p class="section-subtitle">
+      Attendance sessions matching the selected criteria. Sessions deactivated before anyone marked attendance are
+      shown as <span class="badge text-bg-light border">Void</span> and are not counted as classes held.
+    </p>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
@@ -108,16 +114,18 @@
           <th>#</th>
           <th>Subject</th>
           <th>Teacher</th>
-          <th>Date & Time</th>
+          <th>Date &amp; Time</th>
           <th>Status</th>
           <th>Present</th>
           <th class="text-end">Actions</th>
         </tr>
       </thead>
       <tbody>
-        {% for session in sessions %}
+        {% set current_time = now() %}
+        {% for session in page.items %}
+        {% set present = counts.get(session.id, 0) %}
         <tr>
-          <td>{{ loop.index }}</td>
+          <td>{{ (page.page - 1) * page.per_page + loop.index }}</td>
           <td class="fw-semibold">
             {{ session_display_name(session) }}
             {% if session.special_title %}
@@ -127,15 +135,19 @@
           <td>{{ session.teacher.name if session.teacher else 'N/A' }}</td>
           <td>{{ format_12h(session.created_at) }}</td>
           <td>
-            {% if session.expires_at > now() %}
+            {% if not session.is_active and not present %}
+            <span class="badge text-bg-light border">Void</span>
+            {% elif session.is_active and session.expires_at > current_time %}
             <span class="badge text-bg-success">Active</span>
+            {% elif session.expires_at > current_time %}
+            <span class="badge text-bg-warning text-dark">Deactivated</span>
             {% else %}
             <span class="badge text-bg-secondary">Expired</span>
             {% endif %}
           </td>
-          <td><span class="badge text-bg-primary">{{ session.attendances|length }} Students</span></td>
+          <td><span class="badge text-bg-primary">{{ present }} Students</span></td>
           <td class="text-end text-nowrap">
-            <button class="btn btn-sm btn-info btn-icon" onclick="viewAttendance({{ session.id }})" data-bs-toggle="tooltip" title="View details">
+            <button class="btn btn-sm btn-info btn-icon view-attendance" type="button" data-session-id="{{ session.id }}" data-bs-toggle="tooltip" title="View details">
               <i class="bi bi-eye"></i>
             </button>
           </td>
@@ -144,6 +156,7 @@
       </tbody>
     </table>
   </div>
+  {{ render_pagination(page, 'reports.index', page_args) }}
 </div>
 {% else %}
 <div class="alert alert-info">
@@ -152,12 +165,12 @@
 {% endif %}
 {% endif %}
 
-<div class="modal fade" id="attendanceModal" tabindex="-1">
+<div class="modal fade" id="attendanceModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Session Attendance Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <div id="sessionInfo" class="mb-3">
@@ -185,6 +198,7 @@
                 <th>Name</th>
                 <th>Email</th>
                 <th>Marked At</th>
+                <th>How</th>
               </tr>
             </thead>
             <tbody id="attendanceList"></tbody>
@@ -198,88 +212,71 @@
   </div>
 </div>
 
-<script>
-function loadSemesters(dept_id) {
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const deptSelect = document.getElementById('dept_select');
   const semSelect = document.getElementById('sem_select');
-  semSelect.innerHTML = '<option value="">Loading...</option>';
+  const subjectSelect = document.getElementById('subject_select');
 
-  if (!dept_id) {
-    semSelect.innerHTML = '<option value="">Select semester</option>';
-    return;
-  }
+  deptSelect.addEventListener('change', function () {
+    AttendQR.loadSemesters(semSelect, deptSelect.value);
+    AttendQR.fillSelect(subjectSelect, [], { placeholder: 'All subjects' });
+  });
+  semSelect.addEventListener('change', function () {
+    AttendQR.loadSubjects(subjectSelect, semSelect.value, { placeholder: 'All subjects' });
+  });
 
-  fetch('/api/semesters/' + dept_id)
-    .then(r => r.json())
-    .then(data => {
-      semSelect.innerHTML = '<option value="">Select semester</option>';
-      data.forEach(s => semSelect.add(new Option(s.name, s.id)));
-    });
-}
+  function viewAttendance(sessionId) {
+    AttendQR.getJSON(AttendQR.url('sessionAttendance', sessionId))
+      .then(function (data) {
+        document.getElementById('modalSubject').textContent = data.session.subject;
+        document.getElementById('modalDept').textContent = data.session.department;
+        document.getElementById('modalSem').textContent = data.session.semester;
+        document.getElementById('modalTeacher').textContent = data.session.teacher;
+        document.getElementById('modalDate').textContent = data.session.created_at;
+        document.getElementById('modalTotal').textContent = data.total + ' Students';
 
-function loadSubjects(sem_id) {
-  const subSelect = document.getElementById('subject_select');
-  subSelect.innerHTML = '<option value="">Loading...</option>';
-
-  if (!sem_id) {
-    subSelect.innerHTML = '<option value="">All subjects</option>';
-    return;
-  }
-
-  fetch('/api/subjects/' + sem_id)
-    .then(r => r.json())
-    .then(data => {
-      subSelect.innerHTML = '<option value="">All subjects</option>';
-      data.forEach(s => subSelect.add(new Option(s.display_name, s.id)));
-    });
-}
-
-function viewAttendance(sessionId) {
-  fetch('/api/session_attendance/' + sessionId)
-    .then(r => r.json())
-    .then(data => {
-      document.getElementById('modalSubject').textContent = data.session.subject;
-      document.getElementById('modalDept').textContent = data.session.department;
-      document.getElementById('modalSem').textContent = data.session.semester;
-      document.getElementById('modalTeacher').textContent = data.session.teacher;
-      document.getElementById('modalDate').textContent = data.session.created_at;
-      document.getElementById('modalTotal').textContent = data.total + ' Students';
-
-      const tbody = document.getElementById('attendanceList');
-      tbody.innerHTML = '';
-
-      if (data.attendances.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No students marked attendance</td></tr>';
-      } else {
-        data.attendances.forEach((att, index) => {
-          const row = document.createElement('tr');
-          [index + 1, att.student_roll, att.student_name, att.student_email, att.timestamp].forEach(value => {
-            const cell = document.createElement('td');
-            cell.textContent = value;
-            row.appendChild(cell);
+        const tbody = document.getElementById('attendanceList');
+        tbody.innerHTML = '';
+        if (data.attendances.length === 0) {
+          const row = tbody.insertRow();
+          const cell = row.insertCell();
+          cell.colSpan = 6;
+          cell.className = 'text-center text-muted py-4';
+          cell.textContent = 'No students marked attendance';
+        }
+        data.attendances.forEach(function (att, index) {
+          const row = tbody.insertRow();
+          [index + 1, att.student_roll, att.student_name, att.student_email, att.timestamp].forEach(function (value) {
+            row.insertCell().textContent = value;
           });
-          tbody.appendChild(row);
+          const how = row.insertCell();
+          const badge = document.createElement('span');
+          badge.className = 'badge ' + (att.source === 'manual' ? 'text-bg-info' : 'text-bg-light border');
+          badge.textContent = att.source === 'manual' ? 'Manual' : 'Scan';
+          if (att.source === 'manual') badge.title = (att.marked_by ? att.marked_by + ': ' : '') + (att.note || '');
+          how.appendChild(badge);
         });
-      }
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('attendanceModal')).show();
+      })
+      .catch(function () {
+        alert('Error loading attendance details');
+      });
+  }
 
-      new bootstrap.Modal(document.getElementById('attendanceModal')).show();
-    })
-    .catch(err => {
-      alert('Error loading attendance details');
-      console.error(err);
-    });
-}
+  document.querySelectorAll('.view-attendance').forEach(function (button) {
+    button.addEventListener('click', function () { viewAttendance(button.dataset.sessionId); });
+  });
 
-window.addEventListener('DOMContentLoaded', function() {
-  const today = '{{ today }}';
+  // Date checks mirror the server-side validation.
+  const today = {{ today|tojson }};
   const fromInput = document.getElementById('date_from');
   const toInput = document.getElementById('date_to');
 
-  // Enforce max=today dynamically in case the attribute is bypassed
   function validateDates() {
     const fromErr = document.getElementById('date_from_err');
     const toErr = document.getElementById('date_to_err');
     let valid = true;
-
     fromInput.classList.remove('is-invalid');
     toInput.classList.remove('is-invalid');
     fromErr.textContent = '';
@@ -304,37 +301,14 @@ window.addEventListener('DOMContentLoaded', function() {
     return valid;
   }
 
-  fromInput.addEventListener('change', function() {
+  fromInput.addEventListener('change', function () {
     validateDates();
-    // Auto-update to_date min to match from_date
-    if (toInput.value && toInput.value < fromInput.value) {
-      toInput.value = fromInput.value;
-    }
+    if (toInput.value && toInput.value < fromInput.value) toInput.value = fromInput.value;
   });
-
   toInput.addEventListener('change', validateDates);
-
-  document.getElementById('reportForm').addEventListener('submit', function(e) {
-    if (!validateDates()) {
-      e.preventDefault();
-    }
+  document.getElementById('reportForm').addEventListener('submit', function (event) {
+    if (!validateDates()) event.preventDefault();
   });
-
-  const deptId = document.getElementById('dept_select').value;
-  if (deptId) {
-    loadSemesters(deptId);
-    setTimeout(() => {
-      const semId = {{ selected_sem if selected_sem else 'null' }};
-      if (semId) {
-        document.getElementById('sem_select').value = semId;
-        loadSubjects(semId);
-        setTimeout(() => {
-          const subId = {{ selected_subject if selected_subject else 'null' }};
-          if (subId) document.getElementById('subject_select').value = subId;
-        }, 300);
-      }
-    }, 300);
-  }
-});
+})();
 </script>
 {% endblock %}
