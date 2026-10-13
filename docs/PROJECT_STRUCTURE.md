@@ -1,42 +1,59 @@
 # Project Structure
 
-The project uses a simple Flask layout suitable for a final-year academic project.
+AttendQR is a Flask application built with an application factory and blueprints.
 
 ```text
-QR-Based-Smart-Attendance-Management-System/
-  app.py
-  models.py
-  config.py
-  run.py
-  wsgi.py
-  requirements.txt
-  README.md
-  .env.example
-  templates/
+AttendQR/
+  attendqr/
+    __init__.py         create_app(): config, extensions, blueprints, request guards, template helpers
+    config.py           Config class read from environment variables / .env
+    extensions.py       db, login_manager, migrate; SQLite foreign-key pragma
+    models.py           SQLAlchemy models
+    access.py           Roles, scope checks, visible_*_query() helpers, display helpers, activity log
+    security.py         Secret key, CSRF, safe redirects, password policy, CSP/security headers, login throttling
+    schema.py           prepare_database(): migrations, upgrade of pre-migration databases, first Principal
+    utils.py            Time, normalisation, natural sorting, date-range parsing
+    services/
+      qr.py             Rotating QR tokens, scan URLs, scan grants, device binding
+      reports.py        Attendance summaries, report filters, Excel/PDF export
+      roster.py         Student login accounts and bulk import
+    blueprints/
+      auth.py           /login, /logout, /account
+      main.py           Dashboards
+      academics.py      Departments, semesters, subjects, teachers
+      students.py       Student records, import, password and device resets
+      attendance.py     QR sessions (/generate_qr) and the student scan flow (/scan, /attend, /mark_attendance)
+      reports.py        Reports, detailed view, exports
+      accounts.py       Staff account management (/add_admin)
+      api.py            JSON endpoints used by the pages (/api/...)
+  migrations/           Alembic environment and versions (Flask-Migrate)
+  templates/            Jinja2 templates; _head.html and _pagination.html are shared partials
   static/
-  docs/
-  tests/
+    app.css             Application styles
+    js/app.js           Shared page helpers (dropdown loading, password meter, confirmations)
+    vendor/             Bootstrap, Bootstrap Icons, and Inter, served locally
+  tests/                pytest suite (conftest.py builds a fresh migrated database per test)
+  run.py                Local/LAN server (waitress; debug server on localhost with FLASK_DEBUG=1)
+  wsgi.py               WSGI entry point; also used by the `flask` CLI
 ```
-
-## Important Files
-
-- `app.py`: Flask app, routes, RBAC checks, QR generation, report export, and startup migration.
-- `models.py`: SQLAlchemy database models.
-- `config.py`: Flask configuration and database URL.
-- `run.py`: local development entrypoint.
-- `wsgi.py`: deployment entrypoint.
-- `templates/`: Jinja2 templates.
-- `static/app.css`: shared UI styling.
-- `static/qrcodes/`: runtime-generated QR images.
-- `tests/smoke_test.py`: basic verification script.
 
 ## Runtime Data
 
-The SQLite database lives inside `instance/`. This folder is ignored by git because it is runtime data.
+`instance/` holds runtime data and is ignored by git:
 
-Generated QR images are runtime artifacts and should not be committed.
+- `attendance.db`: the SQLite database (default `DATABASE_URL`)
+- `secret_key`: generated on first start when `SECRET_KEY` is not set. Keep it private; deleting it signs everyone out.
+
+QR images are generated in memory and are never written to disk.
 
 ## Environment Files
 
-- `.env.example`: committed template for required and optional environment variables.
-- `.env`: local machine-specific values; ignored by git and not committed.
+- `.env.example`: committed template documenting every setting
+- `.env`: local values; ignored by git
+
+## Dependencies
+
+- `requirements.txt`: direct dependencies with compatible version ranges
+- `requirements.lock`: every package pinned, for reproducible installs and CI
+- `requirements-dev.txt`: test and lint tools
+- `pyproject.toml`: project metadata and pytest settings; reads its dependencies from `requirements.txt`

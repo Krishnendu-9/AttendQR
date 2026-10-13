@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .mypy_cache/
+*.egg-info/
+build/
 
 # Virtual Environment
 venv/
@@ -12,9 +14,8 @@ env/
 instance/
 *.db
 
-# Runtime-generated QR images
-static/qrcodes/*.png
-!static/qrcodes/.gitkeep
+# QR images written by older versions (QR codes are now generated in memory)
+static/qrcodes/
 
 # VS Code
 .vscode/

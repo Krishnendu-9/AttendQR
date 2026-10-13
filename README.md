@@ -1,10 +1,13 @@
 # QR-Based Smart Attendance Management System
 
-A Flask-based web application for managing classroom attendance through time-bound QR sessions, role-based access control, and downloadable attendance reports.
+[![CI](https://github.com/Krishnendu-9/AttendQR/actions/workflows/ci.yml/badge.svg)](https://github.com/Krishnendu-9/AttendQR/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+A Flask web application for managing classroom attendance through time-bound, rotating QR sessions, role-based access control, and downloadable attendance reports.
 
 ## Overview
 
-This project is designed for college attendance workflows where Principal, HOD, Teacher, and Student users need different levels of access. Teachers generate QR sessions for assigned subjects, students scan the QR code to mark attendance, and the system stores attendance records digitally for reporting and shortage tracking.
+This project is designed for college attendance workflows where Principal, HOD, Teacher, and Student users need different levels of access. Teachers generate QR sessions for assigned subjects, students scan the QR code with their own phone to mark attendance, and the system stores attendance records digitally for reporting and shortage tracking.
 
 The application also manages departments, semesters, subjects, teacher profiles, student records, account governance, password reset flows, and recent account activity logs.
 
@@ -12,262 +15,187 @@ The application also manages departments, semesters, subjects, teacher profiles,
 
 - Role-based access control for Principal, HOD, Teacher, and Student
 - Department, semester, subject, teacher, and student management
-- Principal/HOD account management from the Accounts page
-- Teacher subject assignment with subject-level access control
-- Single student creation and bulk student import from the Students page
-- Automatic student login creation from student records
-- QR-based attendance session generation with expiry handling
+- Single student creation and bulk import (CSV/XLSX) with automatic student logins
+- Rotating QR codes: each code is valid for 30 seconds and refreshes every 10 seconds
+- One registered device per student, and one student per device
 - Duplicate attendance prevention per student per session
-- Special class session support without mandatory teacher assignment
+- Manual attendance correction by staff (add or remove, reason required, labelled `P*` in reports, audit-logged)
+- Shortage list of students below the requirement, overall and per subject, with Excel export
+- Special class sessions without mandatory teacher assignment
 - Student dashboard with subject-wise percentage and 80% attendance tracking
 - Excel and PDF attendance export
 - Account status toggle, password reset, and activity logging
-- Password change reminder for newly created or reset accounts
+- Mandatory password change for new or reset accounts
 
 ## Technology Stack
 
-- Python
-- Flask
-- Flask-SQLAlchemy
-- Flask-Login
-- SQLite
-- Bootstrap
-- qrcode with Pillow
-- openpyxl
-- reportlab
-- pytz
+Python 3.11+, Flask, Flask-SQLAlchemy, Flask-Login, Flask-Migrate (Alembic), SQLite, Bootstrap (served locally), qrcode + Pillow, openpyxl, reportlab, waitress, pytest.
 
 ## Project Structure
 
 ```text
 AttendQR/
-  app.py                  Main Flask application and routes
-  models.py               SQLAlchemy database models
-  config.py               Configuration
-  run.py                  Development entrypoint
-  wsgi.py                 WSGI entrypoint
-  requirements.txt        Python dependencies
-  README.md               Project overview and setup guide
-  LICENSE                 Open source MIT license
-  SECURITY.md             Vulnerability reporting policy
-  .env.example            Example environment values
-  templates/              Jinja2 templates
-  static/                 CSS and generated QR code assets
-  instance/               Runtime SQLite database
-  docs/                   RBAC and structure notes
-  tests/                  Smoke tests
-  .github/workflows/      CI test automation
+  attendqr/                 Application package
+    __init__.py             create_app() factory, request guards, template helpers
+    config.py               Configuration (environment variables)
+    models.py               SQLAlchemy models
+    access.py               Role-based access rules and scoped queries
+    security.py             Secret key, CSRF, redirects, password policy, headers, login throttling
+    schema.py               Database setup and upgrade of pre-migration databases
+    utils.py                Small shared helpers
+    services/               QR tokens and devices, reports and exports, student import
+    blueprints/             Routes: auth, main, academics, students, attendance, reports, accounts, api
+  migrations/               Alembic migrations (Flask-Migrate)
+  templates/                Jinja2 templates
+  static/                   CSS, JavaScript, and vendored Bootstrap/fonts (no CDN needed)
+  tests/                    pytest suite
+  run.py                    Start the server (waitress, or the debug server)
+  wsgi.py                   WSGI entry point
+  pyproject.toml            Project metadata and pytest settings
+  requirements.txt          Direct dependencies
+  requirements.lock         Exact pinned versions for reproducible installs
+  requirements-dev.txt      Test and lint tools
 ```
 
-## Database
-
-The project uses SQLite through Flask-SQLAlchemy.
-
-- Default database URL: `sqlite:///attendance.db`
-- Effective runtime database file: `instance/attendance.db`
-- Main tables: `Admin`, `Department`, `Semester`, `Subject`, `Teacher`, `Student`, `ClassSession`, `Attendance`, `ActivityLog`
-
-The application also performs lightweight startup schema updates through helper functions in `app.py` such as `ensure_rbac_columns()` and `ensure_class_session_columns()`.
-
-## Role Summary
-
-### Principal
-
-- Full system access
-- Can create Principal, HOD, and Teacher accounts
-- Can activate, deactivate, edit, reset, or delete staff accounts
-- Can view all account activity logs
-- Can manage all departments and academic data
-
-### HOD
-
-- Access limited to the assigned department
-- Can create and manage Teacher accounts for that department
-- Can manage department-level students, semesters, and subjects
-- Can view department teacher activity, not full Principal activity
-
-### Teacher
-
-- Can access only assigned subjects
-- Can generate QR sessions only for those subjects
-- Can view own attendance sessions and reports
-- Can manage student records in the allowed scope
-- Cannot see admin activity logs of other users
-
-### Student
-
-- Can log in with student email
-- Can view only personal attendance dashboard
-- Can track percentage, shortage, and required classes for the 80% target
-
-More detail is available in [docs/RBAC.md](docs/RBAC.md).
+More detail is in [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md).
 
 ## Setup
 
-Create a virtual environment and install dependencies:
-
 ```powershell
 python -m venv venv
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe -m pip install -r requirements.lock
+Copy-Item .env.example .env   # optional; every setting has a default
 ```
 
-Create a local environment file from the example:
+`requirements.lock` pins exact versions. `requirements.txt` lists the direct dependencies with compatible ranges.
 
-```powershell
-Copy-Item .env.example .env
-```
-
-Update `.env` if you want to change the secret key, database URL, LAN URL settings, or initial Principal account.
+You do not need to set `SECRET_KEY`. On first start AttendQR generates a private key and stores it in `instance/secret_key`. If `SECRET_KEY` is set to a published placeholder value, the app refuses to start outside debug mode.
 
 ## Running the Application
 
-Recommended local run:
+Serve on the local network (uses the waitress production server):
 
 ```powershell
 .\venv\Scripts\python.exe run.py
 ```
 
-Then open:
+Phones on the same Wi-Fi can then reach `http://<this-computer's-LAN-IP>:5000`.
 
-```text
-http://127.0.0.1:5000
-```
-
-### Note About Debug Reloader
-
-If you run the project from a synced folder such as OneDrive, Flask's debug reloader can sometimes behave inconsistently during restart. If that happens, run without the reloader:
+For development with auto-reload and the interactive debugger:
 
 ```powershell
-.\venv\Scripts\python.exe -c "from app import app; app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)"
+$env:FLASK_DEBUG="1"; .\venv\Scripts\python.exe run.py
 ```
 
-Or run without debug mode:
+In debug mode the server binds to `127.0.0.1` only. Werkzeug's debugger can run arbitrary code, so it is never exposed to the network.
+
+On Linux you can also use `gunicorn wsgi:app`. With several worker processes, set `AUTO_MIGRATE=0` and run `flask init-db` once per deployment.
+
+## Database and Migrations
+
+- Default database: SQLite at `instance/attendance.db` (set `DATABASE_URL` to change it)
+- Schema changes are managed by Alembic migrations in `migrations/`. Pending migrations run automatically at startup.
+- Databases created by older versions of AttendQR are detected and upgraded automatically on first start, keeping all data. Before that first start, back up `instance/attendance.db`.
+
+Useful commands:
 
 ```powershell
-.\venv\Scripts\python.exe -c "from app import app; app.run(host='0.0.0.0', port=5000, debug=False)"
+flask init-db                         # create or upgrade the database
+flask db migrate -m "describe change" # generate a migration after editing models.py
+flask db upgrade                      # apply migrations
 ```
 
 ## Initial Login
 
-The first Principal account is created from these environment variables when the database has no accounts yet:
-
-```text
-DEFAULT_PRINCIPAL_EMAIL
-DEFAULT_PRINCIPAL_PASSWORD
-```
-
-For a local demo, copy `.env.example` to `.env` and use the values defined there. Change the password before sharing or deploying the project.
+The first Principal account is created from `DEFAULT_PRINCIPAL_EMAIL` and `DEFAULT_PRINCIPAL_PASSWORD` when the database has no accounts. That password is public (it is in `.env.example`), so the Principal must choose a new one at first login.
 
 ## Account Rules
 
-### Staff Accounts
-
-- Staff account email must end with `@rcciit.org.in` or `@gmail.com`
-- Principal can create Principal, HOD, and Teacher accounts
-- HOD can create Teacher accounts for the assigned department
+- Staff account emails must end with one of `ALLOWED_STAFF_DOMAINS` (default `@rcciit.org.in` or `@gmail.com`; remove Gmail for a real deployment)
+- Principal can create Principal, HOD, and Teacher accounts; HOD can create Teacher accounts for their department
 - Only one active HOD is allowed per department
-- Newly created or reset accounts are marked with a password-change reminder
+- Passwords need at least 8 characters with letters and numbers, and must differ from the user's email and roll number
+- New and reset accounts must change their password before using the app
+- Changing or resetting a password, or deactivating an account, signs out all of that account's existing sessions
+- After 5 failed logins from one device, that device is paused for 10 minutes for that account. Other devices are unaffected, so classmates cannot lock each other out. An account-wide limit (30 failures per hour) still bounds brute force. Resetting the password clears the lock.
 
 ### Student Accounts
 
-Student accounts are not created from the Accounts page.
-
-They are created automatically when a student record is added from the Students page.
+Student accounts are created automatically when a student is added on the Students page or by bulk upload:
 
 ```text
 username: student email
-password: roll number
+initial password: roll number (must be changed at first login)
 ```
-
-Students can also be added through bulk upload.
 
 ## Bulk Student Import
 
-Supported fields:
-
-```text
-name, roll_no, email, semester
-```
-
-Principal uploads should also include department information such as:
-
-```text
-department or department_id
-```
-
-HOD and Teacher uploads are automatically scoped to their assigned department.
-
-A sample import template can be downloaded from the Students page.
+Columns: `name, roll_no, email, semester`. Principal uploads also need `department` (the label shown in the downloadable template) or `department_id`. HOD and Teacher uploads are automatically scoped to their department.
 
 ## QR Attendance Flow
 
-1. Teacher selects department, semester, subject, and duration.
-2. System creates a `ClassSession` with a unique token.
-3. QR image is generated from the scan URL.
-4. Student scans the code and submits attendance.
-5. System validates session expiry and duplicate attendance.
-6. Attendance is stored in the `Attendance` table.
+1. The teacher selects department, semester, subject, and duration, and the system creates a `ClassSession`.
+2. The teacher's screen shows a QR code that changes every 10 seconds. Each code expires 30 seconds after it is shown, so screenshots and forwarded links stop working almost immediately.
+3. The student scans with their own phone. A valid scan gives that phone's browser a 5-minute window to log in (and set a new password on first login) before confirming.
+4. The system checks the session is still active, the student belongs to that department and semester, and the phone is the student's registered device.
+5. Attendance is stored once per student per session.
+
+Device rules: a student's first successful attendance registers that phone, and each phone can belong to only one student. Teachers, HODs, and the Principal can reset a student's device lock from the Students page (for example after a phone change).
+
+Sessions deactivated before anyone marked attendance are treated as void (created by mistake) and do not count as classes held. Deactivating after attendance was taken still counts the class.
+
+### Manual Corrections
+
+When a student was in class but could not scan (dead phone, device lock reset), the teacher who ran the session, the department HOD, or the Principal can open the session from Generate QR and mark them present. Entries can also be removed, for example if a student marked attendance without being in the room. Both actions require a short reason. Manual entries show as `P*` in the detailed report and exports, show the staff member and reason in the session view, and are recorded in the activity log.
 
 ### Special Classes
 
-The Generate QR page also supports special classes such as aptitude or spoken English sessions.
-
-- Teacher selection is optional for special classes
-- A custom special class title can be entered
+The Generate QR page also supports special classes (aptitude, workshops). Teacher selection is optional, and a custom title can be entered.
 
 ## QR Scan URL and Network Notes
 
-QR links are generated using the laptop's LAN IP unless overridden.
-
-Useful environment values:
+Scan links use this computer's LAN IP unless overridden:
 
 ```powershell
-$env:APP_BASE_URL="http://192.168.0.170:5000"
-$env:APP_HOST_IP="192.168.0.170"
-$env:APP_PORT="5000"
+$env:APP_BASE_URL="http://192.168.0.170:5000"   # or APP_HOST_IP / APP_PORT
 ```
 
-After changing these, restart the app and generate a fresh QR code.
-
-For mobile scanning to work, phones usually need to be on the same Wi-Fi or local network as the laptop running the server.
+Phones need to be on the same network as the server. When the site is served over HTTPS (recommended, since plain HTTP on shared Wi-Fi can be intercepted), set `SESSION_COOKIE_SECURE=1`. If it runs behind a reverse proxy, also set `TRUSTED_PROXY_COUNT`.
 
 ## Reporting
 
-The project supports:
+- Session-wise attendance reports with pagination
+- Detailed student-by-session matrix (uses the same subject and date filters as the report)
+- Excel and PDF export
+- Student-wise attendance percentage and classes needed to reach 80%
+- Shortage list: students below a chosen percentage (default 80%) overall or in any subject, worst first, with the consecutive classes each needs and Excel export
 
-- session-wise attendance reports
-- detailed class attendance view
-- Excel export
-- PDF export
-- student-wise attendance percentage tracking
-
-## Verification
-
-Run the smoke test:
+## Testing
 
 ```powershell
-.\venv\Scripts\python.exe tests\smoke_test.py
+.\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\venv\Scripts\python.exe -m pytest
 ```
 
-This verifies application import and core route access for major roles.
+Each test runs against its own temporary database built by the real migrations; your `instance/` database is never touched. CI runs lint, a migration/model consistency check, and the tests on Python 3.11–3.13.
 
 ## Documentation
 
 - [docs/RBAC.md](docs/RBAC.md)
 - [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
+- [SECURITY.md](SECURITY.md)
 
 ## Current Limitations
 
-- SQLite is used for simplicity and local deployment, not heavy multi-user production traffic
-- Startup schema updates are handled manually in code instead of Flask-Migrate/Alembic
-- QR attendance depends on network reachability between the laptop and student devices
+- SQLite suits a single server; use PostgreSQL or MySQL via `DATABASE_URL` for heavier multi-user traffic
+- A student physically outside the classroom could still mark attendance if a classmate sends them a fresh QR within 30 seconds; location or campus-network checks would close this
+- QR attendance depends on network reachability between the server and student phones
 
 ## Suggested Next Improvements
 
-- institutional email verification for staff accounts
-- stronger attendance authenticity checks such as location or campus network validation
-- deployment on a dedicated internal server
-- richer analytics for attendance trends and shortage forecasting
+- Location or campus-network validation for scans
+- Bulk semester promotion of students
+- Attendance trend analytics
 
 ## License
 
