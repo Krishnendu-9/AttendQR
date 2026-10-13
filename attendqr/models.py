@@ -135,6 +135,9 @@ class ClassSession(db.Model):
 
 
 class Attendance(db.Model):
+    SOURCE_SCAN = 'scan'
+    SOURCE_MANUAL = 'manual'
+
     __table_args__ = (
         db.Index('uq_attendance_student_session', 'student_id', 'session_id', unique=True),
     )
@@ -142,8 +145,21 @@ class Attendance(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False)
     session_id = db.Column(db.Integer, db.ForeignKey('class_session.id', ondelete='CASCADE'), nullable=False)
     timestamp = db.Column(db.DateTime, default=ist_now)
+    # 'scan' when the student scanned the QR, 'manual' when staff entered it.
+    source = db.Column(db.String(10), nullable=False, default=SOURCE_SCAN, server_default=SOURCE_SCAN)
+    marked_by_admin_id = db.Column(
+        db.Integer,
+        db.ForeignKey('admin.id', ondelete='SET NULL', name='fk_attendance_marked_by_admin'),
+        nullable=True,
+    )
+    note = db.Column(db.String(200), nullable=True)
     student = db.relationship('Student', backref=db.backref('attendances', cascade='all, delete-orphan'))
     session = db.relationship('ClassSession', backref=db.backref('attendances', cascade='all, delete-orphan'))
+    marked_by = db.relationship('Admin', foreign_keys=[marked_by_admin_id])
+
+    @property
+    def is_manual(self):
+        return self.source == self.SOURCE_MANUAL
 
 
 class ActivityLog(db.Model):
