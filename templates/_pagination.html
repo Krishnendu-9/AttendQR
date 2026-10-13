@@ -1,0 +1,23 @@
+{% macro render_pagination(page, endpoint, args) %}
+{% if page and page.pages > 1 %}
+<nav aria-label="Pages" class="px-3">
+  <ul class="pagination justify-content-center flex-wrap my-3">
+    <li class="page-item {{ 'disabled' if not page.has_prev }}">
+      <a class="page-link" href="{{ url_for(endpoint, page=page.prev_num, **args) if page.has_prev else '#' }}">Previous</a>
+    </li>
+    {% for number in page.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+      {% if number %}
+      <li class="page-item {{ 'active' if number == page.page }}">
+        <a class="page-link" href="{{ url_for(endpoint, page=number, **args) }}">{{ number }}</a>
+      </li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+      {% endif %}
+    {% endfor %}
+    <li class="page-item {{ 'disabled' if not page.has_next }}">
+      <a class="page-link" href="{{ url_for(endpoint, page=page.next_num, **args) if page.has_next else '#' }}">Next</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+{% endmacro %}
