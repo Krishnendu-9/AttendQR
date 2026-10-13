@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
     - uses: actions/checkout@v4
@@ -21,12 +21,25 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
+        cache-dependency-path: |
+          requirements.lock
+          requirements-dev.txt
 
-    - name: Install dependencies
+    - name: Install pinned dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements.lock
+        pip install pytest pyflakes
 
-    - name: Run Smoke Tests
+    - name: Lint
+      run: python -m pyflakes attendqr migrations tests run.py wsgi.py
+
+    - name: Check migrations match the models
+      env:
+        DATABASE_URL: sqlite:////tmp/attendqr-ci.db
       run: |
-        python tests/smoke_test.py
+        flask --app wsgi init-db
+        flask --app wsgi db check
+
+    - name: Run tests
+      run: python -m pytest -q
