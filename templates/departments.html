@@ -15,7 +15,7 @@
       <input type="text" id="searchInput" class="form-control" placeholder="Search by branch or course name">
     </div>
     <div class="col-md-4 col-lg-3 d-flex align-items-end">
-      <button class="btn btn-secondary w-100" type="button" onclick="clearFilters()">
+      <button class="btn btn-secondary w-100" type="button" id="clearSearch">
         <i class="bi bi-x-circle me-1"></i> Clear Search
       </button>
     </div>
@@ -23,18 +23,18 @@
 </div>
 
 {% if current_user.role == 'super_admin' %}
-<form method="POST" class="form-panel">
+<form method="POST" action="{{ url_for('academics.departments') }}" class="form-panel">
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3 align-items-end">
     <div class="col-md-3">
       <label class="form-label" for="department_branch">Branch</label>
       <input class="form-control text-uppercase" id="department_branch" name="branch" placeholder="Example: MCA"
-        required>
+        maxlength="20" required>
     </div>
     <div class="col-md-9 col-lg-7">
       <label class="form-label" for="department_name">Course Name</label>
       <input class="form-control" id="department_name" name="name"
-        placeholder="Example: Master of Computer Applications" required>
+        placeholder="Example: Master of Computer Applications" maxlength="100" required>
     </div>
     <div class="col-md-auto">
       <button type="submit" class="btn btn-success">
@@ -64,18 +64,18 @@
           <td class="fw-semibold">{{ d.course_name }}</td>
           <td class="text-end text-nowrap">
             {% if current_user.role == 'super_admin' %}
-            <button type="button" class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip"
+            <button type="button" class="btn btn-sm btn-warning btn-icon edit-department" data-bs-toggle="tooltip"
               title="Edit department"
-              onclick='openEdit({{ d.id }}, {{ d.branch_name|tojson }}, {{ d.course_name|tojson }})'>
+              data-action="{{ url_for('academics.edit_department', id=d.id) }}"
+              data-branch="{{ d.branch_name }}" data-name="{{ d.course_name }}">
               <i class="bi bi-pencil-square"></i>
             </button>
-            <button type="button" class="btn btn-sm btn-danger btn-icon" data-bs-toggle="tooltip"
-              title="Delete department"
-              onclick='if(confirm({{ ("Delete " ~ d.display_name ~ "?")|tojson }})) { document.getElementById("del-dept-{{ d.id }}").submit(); }'>
-              <i class="bi bi-trash"></i>
-            </button>
-            <form id="del-dept-{{ d.id }}" method="POST" action="/departments/delete/{{ d.id }}" class="d-none">
+            <form method="POST" action="{{ url_for('academics.delete_department', id=d.id) }}" class="d-inline"
+              data-confirm="Delete {{ d.display_name }}?">
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-danger btn-icon" data-bs-toggle="tooltip" title="Delete department">
+                <i class="bi bi-trash"></i>
+              </button>
             </form>
             {% else %}
             <span class="badge text-bg-secondary">View only</span>
@@ -104,10 +104,10 @@
       <div class="modal-body">
         <div class="mb-3">
           <label class="form-label" for="edit_branch">Branch</label>
-          <input class="form-control text-uppercase" name="branch" id="edit_branch" required>
+          <input class="form-control text-uppercase" name="branch" id="edit_branch" maxlength="20" required>
         </div>
         <label class="form-label" for="edit_name">Course Name</label>
-        <input class="form-control" name="name" id="edit_name" required>
+        <input class="form-control" name="name" id="edit_name" maxlength="100" required>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -116,44 +116,25 @@
     </form>
   </div>
 </div>
-<script>
-  function openEdit(id, branch, name) {
-    document.getElementById('edit_branch').value = branch || '';
-    document.getElementById('edit_name').value = name;
-    document.getElementById('editForm').action = '/departments/edit/' + id;
-    new bootstrap.Modal(document.getElementById('editModal')).show();
-  }
-
-  const departmentSearchInput = document.getElementById('searchInput');
-  const departmentResultCount = document.getElementById('resultCount');
-
-  function filterDepartments() {
-    const searchTerm = departmentSearchInput.value.toLowerCase();
-    const rows = document.querySelectorAll('.department-row');
-    let visibleCount = 0;
-
-    rows.forEach(row => {
-      const branch = row.getAttribute('data-branch');
-      const course = row.getAttribute('data-course');
-      const matches = branch.includes(searchTerm) || course.includes(searchTerm);
-
-      if (matches) {
-        row.style.display = '';
-        visibleCount++;
-        row.querySelector('td:first-child').textContent = visibleCount;
-      } else {
-        row.style.display = 'none';
-      }
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  document.querySelectorAll('.edit-department').forEach(function (button) {
+    button.addEventListener('click', function () {
+      document.getElementById('edit_branch').value = button.dataset.branch || '';
+      document.getElementById('edit_name').value = button.dataset.name;
+      document.getElementById('editForm').action = button.dataset.action;
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
     });
+  });
 
-    departmentResultCount.textContent = `Showing: ${visibleCount} of {{ departments|length }} departments`;
-  }
-
-  function clearFilters() {
-    departmentSearchInput.value = '';
-    filterDepartments();
-  }
-
-  departmentSearchInput.addEventListener('keyup', filterDepartments);
+  const apply = AttendQR.bindTableSearch({
+    input: 'searchInput', count: 'resultCount', rows: '.department-row',
+    fields: ['branch', 'course'], noun: 'departments'
+  });
+  document.getElementById('clearSearch').addEventListener('click', function () {
+    document.getElementById('searchInput').value = '';
+    apply();
+  });
+})();
 </script>
 {% endblock %}

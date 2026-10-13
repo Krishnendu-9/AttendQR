@@ -15,24 +15,24 @@
       <input type="text" id="searchInput" class="form-control" placeholder="Search by semester or department">
     </div>
     <div class="col-md-4 col-lg-3 d-flex align-items-end">
-      <button class="btn btn-secondary w-100" type="button" onclick="clearFilters()">
+      <button class="btn btn-secondary w-100" type="button" id="clearSearch">
         <i class="bi bi-x-circle me-1"></i> Clear Search
       </button>
     </div>
   </div>
 </div>
 
-<form method="POST" class="form-panel">
+<form method="POST" action="{{ url_for('academics.semesters') }}" class="form-panel">
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3 align-items-end">
     <div class="col-md-5">
       <label class="form-label" for="semester_name">Semester Name</label>
-      <input class="form-control" id="semester_name" name="name" placeholder="Example: Semester 1" required>
+      <input class="form-control" id="semester_name" name="name" placeholder="Example: Semester 1" maxlength="50" required>
     </div>
     <div class="col-md-5">
       <label class="form-label" for="department_id">Department</label>
       <select class="form-select" id="department_id" name="department_id" required>
-        <option value="">Select department</option>
+        {% if departments|length != 1 %}<option value="">Select department</option>{% endif %}
         {% for d in departments %}
         <option value="{{ d.id }}">{{ d.display_name }}</option>
         {% endfor %}
@@ -59,16 +59,17 @@
           <td class="fw-semibold">{{ s.name }}</td>
           <td>{{ s.department.display_name }}</td>
           <td class="text-end text-nowrap">
-            <button type="button" class="btn btn-sm btn-warning btn-icon" data-bs-toggle="tooltip" title="Edit semester"
-              onclick='openEdit({{ s.id|tojson }}, {{ s.name|tojson }}, {{ s.department_id|tojson }})'>
+            <button type="button" class="btn btn-sm btn-warning btn-icon edit-semester" data-bs-toggle="tooltip" title="Edit semester"
+              data-action="{{ url_for('academics.edit_semester', id=s.id) }}"
+              data-name="{{ s.name }}" data-department-id="{{ s.department_id }}">
               <i class="bi bi-pencil-square"></i>
             </button>
-            <button type="button" class="btn btn-sm btn-danger btn-icon" data-bs-toggle="tooltip" title="Delete semester"
-              onclick='if(confirm({{ ("Delete " ~ s.name ~ "?")|tojson }})) { document.getElementById("del-sem-{{ s.id }}").submit(); }'>
-              <i class="bi bi-trash"></i>
-            </button>
-            <form id="del-sem-{{ s.id }}" method="POST" action="/semesters/delete/{{ s.id }}" class="d-none">
+            <form method="POST" action="{{ url_for('academics.delete_semester', id=s.id) }}" class="d-inline"
+              data-confirm="Delete {{ s.name }} ({{ s.department.display_name }})?">
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-danger btn-icon" data-bs-toggle="tooltip" title="Delete semester">
+                <i class="bi bi-trash"></i>
+              </button>
             </form>
           </td>
         </tr>
@@ -92,7 +93,7 @@
       <div class="modal-body">
         <div class="mb-3">
           <label class="form-label" for="edit_name">Semester Name</label>
-          <input class="form-control" name="name" id="edit_name" required>
+          <input class="form-control" name="name" id="edit_name" maxlength="50" required>
         </div>
         <label class="form-label" for="edit_dept">Department</label>
         <select class="form-select" name="department_id" id="edit_dept" required>
@@ -108,44 +109,25 @@
     </form>
   </div>
 </div>
-<script>
-function openEdit(id, name, dept_id) {
-  document.getElementById('edit_name').value = name;
-  document.getElementById('edit_dept').value = dept_id;
-  document.getElementById('editForm').action = '/semesters/edit/' + id;
-  new bootstrap.Modal(document.getElementById('editModal')).show();
-}
-
-const semesterSearchInput = document.getElementById('searchInput');
-const semesterResultCount = document.getElementById('resultCount');
-
-function filterSemesters() {
-  const searchTerm = semesterSearchInput.value.toLowerCase();
-  const rows = document.querySelectorAll('.semester-row');
-  let visibleCount = 0;
-
-  rows.forEach(row => {
-    const name = row.getAttribute('data-name');
-    const dept = row.getAttribute('data-dept');
-    const matches = name.includes(searchTerm) || dept.includes(searchTerm);
-
-    if (matches) {
-      row.style.display = '';
-      visibleCount++;
-      row.querySelector('td:first-child').textContent = visibleCount;
-    } else {
-      row.style.display = 'none';
-    }
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  document.querySelectorAll('.edit-semester').forEach(function (button) {
+    button.addEventListener('click', function () {
+      document.getElementById('edit_name').value = button.dataset.name;
+      document.getElementById('edit_dept').value = button.dataset.departmentId;
+      document.getElementById('editForm').action = button.dataset.action;
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
+    });
   });
 
-  semesterResultCount.textContent = `Showing: ${visibleCount} of {{ semesters|length }} semesters`;
-}
-
-function clearFilters() {
-  semesterSearchInput.value = '';
-  filterSemesters();
-}
-
-semesterSearchInput.addEventListener('keyup', filterSemesters);
+  const apply = AttendQR.bindTableSearch({
+    input: 'searchInput', count: 'resultCount', rows: '.semester-row',
+    fields: ['name', 'dept'], noun: 'semesters'
+  });
+  document.getElementById('clearSearch').addEventListener('click', function () {
+    document.getElementById('searchInput').value = '';
+    apply();
+  });
+})();
 </script>
 {% endblock %}
