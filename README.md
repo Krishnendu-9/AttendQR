@@ -51,7 +51,7 @@ AttendQR/
   tests/                    pytest suite
   run.py                    Start the server (waitress, or the debug server)
   wsgi.py                   WSGI entry point
-  pyproject.toml            Project metadata and pytest settings
+  pyproject.toml            Project metadata, pytest and ruff settings
   requirements.txt          Direct dependencies
   requirements.lock         Exact pinned versions for reproducible installs
   requirements-dev.txt      Test and lint tools
@@ -228,9 +228,10 @@ Outside the app, copies remain in database backups until those expire, and web s
 ```powershell
 .\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\venv\Scripts\python.exe -m pytest
+.\venv\Scripts\python.exe -m ruff check .
 ```
 
-Each test runs against its own temporary database built by the real migrations; your `instance/` database is never touched. CI runs lint, a migration/model consistency check, and the tests on Python 3.11–3.13.
+Each test runs against its own temporary database built by the real migrations; your `instance/` database is never touched. CI runs ruff, a migration/model consistency check, and the tests on Python 3.11–3.13, plus a dependency audit (see [SECURITY.md](SECURITY.md)).
 
 ## Documentation
 

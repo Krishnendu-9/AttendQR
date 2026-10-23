@@ -19,7 +19,7 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from ..models import Student
 
-QR_TOKEN_SALT = 'qr-scan-salt'
+QR_TOKEN_SALT = 'qr-scan-salt'  # noqa: S105 - a namespace for signatures, not a secret
 SCAN_GRANT_KEY = 'scan_grant'
 DEVICE_COOKIE = 'device_id'
 DEVICE_COOKIE_MAX_AGE = 10 * 365 * 24 * 3600

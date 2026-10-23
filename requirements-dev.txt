@@ -1,3 +1,4 @@
 -r requirements.txt
 pytest>=8.0
-pyflakes>=3.2
+# Ruff adds and changes rules between minor releases; CI pins the exact version.
+ruff~=0.17.2

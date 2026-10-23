@@ -36,3 +36,32 @@ addopts = "-ra"
 filterwarnings = [
     "error::sqlalchemy.exc.LegacyAPIWarning",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "F",    # pyflakes: undefined names, unused imports and variables
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "I",    # import order
+    "B",    # bugbear: likely bugs and footguns
+    "S",    # bandit: security-sensitive calls
+    "UP",   # newer syntax for Python 3.11+
+    "ISC",  # implicit string concatenation (a missing comma joins two strings)
+    "C4",   # comprehensions
+    "PIE",  # unnecessary code
+    "RUF",  # ruff's own checks, including unused noqa comments
+]
+ignore = [
+    "E501",  # long lines: left to review rather than enforced
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert and use fixed passwords and keys on purpose.
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["attendqr", "conftest"]

@@ -1,6 +1,7 @@
 """Attendance statistics, reports, exports, imports, and sorting."""
 import csv
 import io
+
 import openpyxl
 
 from attendqr.extensions import db
@@ -94,7 +95,7 @@ def test_principal_import_template_round_trips(data, client_for):
     client = client_for(data.principal)
     template = client.get('/students/import-template').get_data(as_text=True)
     headers, sample = list(csv.reader(io.StringIO(template)))
-    row = dict(zip(headers, sample))
+    row = dict(zip(headers, sample, strict=True))
     row.update(name='Template Student', roll_no='MCA777', email='template@example.com')
 
     out = io.StringIO()
@@ -131,8 +132,8 @@ def test_classes_needed_matches_brute_force():
         return n
 
     for target in (50, 75, 80, 90):
-        for total in range(0, 41):
-            for attended in range(0, total + 1):
+        for total in range(41):
+            for attended in range(total + 1):
                 assert classes_needed_for_target(attended, total, target) == brute(attended, total, target), \
                     (attended, total, target)
     assert classes_needed_for_target(4, 6, 80) == 4  # float maths used to say 5

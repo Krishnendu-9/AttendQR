@@ -2,7 +2,6 @@
 import io
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Optional
 from xml.sax.saxutils import escape
 
 import openpyxl
@@ -131,14 +130,14 @@ def build_student_attendance_summary(student):
 
 @dataclass
 class ReportFilters:
-    department_id: Optional[int]
-    semester_id: Optional[int]
-    subject_id: Optional[int]
-    parsed_from: Optional[date]
-    parsed_to: Optional[date]
+    department_id: int | None
+    semester_id: int | None
+    subject_id: int | None
+    parsed_from: date | None
+    parsed_to: date | None
     date_from: str
     date_to: str
-    error: Optional[str]
+    error: str | None
 
     def query_args(self):
         """Optional filters to forward to the detailed view and exports."""

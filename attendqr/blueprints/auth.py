@@ -4,7 +4,13 @@ from flask import Blueprint, flash, redirect, render_template, request, session,
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from ..access import build_account_profile, current_department_id, log_activity, own_security_activity_logs_query, role_label
+from ..access import (
+    build_account_profile,
+    current_department_id,
+    log_activity,
+    own_security_activity_logs_query,
+    role_label,
+)
 from ..extensions import db
 from ..models import ActivityLog, Admin
 from ..security import (

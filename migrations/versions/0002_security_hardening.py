@@ -7,8 +7,8 @@ Create Date: 2026-10-12
 """
 import secrets
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = '0002_security_hardening'
 down_revision = '0001_baseline'

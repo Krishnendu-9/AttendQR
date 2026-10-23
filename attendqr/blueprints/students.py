@@ -24,7 +24,12 @@ from ..access import (
 from ..extensions import db
 from ..models import Admin, Semester, Student
 from ..security import clear_login_failures, is_safe_redirect_target
-from ..services.roster import ensure_student_account, import_students_from_rows, import_template_rows, parse_student_import
+from ..services.roster import (
+    ensure_student_account,
+    import_students_from_rows,
+    import_template_rows,
+    parse_student_import,
+)
 from ..utils import normalize_email, normalize_roll_no, normalize_text, parse_int_value, sort_semesters
 
 bp = Blueprint('students', __name__)

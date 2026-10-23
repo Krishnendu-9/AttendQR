@@ -1,7 +1,18 @@
 import uuid
 from datetime import timedelta
 
-from flask import Blueprint, abort, current_app, flash, jsonify, make_response, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required
 from itsdangerous import BadSignature, SignatureExpired
 from sqlalchemy.exc import IntegrityError

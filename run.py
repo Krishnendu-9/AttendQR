@@ -28,7 +28,8 @@ def main():
 
     from waitress import serve
 
-    host = os.environ.get('FLASK_RUN_HOST', '0.0.0.0')
+    # Phones on the LAN must reach the server, so listen on every interface by default.
+    host = os.environ.get('FLASK_RUN_HOST', '0.0.0.0')  # noqa: S104
     print(f"AttendQR is serving on http://{host}:{port} (press Ctrl+C to stop)")
     serve(app, host=host, port=port, threads=int(os.environ.get('WAITRESS_THREADS', '8')))
 

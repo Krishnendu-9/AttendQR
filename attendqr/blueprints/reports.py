@@ -216,8 +216,10 @@ def shortage_export():
     report = build_shortage_report(filters, threshold)
     headers, data = build_shortage_export_rows(report)
     notes = [
-        f"Students below {threshold}% overall or in any subject, out of {report['class_size']} in "
-        f"{department.display_name} - {semester.name}. Classes held: {report['classes_held']}.",
+        (
+            f"Students below {threshold}% overall or in any subject, out of {report['class_size']} in "
+            f"{department.display_name} - {semester.name}. Classes held: {report['classes_held']}."
+        ),
         f"Exported on {ist_now().strftime('%d/%m/%Y %I:%M %p')}. Void sessions and special classes are not counted.",
     ]
     base = department.branch_name or department.course_name
