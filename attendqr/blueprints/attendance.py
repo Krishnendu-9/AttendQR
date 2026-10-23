@@ -25,7 +25,7 @@ from ..access import (
 from ..extensions import db
 from ..models import Attendance, ClassSession, Semester, Student, Subject, Teacher
 from ..security import is_safe_redirect_target
-from ..services.network import scan_network_error
+from ..services.network import client_ip, scan_network_error
 from ..services.qr import (
     DEVICE_TAKEN_MESSAGE,
     build_scan_url,
@@ -39,9 +39,11 @@ from ..services.qr import (
     qr_data_uri,
     read_device_cookie,
     read_qr_token,
+    scan_grant_ip,
     set_device_cookie,
 )
 from ..services.reports import attendance_counts
+from ..services.retention import scan_ip_recording_enabled
 from ..utils import format_12h, ist_now, normalize_text, parse_int_value
 
 bp = Blueprint('attendance', __name__)
@@ -426,7 +428,7 @@ def scan(token):
         title, message = _ended_status(class_session)
         return _status_page(title, message, 410, _session_info(class_session))
 
-    grant_scan(class_session.id)
+    grant_scan(class_session.id, client_ip() if scan_ip_recording_enabled() else None)
     return ensure_device_cookie(redirect(url_for('attendance.attend')))
 
 
@@ -518,7 +520,10 @@ def mark_attendance():
         clear_scan_grant()
         return _json_error('Attendance already marked')
 
-    db.session.add(Attendance(student_id=student.id, session_id=class_session.id, timestamp=ist_now()))
+    db.session.add(Attendance(
+        student_id=student.id, session_id=class_session.id, timestamp=ist_now(),
+        scan_ip=scan_grant_ip() if scan_ip_recording_enabled() else None,
+    ))
     try:
         db.session.commit()
     except IntegrityError:

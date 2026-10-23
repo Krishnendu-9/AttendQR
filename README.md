@@ -43,7 +43,7 @@ AttendQR/
     security.py             Secret key, CSRF, redirects, password policy, headers, login throttling
     schema.py               Database setup and upgrade of pre-migration databases
     utils.py                Small shared helpers
-    services/               QR tokens, devices and scan networks, reports and exports, student import
+    services/               QR tokens, devices, scan networks and IP retention, reports and exports, student import
     blueprints/             Routes: auth, main, academics, students, attendance, reports, accounts, api
   migrations/               Alembic migrations (Flask-Migrate)
   templates/                Jinja2 templates
@@ -138,7 +138,7 @@ Columns: `name, roll_no, email, semester`. Principal uploads also need `departme
 2. The teacher's screen shows a QR code that changes every 10 seconds. Each code expires 30 seconds after it is shown, so screenshots and forwarded links stop working almost immediately.
 3. The student scans with their own phone. A valid scan gives that phone's browser a 5-minute window to log in (and set a new password on first login) before confirming.
 4. The system checks the session is still active, the student belongs to that department and semester, and the phone is the student's registered device.
-5. Attendance is stored once per student per session.
+5. Attendance is stored once per student per session. The IP address the scan came from is stored with it for 30 days (see [Scan IP addresses](#scan-ip-addresses)).
 
 Device rules: a student's first successful attendance registers that phone, and each phone can belong to only one student. Teachers, HODs, and the Principal can reset a student's device lock from the Students page (for example after a phone change).
 
@@ -201,6 +201,19 @@ The setting is built to fail closed:
 - A proxy on a private address that adds none of those headers looks like a LAN client to the default ranges. Set explicit ranges on any proxied deployment.
 
 Locality is only as tight as the network. If campus Wi-Fi also covers hostels or the library, a student there can still scan a forwarded code.
+
+### Scan IP addresses
+
+An IP address is personal data, so AttendQR keeps as little of it as it can, for as short a time as it can, and shows it to as few people as it can.
+
+- **What is stored:** for each attendance entry made by QR scan, the IP address the scan link was opened from (`attendance.scan_ip`). On a LAN this is the phone's address on the campus Wi-Fi. On a public deployment it is usually the network's public address, which everyone on the same campus Wi-Fi or mobile carrier shares. Manual entries have none. Nothing else about the device, browser or location is recorded.
+- **Why:** so staff can spot a scan that came from a different network than the rest of the class (a forwarded QR), and see that `SCAN_ALLOWED_NETWORKS` is doing its job. Nothing automatic is decided from it.
+- **Who can see it:** only the session view, which is open to the teacher who ran the session, the HOD of its department, and the Principal. It is not shown to students, and is not in reports, the detailed report, Excel/PDF exports or the reports API. Students are told on the confirmation page that it is recorded and for how long.
+- **How long:** `SCAN_IP_RETENTION_DAYS`, 30 days by default. The app clears older addresses itself, on the first request after startup and then hourly; the attendance entry stays. `flask purge-scan-ips` does the same on demand. `0` stops recording and clears every stored address.
+
+The limit is built in rather than left to a scheduled job, because attendance entries are kept for years while an address stops being useful after a few weeks.
+
+Outside the app, copies remain in database backups until those expire, and web server or proxy access logs record every client's IP address anyway. Give those the same limit. Failed-login throttling also stores an IP address with the username, and those rows are deleted on a later failed login once they are a day old. Mention the scan IP in the institution's privacy notice for students.
 
 ## Reporting
 

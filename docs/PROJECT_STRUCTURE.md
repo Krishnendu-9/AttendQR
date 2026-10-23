@@ -18,6 +18,7 @@ AttendQR/
       qr.py             Rotating QR tokens, scan URLs, scan grants, device binding
       reports.py        Attendance summaries, report filters, Excel/PDF export
       roster.py         Student login accounts and bulk import
+      retention.py      Clearing scan IP addresses after SCAN_IP_RETENTION_DAYS
     blueprints/
       auth.py           /login, /logout, /account
       main.py           Dashboards

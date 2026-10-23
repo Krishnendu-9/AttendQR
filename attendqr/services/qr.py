@@ -88,11 +88,21 @@ def qr_data_uri(text):
 
 # ── Scan grants ──────────────────────────────────────────────
 
-def grant_scan(class_session_id):
-    session[SCAN_GRANT_KEY] = {
+def grant_scan(class_session_id, scan_ip=None):
+    grant = {
         'session_id': class_session_id,
         'expires': int(time.time()) + current_app.config['SCAN_GRANT_SECONDS'],
     }
+    if scan_ip:
+        grant['ip'] = scan_ip
+    session[SCAN_GRANT_KEY] = grant
+
+
+def scan_grant_ip():
+    """The address the current scan grant was issued to, if it was recorded."""
+    grant = session.get(SCAN_GRANT_KEY)
+    ip = grant.get('ip') if isinstance(grant, dict) else None
+    return ip if isinstance(ip, str) and len(ip) <= 45 else None
 
 
 def current_scan_grant():

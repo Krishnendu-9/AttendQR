@@ -70,6 +70,10 @@ class Config:
     # starting. See "Restricting scans to the campus network" in README.md.
     SCAN_ALLOWED_NETWORKS = os.environ.get('SCAN_ALLOWED_NETWORKS', '').strip()
 
+    # Days to keep the IP address of each QR scan; 0 records none and clears existing ones.
+    # See "Scan IP addresses" in README.md.
+    SCAN_IP_RETENTION_DAYS = os.environ.get('SCAN_IP_RETENTION_DAYS', '30')
+
     # A QR token is accepted for this many seconds after it is shown on screen.
     QR_TOKEN_MAX_AGE = env_int('QR_TOKEN_MAX_AGE', 30)
     QR_REFRESH_SECONDS = env_int('QR_REFRESH_SECONDS', 10)

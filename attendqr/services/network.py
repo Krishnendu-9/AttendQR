@@ -92,6 +92,12 @@ def _client_address(value):
     return address
 
 
+def client_ip():
+    """This request's client address as a normalized string, or None if it is not an IP."""
+    address = _client_address(request.remote_addr)
+    return str(address) if address is not None else None
+
+
 def scan_network_error():
     """None if this request may open a scan link, otherwise a message for the log.
 

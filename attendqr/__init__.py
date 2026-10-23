@@ -31,6 +31,7 @@ from .security import (
     wants_json_response,
 )
 from .services.network import describe_scan_networks, parse_scan_networks
+from .services.retention import purge_expired_scan_ips, register_scan_ip_purge
 from .utils import format_12h, ist_now
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -75,6 +76,7 @@ def create_app(overrides=None):
         app.register_blueprint(blueprint)
 
     _register_request_hooks(app)
+    register_scan_ip_purge(app)
     _register_template_helpers(app)
     _register_cli(app)
 
@@ -183,3 +185,9 @@ def _register_cli(app):
         from .schema import prepare_database
         prepare_database()
         click.echo("Database is up to date.")
+
+    @app.cli.command('purge-scan-ips')
+    def purge_scan_ips_command():
+        """Clear scan IP addresses older than SCAN_IP_RETENTION_DAYS (the app also does this hourly)."""
+        cleared = purge_expired_scan_ips()
+        click.echo(f"Cleared {cleared} scan IP address(es).")

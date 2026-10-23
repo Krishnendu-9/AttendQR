@@ -153,6 +153,9 @@
             </div>
             {% else %}
             <span class="badge text-bg-light border">QR scan</span>
+            {% if attendance.scan_ip %}
+            <div class="small text-muted font-monospace" title="Address the scan came from">{{ attendance.scan_ip }}</div>
+            {% endif %}
             {% endif %}
           </td>
           <td class="text-end">
@@ -167,6 +170,11 @@
       </tbody>
     </table>
   </div>
+  {% if config.SCAN_IP_RETENTION_DAYS %}
+  <div class="form-text px-3 pb-3">
+    Scan IP addresses help spot a scan from a different network than the rest of the class. Only staff who can open this session see them, and they are deleted {{ config.SCAN_IP_RETENTION_DAYS }} days after the scan.
+  </div>
+  {% endif %}
   {% else %}
   <div class="p-4 text-center text-muted">No attendance has been marked for this session yet.</div>
   {% endif %}

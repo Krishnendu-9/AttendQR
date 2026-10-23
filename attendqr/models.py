@@ -153,6 +153,8 @@ class Attendance(db.Model):
         nullable=True,
     )
     note = db.Column(db.String(200), nullable=True)
+    # Address the scan link was opened from. Cleared after SCAN_IP_RETENTION_DAYS; never set for manual entries.
+    scan_ip = db.Column(db.String(45), nullable=True)
     student = db.relationship('Student', backref=db.backref('attendances', cascade='all, delete-orphan'))
     session = db.relationship('ClassSession', backref=db.backref('attendances', cascade='all, delete-orphan'))
     marked_by = db.relationship('Admin', foreign_keys=[marked_by_admin_id])

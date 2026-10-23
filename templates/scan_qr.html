@@ -34,6 +34,11 @@
     <button class="btn btn-primary w-100" id="submitBtn" type="button" data-url="{{ url_for('attendance.mark_attendance') }}">
       <i class="bi bi-send-check me-1"></i> Mark My Attendance
     </button>
+    {% if config.SCAN_IP_RETENTION_DAYS %}
+    <div class="form-text text-center mt-2">
+      Your IP address is saved with this attendance so staff can check it was marked from the campus network. It is deleted after {{ config.SCAN_IP_RETENTION_DAYS }} days.
+    </div>
+    {% endif %}
     {% endif %}
     <div id="msg" class="mt-3" aria-live="polite"></div>
 
