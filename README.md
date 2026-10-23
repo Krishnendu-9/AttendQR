@@ -104,7 +104,7 @@ docker compose up -d --build
 - **Data:** the SQLite database and the generated secret key live in the `attendqr-data` volume. `docker compose down --volumes` deletes them.
 - **First login:** `docker compose exec attendqr cat /app/instance/initial_principal_password` shows the Principal's one-time password (see [Initial Login](#initial-login)).
 - **What runs:** `run.py` under waitress, as a non-root user, with only the packages in `requirements.lock`. `/healthz` checks the database, and the container reports healthy once it answers.
-- **Client addresses:** on Docker Desktop (Windows and macOS), and on Linux whenever Docker's userland proxy handles a connection, the app sees every client as the Docker gateway (for example `172.22.0.1`). `SCAN_ALLOWED_NETWORKS` then cannot tell campus from anywhere else: with the default ranges, everyone looks like a LAN client. Scan IP addresses in the session view will also all be the same. On a Linux server, published ports normally keep the real client address. After the first class, check the session view to confirm you see real addresses. Behind a reverse proxy, set `TRUSTED_PROXY_COUNT` so the forwarded address is used instead.
+- **Client addresses:** on Docker Desktop (Windows and macOS), and on Linux whenever Docker's userland proxy handles a connection, the app sees every client as the Docker gateway (for example `172.22.0.1`). `SCAN_ALLOWED_NETWORKS` then cannot tell campus from anywhere else: with the default ranges, everyone looks like a LAN client. Scan IP addresses in the session view will also all be the same. On a Linux server, published ports normally keep the real client address. Behind a reverse proxy, set `TRUSTED_PROXY_COUNT` so the forwarded address is used instead. Either way, [check the app sees real client addresses](#check-the-app-sees-real-client-addresses) before relying on them.
 
 CI builds the image, starts it with compose, waits for the health check, and runs [scripts/docker_smoke.py](scripts/docker_smoke.py) against it. The script walks one QR attendance flow end to end: Principal first login and forced password change, class setup, QR session, student scan, login, password change, mark, and the Principal seeing the entry.
 
@@ -225,6 +225,21 @@ The setting is built to fail closed:
 
 - With `TRUSTED_PROXY_COUNT` set, the app trusts the proxy's `X-Forwarded-For`. Make sure the app's own port is not reachable directly, or a client could send that header itself.
 - A proxy on a private address that adds none of those headers looks like a LAN client to the default ranges. Set explicit ranges on any proxied deployment.
+
+#### Check the app sees real client addresses
+
+**Before relying on `SCAN_ALLOWED_NETWORKS` or scan IP addresses on a real server, check that the app sees each client's own address, not a Docker gateway or proxy address.** If it doesn't, the allowlist can't tell campus from anywhere else, and every scan IP looks the same. To check, before going live:
+
+1. Set `SCAN_ALLOWED_NETWORKS=192.0.2.0/24` temporarily. This is a documentation range that no real client uses, so every scan is refused and logged. Restart the server.
+2. From two phones, one on campus Wi-Fi and one on mobile data, open `<APP_BASE_URL>/scan/check`. Each should show "Campus Network Required".
+3. Read the server log (`docker compose logs attendqr` for Docker). Each attempt logs `Refused QR scan: <address> is not in SCAN_ALLOWED_NETWORKS`.
+4. Compare the addresses:
+   - On a LAN deployment, each should be that phone's own Wi-Fi address (shown in the phone's Wi-Fi settings).
+   - On a public one, it should be the network's public address (search "what is my IP" on the phone). The campus phone should show a campus address, and the mobile-data phone a different, carrier address.
+   - Two phones on different networks showing the same address means the app is seeing an intermediary. For Docker, compare with the gateway: `docker network inspect attendqr_default --format "{{range .IPAM.Config}}{{.Gateway}}{{end}}"` (the network is named after the compose project, by default the folder name). Behind a reverse proxy, it is the proxy's address. Fix the setup first: publish the port on a Linux host, or set `TRUSTED_PROXY_COUNT` so the forwarded address is used.
+5. Set `SCAN_ALLOWED_NETWORKS` back to its real value and restart.
+
+After that, glance at the scan IPs in the first few session views. They should be the addresses you expect, not all one internal address.
 
 Locality is only as tight as the network. If campus Wi-Fi also covers hostels or the library, a student there can still scan a forwarded code.
 

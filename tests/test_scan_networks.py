@@ -1,5 +1,6 @@
 """SCAN_ALLOWED_NETWORKS: which client addresses may open a QR scan link."""
 import ipaddress
+import logging
 import re
 
 import pytest
@@ -90,6 +91,14 @@ def test_scan_from_outside_the_allowed_ranges_is_refused_and_grants_nothing(app,
 def test_refusal_happens_before_the_token_is_checked(app):
     app.config['SCAN_ALLOWED_NETWORKS'] = '203.0.113.0/24'
     assert refused(scan(app.test_client(), 'not-a-token', HOME))
+
+
+def test_refusal_is_logged_with_the_address_the_app_saw(app, caplog):
+    """Operators read this line to check the app sees real client addresses (see README)."""
+    app.config['SCAN_ALLOWED_NETWORKS'] = '192.0.2.0/24'
+    with caplog.at_level(logging.WARNING):
+        scan(app.test_client(), 'check', HOME)
+    assert f"Refused QR scan: {HOME} is not in SCAN_ALLOWED_NETWORKS" in caplog.text
 
 
 def test_default_accepts_lan_addresses_only(app):

@@ -418,7 +418,7 @@ def scan(token):
     # Checked before the token, so off-network clients learn nothing about it.
     network_error = scan_network_error()
     if network_error:
-        current_app.logger.info("Refused QR scan: %s", network_error)
+        current_app.logger.warning("Refused QR scan: %s", network_error)
         return _status_page(
             'Campus Network Required',
             'Attendance can only be marked from the campus network. Connect to the campus Wi-Fi and scan the code again.',
