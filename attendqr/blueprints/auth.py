@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -13,6 +13,7 @@ from ..access import (
 )
 from ..extensions import db
 from ..models import ActivityLog, Admin
+from ..schema import discard_used_initial_password
 from ..security import (
     clear_login_failures,
     client_ip,
@@ -84,6 +85,14 @@ def logout():
     return redirect(url_for('auth.login'))
 
 
+def _discard_initial_password():
+    """The generated first password is no longer needed once the Principal has replaced it."""
+    try:
+        discard_used_initial_password()
+    except OSError:
+        current_app.logger.exception("Could not delete the initial Principal password file")
+
+
 @bp.route('/account', methods=['GET', 'POST'])
 @login_required
 def account():
@@ -124,6 +133,8 @@ def account():
                 department_id=current_department_id(),
             )
             db.session.commit()
+            if user.role == 'super_admin':
+                _discard_initial_password()
             login_user(user)
             flash("Password updated successfully.", "success")
             return redirect(next_url or url_for('auth.account'))

@@ -82,7 +82,12 @@ jobs:
       run: docker compose up --detach --wait --wait-timeout 90
 
     - name: Run the QR attendance flow against the container
-      run: python3 scripts/docker_smoke.py "$APP_BASE_URL"
+      run: |
+        PRINCIPAL_PASSWORD="$(docker compose exec -T attendqr cat /app/instance/initial_principal_password)" \
+          python3 scripts/docker_smoke.py "$APP_BASE_URL"
+
+    - name: Check the one-time password file was deleted
+      run: docker compose exec -T attendqr sh -c '! test -e /app/instance/initial_principal_password'
 
     - name: Show server logs
       if: failure()

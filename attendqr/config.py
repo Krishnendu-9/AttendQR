@@ -45,7 +45,11 @@ class Config:
     AUTO_MIGRATE = env_bool('AUTO_MIGRATE', True)
 
     DEFAULT_PRINCIPAL_EMAIL = os.environ.get('DEFAULT_PRINCIPAL_EMAIL', 'principal@example.com')
-    DEFAULT_PRINCIPAL_PASSWORD = os.environ.get('DEFAULT_PRINCIPAL_PASSWORD', 'ChangeMe123!')
+    # Leave unset: a random first password is generated and written to
+    # instance/initial_principal_password. The old published placeholder is ignored.
+    DEFAULT_PRINCIPAL_PASSWORD = os.environ.get('DEFAULT_PRINCIPAL_PASSWORD', '')
+    # Where that generated password is written; None means the instance folder.
+    INITIAL_PRINCIPAL_PASSWORD_FILE = None
 
     ALLOWED_STAFF_DOMAINS = staff_domains_from_env()
 

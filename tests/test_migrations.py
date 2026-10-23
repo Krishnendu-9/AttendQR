@@ -65,7 +65,7 @@ INSERT INTO activity_log VALUES (2, 2, 'principal2@gmail.com', 1, 'x', NULL, NUL
 """
 
 
-def test_legacy_database_is_upgraded_without_losing_data(tmp_path):
+def test_legacy_database_is_upgraded_without_losing_data(tmp_path, initial_password_file):
     path = tmp_path / 'legacy.db'
     with sqlite3.connect(path) as conn:
         conn.executescript(LEGACY_SCHEMA)
@@ -95,6 +95,8 @@ def test_legacy_database_is_upgraded_without_losing_data(tmp_path):
 
         # The legacy "admin" login is renamed and must pick a new password.
         assert conn.execute("SELECT username, must_change_password FROM admin WHERE id = 1").fetchone() == ('principal@example.com', 1)
+        # ...starting from a generated password, not a published one.
+        assert initial_password_file.exists()
 
         # A phone shared by two students is cleared; a phone used by one student is kept.
         assert dict(conn.execute('SELECT id, device_id FROM student')) == {1: None, 2: None, 3: 'own-phone'}

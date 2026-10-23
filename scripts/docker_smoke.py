@@ -1,12 +1,13 @@
 """Drive a running AttendQR server through one real QR attendance flow.
 
-Usage: python scripts/docker_smoke.py http://127.0.0.1:5000
+Usage: PRINCIPAL_PASSWORD=... python scripts/docker_smoke.py http://127.0.0.1:5000
 
-Starts from a fresh database: the seeded Principal logs in and is forced to
-replace the default password, sets up a class, and starts a QR session for a special class. A new
-student opens the scan link, logs in, replaces their roll-number password, and
-marks attendance. The Principal then sees exactly one entry. Standard library
-only, so it runs on the CI runner without installing the app.
+Starts from a fresh database: the seeded Principal logs in with the generated
+one-time password and is forced to replace it, sets up a class, and starts a
+QR session for a special class. A new student opens the scan link, logs in,
+replaces their roll-number password, and marks attendance. The Principal then
+sees exactly one entry. Standard library only, so it runs on the CI runner
+without installing the app.
 """
 import http.cookiejar
 import json
@@ -18,7 +19,8 @@ import urllib.parse
 import urllib.request
 
 PRINCIPAL_EMAIL = os.environ.get('DEFAULT_PRINCIPAL_EMAIL', 'principal@example.com')
-PRINCIPAL_PASSWORD = os.environ.get('DEFAULT_PRINCIPAL_PASSWORD', 'ChangeMe123!')
+# The generated one-time password, read from the container by CI (see .github/workflows/ci.yml).
+PRINCIPAL_PASSWORD = os.environ.get('PRINCIPAL_PASSWORD', '')
 STUDENT = {'name': 'Smoke Student', 'roll_no': 'SMK001', 'email': 'smoke.student@example.com'}
 CSRF_PATTERN = re.compile(r'name="(?:_csrf_token|csrf-token)"\s+(?:value|content)="([^"]+)"')
 
@@ -88,13 +90,17 @@ def expect_redirect(result, ending, what):
 def main(base_url):
     if urllib.parse.urlparse(base_url).scheme not in ('http', 'https'):
         raise SystemExit(f"Expected an http(s) URL, got {base_url!r}")
+    if not PRINCIPAL_PASSWORD:
+        raise SystemExit("Set PRINCIPAL_PASSWORD to the Principal's first password.")
     check(json.loads(Browser(base_url).get('/healthz')[2]) == {'status': 'ok'}, "health check reports ok")
 
     principal = Browser(base_url)
     principal.get('/login')
+    check(not Browser(base_url).post('/login', username=PRINCIPAL_EMAIL, password='ChangeMe123!')[1],
+          "the old published password does not work")
     expect_redirect(principal.post('/login', username=PRINCIPAL_EMAIL, password=PRINCIPAL_PASSWORD),
-                    '/', "seeded Principal logs in")
-    expect_redirect(principal.get('/departments'), '/account', "Principal must replace the default password first")
+                    '/', "seeded Principal logs in with the generated password")
+    expect_redirect(principal.get('/departments'), '/account', "Principal must replace the one-time password first")
     new_password = 'Smoke-Principal-2026'
     principal.get('/account')
     expect_redirect(principal.post('/account', current_password=PRINCIPAL_PASSWORD,

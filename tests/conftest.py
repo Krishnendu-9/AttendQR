@@ -8,6 +8,7 @@ from flask.testing import FlaskClient
 from werkzeug.security import generate_password_hash as _generate_password_hash
 
 from attendqr import create_app
+from attendqr.config import Config
 from attendqr.extensions import db
 from attendqr.models import Admin, Attendance, ClassSession, Department, Semester, Student, Subject, Teacher
 from attendqr.utils import ist_now
@@ -29,6 +30,14 @@ class IsolatedClient(FlaskClient):
         g.pop('_login_user', None)
         g.pop('csp_nonce', None)
         return super().open(*args, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def initial_password_file(tmp_path, monkeypatch):
+    """Keep generated Principal passwords out of the real instance folder."""
+    path = tmp_path / 'initial_principal_password'
+    monkeypatch.setattr(Config, 'INITIAL_PRINCIPAL_PASSWORD_FILE', str(path))
+    return path
 
 
 @pytest.fixture

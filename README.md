@@ -102,6 +102,7 @@ docker compose up -d --build
 
 - **`APP_BASE_URL` is required.** Inside a container the app cannot detect the host's LAN IP, so compose refuses to start without it. Other settings are read from `.env` if it exists.
 - **Data:** the SQLite database and the generated secret key live in the `attendqr-data` volume. `docker compose down --volumes` deletes them.
+- **First login:** `docker compose exec attendqr cat /app/instance/initial_principal_password` shows the Principal's one-time password (see [Initial Login](#initial-login)).
 - **What runs:** `run.py` under waitress, as a non-root user, with only the packages in `requirements.lock`. `/healthz` checks the database, and the container reports healthy once it answers.
 - **Client addresses:** on Docker Desktop (Windows and macOS), and on Linux whenever Docker's userland proxy handles a connection, the app sees every client as the Docker gateway (for example `172.22.0.1`). `SCAN_ALLOWED_NETWORKS` then cannot tell campus from anywhere else: with the default ranges, everyone looks like a LAN client. Scan IP addresses in the session view will also all be the same. On a Linux server, published ports normally keep the real client address. After the first class, check the session view to confirm you see real addresses. Behind a reverse proxy, set `TRUSTED_PROXY_COUNT` so the forwarded address is used instead.
 
@@ -123,7 +124,16 @@ flask db upgrade                      # apply migrations
 
 ## Initial Login
 
-The first Principal account is created from `DEFAULT_PRINCIPAL_EMAIL` and `DEFAULT_PRINCIPAL_PASSWORD` when the database has no accounts. That password is public (it is in `.env.example`), so the Principal must choose a new one at first login.
+When the database has no accounts, the first Principal account is created as `DEFAULT_PRINCIPAL_EMAIL` (default `principal@example.com`) with a random one-time password. The password is written to `instance/initial_principal_password`, readable only by the account running the server. The server log shows that path, never the password itself:
+
+```powershell
+Get-Content instance\initial_principal_password                                  # run.py
+docker compose exec attendqr cat /app/instance/initial_principal_password       # Docker
+```
+
+Log in with it. The Principal must choose a new password before anything else, and the file is deleted as soon as they do. If it is still there afterwards (for example because the password was reset another way), the next start deletes it.
+
+To choose the first password yourself, set `DEFAULT_PRINCIPAL_PASSWORD`; it must still be changed at first login. `ChangeMe123!`, the placeholder older versions published, is ignored. When a database from a very old version is upgraded, its renamed `admin` account gets a generated password the same way.
 
 ## Account Rules
 
