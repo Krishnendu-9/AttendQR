@@ -49,8 +49,10 @@ AttendQR/
   templates/                Jinja2 templates
   static/                   CSS, JavaScript, and vendored Bootstrap/fonts (no CDN needed)
   tests/                    pytest suite
+  scripts/docker_smoke.py   End-to-end check run against the Docker image in CI
   run.py                    Start the server (waitress, or the debug server)
   wsgi.py                   WSGI entry point
+  Dockerfile, compose.yaml  Container image and how to run it
   pyproject.toml            Project metadata, pytest and ruff settings
   requirements.txt          Direct dependencies
   requirements.lock         Exact pinned versions for reproducible installs
@@ -90,6 +92,20 @@ $env:FLASK_DEBUG="1"; .\venv\Scripts\python.exe run.py
 In debug mode the server binds to `127.0.0.1` only. Werkzeug's debugger can run arbitrary code, so it is never exposed to the network.
 
 On Linux you can also use `gunicorn wsgi:app`. With several worker processes, set `AUTO_MIGRATE=0` and run `flask init-db` once per deployment.
+
+### Docker
+
+```powershell
+$env:APP_BASE_URL="http://192.168.0.170:5000"   # the address phones use to reach this computer
+docker compose up -d --build
+```
+
+- **`APP_BASE_URL` is required.** Inside a container the app cannot detect the host's LAN IP, so compose refuses to start without it. Other settings are read from `.env` if it exists.
+- **Data:** the SQLite database and the generated secret key live in the `attendqr-data` volume. `docker compose down --volumes` deletes them.
+- **What runs:** `run.py` under waitress, as a non-root user, with only the packages in `requirements.lock`. `/healthz` checks the database, and the container reports healthy once it answers.
+- **Client addresses:** on Docker Desktop (Windows and macOS), and on Linux whenever Docker's userland proxy handles a connection, the app sees every client as the Docker gateway (for example `172.22.0.1`). `SCAN_ALLOWED_NETWORKS` then cannot tell campus from anywhere else: with the default ranges, everyone looks like a LAN client. Scan IP addresses in the session view will also all be the same. On a Linux server, published ports normally keep the real client address. After the first class, check the session view to confirm you see real addresses. Behind a reverse proxy, set `TRUSTED_PROXY_COUNT` so the forwarded address is used instead.
+
+CI builds the image, starts it with compose, waits for the health check, and runs [scripts/docker_smoke.py](scripts/docker_smoke.py) against it. The script walks one QR attendance flow end to end: Principal first login and forced password change, class setup, QR session, student scan, login, password change, mark, and the Principal seeing the entry.
 
 ## Database and Migrations
 

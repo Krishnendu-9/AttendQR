@@ -208,3 +208,8 @@ def test_explicit_secret_key_is_used(tmp_path):
     configure_secret_key(app)
     assert app.config['SECRET_KEY'] == 'a-long-random-value-from-the-environment'
     assert not (tmp_path / 'secret_key').exists()
+
+
+def test_health_check_needs_no_login_and_checks_the_database(app):
+    response = app.test_client().get('/healthz')
+    assert response.status_code == 200 and response.get_json() == {'status': 'ok'}

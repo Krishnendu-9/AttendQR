@@ -1,0 +1,16 @@
+# Only what the image needs; never local secrets or data.
+.git
+.github
+.env
+.env.*
+venv
+.venv
+instance
+*.db
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+tests
+docs
+scripts

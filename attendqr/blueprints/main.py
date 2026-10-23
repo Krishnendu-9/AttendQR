@@ -1,5 +1,7 @@
-from flask import Blueprint, abort, render_template
+from flask import Blueprint, abort, current_app, jsonify, render_template
 from flask_login import current_user, login_required
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 
 from ..access import (
@@ -16,6 +18,7 @@ from ..access import (
     visible_subjects_query,
     visible_teachers_query,
 )
+from ..extensions import db
 from ..models import ActivityLog, Admin, ClassSession, Subject
 from ..services.reports import attendance_counts, build_student_attendance_summary, total_attendance
 from ..utils import ist_now
@@ -28,6 +31,17 @@ def render_student_dashboard():
         abort(403)
     summary = build_student_attendance_summary(current_user.student)
     return render_template('student_dashboard.html', student=current_user.student, summary=summary)
+
+
+@bp.route('/healthz')
+def healthz():
+    """Liveness and database check for container health probes. Reveals nothing else."""
+    try:
+        db.session.execute(text('SELECT 1'))
+    except SQLAlchemyError:
+        current_app.logger.exception("Health check could not reach the database")
+        return jsonify({'status': 'error'}), 503
+    return jsonify({'status': 'ok'})
 
 
 @bp.route('/')

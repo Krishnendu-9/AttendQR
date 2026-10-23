@@ -62,6 +62,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests assert and use fixed passwords and keys on purpose.
 "tests/**" = ["S101", "S105", "S106"]
+"scripts/docker_smoke.py" = ["S105"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["attendqr", "conftest"]

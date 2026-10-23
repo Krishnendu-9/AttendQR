@@ -21,7 +21,7 @@ AttendQR/
       retention.py      Clearing scan IP addresses after SCAN_IP_RETENTION_DAYS
     blueprints/
       auth.py           /login, /logout, /account
-      main.py           Dashboards
+      main.py           Dashboards; /healthz for container health checks
       academics.py      Departments, semesters, subjects, teachers
       students.py       Student records, import, password and device resets
       attendance.py     QR sessions (/generate_qr) and the student scan flow (/scan, /attend, /mark_attendance)
@@ -37,6 +37,9 @@ AttendQR/
   tests/                pytest suite (conftest.py builds a fresh migrated database per test)
   run.py                Local/LAN server (waitress; debug server on localhost with FLASK_DEBUG=1)
   wsgi.py               WSGI entry point; also used by the `flask` CLI
+  Dockerfile            Production image: lock-file dependencies, non-root, waitress via run.py
+  compose.yaml          Runs the image with a data volume; requires APP_BASE_URL
+  scripts/docker_smoke.py  End-to-end QR attendance check that CI runs against the image
 ```
 
 ## Runtime Data

@@ -66,3 +66,28 @@ jobs:
 
     - name: Run tests
       run: python -m pytest -q
+
+  docker:
+    name: Docker smoke test
+    runs-on: ubuntu-latest
+    env:
+      APP_BASE_URL: http://127.0.0.1:5000
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build image
+      run: docker compose build
+
+    - name: Start and wait for the health check
+      run: docker compose up --detach --wait --wait-timeout 90
+
+    - name: Run the QR attendance flow against the container
+      run: python3 scripts/docker_smoke.py "$APP_BASE_URL"
+
+    - name: Show server logs
+      if: failure()
+      run: docker compose logs
+
+    - name: Stop
+      if: always()
+      run: docker compose down --volumes
