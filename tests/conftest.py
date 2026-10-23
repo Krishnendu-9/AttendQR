@@ -41,6 +41,8 @@ def app(tmp_path):
         'DEFAULT_PRINCIPAL_PASSWORD': 'Initial123',
         'ALLOWED_STAFF_DOMAINS': ['@rcciit.org.in', '@gmail.com'],
         'APP_BASE_URL': 'http://attendqr.test',
+        # The test client connects from 127.0.0.1, which the default (private ranges) excludes.
+        'SCAN_ALLOWED_NETWORKS': '127.0.0.0/8',
     })
     app.test_client_class = IsolatedClient
     with app.app_context():

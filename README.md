@@ -43,7 +43,7 @@ AttendQR/
     security.py             Secret key, CSRF, redirects, password policy, headers, login throttling
     schema.py               Database setup and upgrade of pre-migration databases
     utils.py                Small shared helpers
-    services/               QR tokens and devices, reports and exports, student import
+    services/               QR tokens, devices and scan networks, reports and exports, student import
     blueprints/             Routes: auth, main, academics, students, attendance, reports, accounts, api
   migrations/               Alembic migrations (Flask-Migrate)
   templates/                Jinja2 templates
@@ -162,6 +162,46 @@ $env:APP_BASE_URL="http://192.168.0.170:5000"   # or APP_HOST_IP / APP_PORT
 
 Phones need to be on the same network as the server. When the site is served over HTTPS (recommended, since plain HTTP on shared Wi-Fi can be intercepted), set `SESSION_COOKIE_SECURE=1`. If it runs behind a reverse proxy, also set `TRUSTED_PROXY_COUNT`.
 
+### Before deploying on a public address
+
+On a LAN deployment the QR points to a private address (such as `192.168.x.x`) that only phones on the campus network can open. This is one of the main defences against a student forwarding the QR to an absent friend: the friend at home cannot reach the server, even with a valid link.
+
+If `APP_BASE_URL` or `APP_HOST_IP` points to an address reachable from the internet, that defence is gone. A forwarded QR or link then works from anywhere, and what is left is:
+
+- **Token age** (`QR_TOKEN_MAX_AGE`, 30 seconds). The token is checked only when the link is opened. Opening it starts a `SCAN_GRANT_SECONDS` (5 minute) window to log in and confirm, so the friend only has to open the link in time. A token is also not single-use, so one forwarded link works for every absent student who opens it in time.
+- **Device binding.** This stops one phone marking attendance for two students, but an absent friend uses their own phone.
+- **The teacher** comparing the live count with the room, and removing entries from the session view.
+
+Shortening `QR_TOKEN_MAX_AGE` narrows the window but does not close it: pasting a link into a group chat takes a few seconds. It also has a floor. A code must stay valid for `QR_REFRESH_SECONDS` plus the time to scan and load on a slow phone, or students in the room get "QR Expired". Something like `QR_REFRESH_SECONDS=5` and `QR_TOKEN_MAX_AGE=15` is about as short as is practical.
+
+To keep network locality on a public deployment, set `SCAN_ALLOWED_NETWORKS` (below).
+
+### Restricting scans to the campus network
+
+`SCAN_ALLOWED_NETWORKS` controls which client addresses may open a scan link. Staff pages, reports and student logins are not affected. Only `/scan/` is checked, because attendance can only be marked after a scan there.
+
+| Value | Scans accepted from |
+| --- | --- |
+| unset or empty (default) | Private LAN addresses only (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, link-local, IPv6 ULA). Loopback is excluded. |
+| `203.0.113.0/24,2001:db8:10::/48` | Only these ranges. Use the campus network's public (outgoing) ranges on a public deployment. |
+| `any` | Anywhere. The app logs a warning at startup. |
+
+On a public deployment, set it to the campus ranges. Students then have to be on campus Wi-Fi to scan, not mobile data, just as on a LAN deployment. Anyone else sees "Campus Network Required", and the refusal is written to the server log.
+
+The setting is built to fail closed:
+
+- **Left empty** on a public deployment, it accepts nobody from the internet, so the mistake shows up the first time a student scans, instead of quietly allowing everyone.
+- **Malformed** (a typo, `10.0.0.0/33`, a host address with a prefix such as `203.0.113.7/24`, or `any` mixed with ranges): the app refuses to start and names the bad entry. Entries are never skipped.
+- **Allow everything** can only be written as `any`. `0.0.0.0/0` and `::/0` are rejected, so it is always a deliberate, searchable choice.
+- **Behind a reverse proxy** with `TRUSTED_PROXY_COUNT=0`, every request seems to come from the proxy. Scans carrying `X-Forwarded-For`, `X-Real-IP` or `Forwarded` are then refused until `TRUSTED_PROXY_COUNT` is set. Loopback is not in the default ranges for the same reason.
+
+`run.py` prints the effective ranges at startup. Two things the app cannot check for you:
+
+- With `TRUSTED_PROXY_COUNT` set, the app trusts the proxy's `X-Forwarded-For`. Make sure the app's own port is not reachable directly, or a client could send that header itself.
+- A proxy on a private address that adds none of those headers looks like a LAN client to the default ranges. Set explicit ranges on any proxied deployment.
+
+Locality is only as tight as the network. If campus Wi-Fi also covers hostels or the library, a student there can still scan a forwarded code.
+
 ## Reporting
 
 - Session-wise attendance reports with pagination
@@ -188,12 +228,11 @@ Each test runs against its own temporary database built by the real migrations; 
 ## Current Limitations
 
 - SQLite suits a single server; use PostgreSQL or MySQL via `DATABASE_URL` for heavier multi-user traffic
-- A student physically outside the classroom could still mark attendance if a classmate sends them a fresh QR within 30 seconds; location or campus-network checks would close this
+- A student physically outside the classroom could still mark attendance if a classmate sends them a fresh QR within 30 seconds and they can reach the server. On a LAN deployment that means being on the campus network; on a public one it means anywhere, unless `SCAN_ALLOWED_NETWORKS` is set (see [Restricting scans to the campus network](#restricting-scans-to-the-campus-network))
 - QR attendance depends on network reachability between the server and student phones
 
 ## Suggested Next Improvements
 
-- Location or campus-network validation for scans
 - Bulk semester promotion of students
 - Attendance trend analytics
 

@@ -7,6 +7,7 @@ only, because Werkzeug's debugger console can run arbitrary code.
 import os
 
 from attendqr import create_app
+from attendqr.services.network import describe_scan_networks, parse_scan_networks
 
 LOOPBACK_HOSTS = {'127.0.0.1', 'localhost', '::1'}
 
@@ -15,6 +16,7 @@ def main():
     app = create_app()
     port = int(os.environ.get('FLASK_RUN_PORT', '5000'))
     debug = os.environ.get('FLASK_DEBUG', '0').lower() in ('1', 'true', 'yes')
+    print(f"QR scans accepted from: {describe_scan_networks(parse_scan_networks(app.config['SCAN_ALLOWED_NETWORKS']))}")
 
     if debug:
         host = os.environ.get('FLASK_RUN_HOST', '127.0.0.1')

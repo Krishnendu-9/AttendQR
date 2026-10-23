@@ -30,6 +30,7 @@ from .security import (
     validate_csrf_request,
     wants_json_response,
 )
+from .services.network import describe_scan_networks, parse_scan_networks
 from .utils import format_12h, ist_now
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -58,6 +59,7 @@ def create_app(overrides=None):
     os.makedirs(app.instance_path, exist_ok=True)
 
     configure_secret_key(app)
+    _check_scan_networks(app)
     proxies = app.config['TRUSTED_PROXY_COUNT']
     if proxies:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxies, x_proto=proxies, x_host=proxies)
@@ -82,6 +84,18 @@ def create_app(overrides=None):
             prepare_database()
 
     return app
+
+
+def _check_scan_networks(app):
+    """Refuse to start with a malformed SCAN_ALLOWED_NETWORKS, and log what it allows."""
+    networks = parse_scan_networks(app.config['SCAN_ALLOWED_NETWORKS'])
+    if networks is None:
+        app.logger.warning(
+            "QR scans are accepted from any address (SCAN_ALLOWED_NETWORKS=any). "
+            "A forwarded QR works from anywhere until it expires."
+        )
+    else:
+        app.logger.info("QR scans are accepted from: %s", describe_scan_networks(networks))
 
 
 @login_manager.user_loader

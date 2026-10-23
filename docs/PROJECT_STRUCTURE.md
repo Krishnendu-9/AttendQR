@@ -14,6 +14,7 @@ AttendQR/
     schema.py           prepare_database(): migrations, upgrade of pre-migration databases, first Principal
     utils.py            Time, normalisation, natural sorting, date-range parsing
     services/
+      network.py        SCAN_ALLOWED_NETWORKS parsing and the scan address check
       qr.py             Rotating QR tokens, scan URLs, scan grants, device binding
       reports.py        Attendance summaries, report filters, Excel/PDF export
       roster.py         Student login accounts and bulk import

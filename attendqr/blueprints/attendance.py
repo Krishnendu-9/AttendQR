@@ -25,6 +25,7 @@ from ..access import (
 from ..extensions import db
 from ..models import Attendance, ClassSession, Semester, Student, Subject, Teacher
 from ..security import is_safe_redirect_target
+from ..services.network import scan_network_error
 from ..services.qr import (
     DEVICE_TAKEN_MESSAGE,
     build_scan_url,
@@ -401,6 +402,16 @@ def _ended_status(class_session):
 @bp.route('/scan/<token>')
 def scan(token):
     """Entry point encoded in the QR. Validates the rotating token once, then hands over to /attend."""
+    # Checked before the token, so off-network clients learn nothing about it.
+    network_error = scan_network_error()
+    if network_error:
+        current_app.logger.info("Refused QR scan: %s", network_error)
+        return _status_page(
+            'Campus Network Required',
+            'Attendance can only be marked from the campus network. Connect to the campus Wi-Fi and scan the code again.',
+            403,
+        )
+
     try:
         class_session_id = read_qr_token(token)
     except SignatureExpired:

@@ -59,9 +59,16 @@ class Config:
     TRUSTED_PROXY_COUNT = env_int('TRUSTED_PROXY_COUNT', 0)
 
     # QR scan URLs. Leave empty to detect the LAN IP automatically.
+    # A public base URL removes network locality as a defence against forwarded QRs
+    # unless SCAN_ALLOWED_NETWORKS is set; see "Before deploying on a public address" in README.md.
     APP_BASE_URL = os.environ.get('APP_BASE_URL', '').strip()
     APP_HOST_IP = os.environ.get('APP_HOST_IP', '').strip()
     APP_PORT = os.environ.get('APP_PORT', '5000').strip() or '5000'
+
+    # Client IP ranges (CIDR, comma-separated) allowed to open a scan link, or "any".
+    # Empty means private LAN addresses only. A malformed value stops the app from
+    # starting. See "Restricting scans to the campus network" in README.md.
+    SCAN_ALLOWED_NETWORKS = os.environ.get('SCAN_ALLOWED_NETWORKS', '').strip()
 
     # A QR token is accepted for this many seconds after it is shown on screen.
     QR_TOKEN_MAX_AGE = env_int('QR_TOKEN_MAX_AGE', 30)
