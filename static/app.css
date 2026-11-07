@@ -1388,3 +1388,17 @@ button.logout-btn {
     grid-template-columns: 1fr;
   }
 }
+
+/* QR session view (kept here rather than in style attributes, which the CSP blocks). */
+.qr-session-mark {
+  transform: scale(0.7);
+  transform-origin: top left;
+}
+
+.qr-scan-url {
+  font-size: 0.75rem;
+}
+
+.qr-ended-notice {
+  max-width: 420px;
+}

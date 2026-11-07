@@ -136,7 +136,8 @@ def content_security_policy():
         "default-src 'self'",
         # Only our own files and nonce-tagged inline blocks run; injected scripts and inline handlers do not.
         f"script-src 'self' 'nonce-{csp_nonce()}'",
-        "style-src 'self' 'unsafe-inline'",
+        # No inline styles either: an injected style attribute or <style> block is ignored.
+        "style-src 'self'",
         "img-src 'self' data:",
         "font-src 'self'",
         "connect-src 'self'",

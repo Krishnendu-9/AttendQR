@@ -213,3 +213,15 @@ def test_explicit_secret_key_is_used(tmp_path):
 def test_health_check_needs_no_login_and_checks_the_database(app):
     response = app.test_client().get('/healthz')
     assert response.status_code == 200 and response.get_json() == {'status': 'ok'}
+
+
+def test_styles_come_from_stylesheets_only(app, data, client_for):
+    import pathlib
+
+    csp = client_for(data.teacher).get('/generate_qr').headers['Content-Security-Policy']
+    style_src = next(part for part in csp.split(';') if part.strip().startswith('style-src'))
+    assert style_src.strip() == "style-src 'self'"
+    # The CSP would silently ignore these, so keep them out of the templates.
+    templates = pathlib.Path(app.template_folder)
+    offenders = [p.name for p in templates.glob('*.html') if 'style="' in p.read_text(encoding='utf-8') or '<style' in p.read_text(encoding='utf-8')]
+    assert offenders == []

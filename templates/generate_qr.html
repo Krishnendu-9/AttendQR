@@ -52,7 +52,7 @@
 {% set this_page = url_for('attendance.generate_qr', session_id=view_session.id) %}
 <div class="card mb-3">
   <div class="card-body text-center p-3 position-relative">
-    <div class="auth-mark position-absolute top-0 start-0 m-3" style="transform: scale(0.7); transform-origin: top left;">
+    <div class="auth-mark qr-session-mark position-absolute top-0 start-0 m-3">
       <i class="bi bi-qr-code"></i>
     </div>
     <h2 class="h5 fw-bold mb-1 px-5">{{ session_display_name(view_session) }}</h2>
@@ -65,10 +65,10 @@
 
     {% if live %}
     <img id="qrCodeImage" src="{{ qr_image }}" class="qr-preview mb-3" alt="Attendance QR code">
-    <div id="scanUrlText" class="small text-muted text-break mb-2" style="font-size: 0.75rem;">{{ scan_url }}</div>
+    <div id="scanUrlText" class="qr-scan-url text-muted text-break mb-2">{{ scan_url }}</div>
     <div class="small text-muted mb-3">The code refreshes every {{ refresh_seconds }} seconds; screenshots stop working shortly after.</div>
     {% endif %}
-    <div id="qrEnded" class="alert alert-secondary mx-auto mb-3 {{ 'd-none' if live }}" style="max-width: 420px;">
+    <div id="qrEnded" class="alert alert-secondary qr-ended-notice mx-auto mb-3 {{ 'd-none' if live }}">
       This session is no longer accepting scans.
     </div>
 
