@@ -137,7 +137,7 @@ To choose the first password yourself, set `DEFAULT_PRINCIPAL_PASSWORD`; it must
 
 ## Account Rules
 
-- Staff account emails must end with one of `ALLOWED_STAFF_DOMAINS` (default `@rcciit.org.in` or `@gmail.com`; remove Gmail for a real deployment)
+- Staff account emails must end with one of `ALLOWED_STAFF_DOMAINS`, for example `@rcciit.org.in`. It has no default, so set it before creating HOD or Teacher accounts; the server warns at startup if it is empty or includes a public domain such as `@gmail.com`
 - Principal can create Principal, HOD, and Teacher accounts; HOD can create Teacher accounts for their department
 - Only one active HOD is allowed per department
 - Passwords need at least 8 characters with letters and numbers, must not contain the user's email name or roll number, and must not be a common password or a common word plus digits (such as `Welcome@2026`)

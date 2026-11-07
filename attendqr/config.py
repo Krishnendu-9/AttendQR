@@ -26,7 +26,8 @@ def env_int(name, default):
 
 
 def staff_domains_from_env():
-    raw = os.environ.get('ALLOWED_STAFF_DOMAINS', '@rcciit.org.in,@gmail.com')
+    # No default: which domains may hold staff accounts is the institution's decision.
+    raw = os.environ.get('ALLOWED_STAFF_DOMAINS', '')
     domains = []
     for item in raw.split(','):
         domain = item.strip().lower()

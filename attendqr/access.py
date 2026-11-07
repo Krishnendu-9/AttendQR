@@ -75,6 +75,11 @@ def email_format_rule_message():
 
 
 def staff_email_rule_message():
+    if not allowed_staff_domains():
+        return (
+            "Staff accounts cannot be created yet: the server administrator must set ALLOWED_STAFF_DOMAINS "
+            "(for example @your-college.edu)."
+        )
     return f"Use a valid email ending with {' or '.join(allowed_staff_domains())}."
 
 

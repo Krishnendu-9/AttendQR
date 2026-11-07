@@ -1,6 +1,7 @@
 """AttendQR: QR-based attendance management."""
 import mimetypes
 import os
+import re
 import secrets
 
 import click
@@ -42,6 +43,13 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # opened before the password change is not lost: its 30-second token would
 # otherwise expire while the student picks a new password.
 PASSWORD_CHANGE_ALLOWED = {'auth.account', 'auth.logout', 'static', 'attendance.scan'}
+
+# An entry of ALLOWED_STAFF_DOMAINS, after config.py adds the leading "@".
+STAFF_DOMAIN_PATTERN = re.compile(r'^@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$')
+PUBLIC_EMAIL_DOMAINS = frozenset({
+    '@gmail.com', '@googlemail.com', '@outlook.com', '@hotmail.com', '@live.com',
+    '@yahoo.com', '@yahoo.co.in', '@icloud.com', '@rediffmail.com', '@proton.me', '@protonmail.com',
+})
 
 # Stand-in id used to render API URL templates for JavaScript.
 URL_ID_PLACEHOLDER = 987654321
@@ -115,8 +123,24 @@ def _check_settings(app):
         problems.append(f"SESSION_IDLE_MINUTES must be 0 (never sign out) or at least 5 (got {idle}).")
     if cfg['TRUSTED_PROXY_COUNT'] < 0:
         problems.append(f"TRUSTED_PROXY_COUNT cannot be negative (got {cfg['TRUSTED_PROXY_COUNT']}).")
+    for domain in cfg['ALLOWED_STAFF_DOMAINS']:
+        if not STAFF_DOMAIN_PATTERN.fullmatch(domain):
+            problems.append(f"ALLOWED_STAFF_DOMAINS has an invalid entry {domain!r}; use the form @college.edu.")
     if problems:
         raise ValueError(' '.join(problems))
+
+    domains = cfg['ALLOWED_STAFF_DOMAINS']
+    if not domains:
+        app.logger.warning(
+            "ALLOWED_STAFF_DOMAINS is not set, so no HOD or Teacher accounts can be created. "
+            "Set it to the institution's email domain, e.g. ALLOWED_STAFF_DOMAINS=@your-college.edu"
+        )
+    public = sorted(set(domains) & PUBLIC_EMAIL_DOMAINS)
+    if public:
+        app.logger.warning(
+            "ALLOWED_STAFF_DOMAINS includes public email domains (%s): anyone can get such an address. "
+            "Remove them outside testing.", ', '.join(public),
+        )
 
 
 def _check_scan_networks(app):

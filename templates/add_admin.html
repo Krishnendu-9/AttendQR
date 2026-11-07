@@ -4,7 +4,7 @@
 {% block page_subtitle %}Manage role-based login access for the system{% endblock %}
 {% block content %}
 {% set email_pattern = staff_email_pattern() %}
-{% set email_hint = 'Use an account email ending with ' ~ (staff_domains|join(' or ')) ~ '.' %}
+{% set email_hint = ('Use an account email ending with ' ~ (staff_domains|join(' or ')) ~ '.') if staff_domains else 'ALLOWED_STAFF_DOMAINS is not set on the server, so staff accounts cannot be created yet.' %}
 
 <div class="row g-4 align-items-start">
   <div class="col-lg-5">
@@ -14,6 +14,13 @@
         <p class="section-subtitle">Create a role-based login account</p>
       </div>
       <div class="card-body">
+        {% if not staff_domains %}
+        <div class="alert alert-warning small">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          Staff accounts cannot be created until the server administrator sets <code>ALLOWED_STAFF_DOMAINS</code>
+          to the institution's email domain (for example <code>@your-college.edu</code>) and restarts AttendQR.
+        </div>
+        {% endif %}
         <form method="POST" action="{{ url_for('accounts.index') }}" id="addAccountForm">
           <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">

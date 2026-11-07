@@ -50,10 +50,7 @@ The system supports four roles:
 
 Sensitive staff accounts are created by Principal or scoped HOD users from the Accounts page. Student accounts are created automatically from student profiles or bulk student imports.
 
-HOD and Teacher usernames must use an allowed email domain:
-
-- `@rcciit.org.in`
-- `@gmail.com` for testing
+HOD and Teacher usernames must use an email domain listed in `ALLOWED_STAFF_DOMAINS`, for example `@rcciit.org.in`. There is no default: until it is set, no staff accounts can be created. Public domains such as `@gmail.com` belong there only for testing.
 
 Teacher login usernames must match the linked teacher profile email.
 

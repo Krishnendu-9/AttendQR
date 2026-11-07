@@ -146,3 +146,43 @@ def test_hod_cannot_see_other_department_students(data, client_for):
     client = client_for(data.hod)
     assert 'Outsider' not in client.get('/students').get_data(as_text=True)
     assert post(client, f'/students/reset-device/{other_student.id}').status_code == 403
+
+
+def test_without_staff_domains_no_staff_account_can_be_created(app, data, client_for):
+    app.config['ALLOWED_STAFF_DOMAINS'] = []
+    client = client_for(data.principal)
+    page = client.get('/add_admin').get_data(as_text=True)
+    assert 'cannot be created until the server administrator sets' in page
+    response = post(client, '/add_admin', {
+        'username': 'new.teacher@rcciit.org.in', 'role': 'teacher', 'teacher_name': 'New Teacher',
+        'department_id': data.mca_id, 'password': 'Passw0rd!x', 'confirm_password': 'Passw0rd!x',
+    }, follow_redirects=True)
+    assert 'must set ALLOWED_STAFF_DOMAINS' in response.get_data(as_text=True)
+    assert not Admin.query.filter_by(username='new.teacher@rcciit.org.in').first()
+
+
+def test_staff_domain_setting_has_no_built_in_default(monkeypatch):
+    from attendqr.config import staff_domains_from_env
+
+    monkeypatch.delenv('ALLOWED_STAFF_DOMAINS', raising=False)
+    assert staff_domains_from_env() == []
+    monkeypatch.setenv('ALLOWED_STAFF_DOMAINS', 'college.edu, @Dept.College.edu')
+    assert staff_domains_from_env() == ['@college.edu', '@dept.college.edu']
+
+
+def test_malformed_staff_domain_stops_the_app_and_public_ones_warn(tmp_path, caplog):
+    import logging
+
+    import pytest
+
+    from attendqr import create_app
+
+    settings = {
+        'TESTING': True, 'SECRET_KEY': 'x' * 32, 'AUTO_MIGRATE': False,
+        'SQLALCHEMY_DATABASE_URI': f"sqlite:///{(tmp_path / 'domains.db').as_posix()}",
+    }
+    with pytest.raises(ValueError, match='ALLOWED_STAFF_DOMAINS has an invalid entry'):
+        create_app({**settings, 'ALLOWED_STAFF_DOMAINS': ['@college edu']})
+    with caplog.at_level(logging.WARNING):
+        create_app({**settings, 'ALLOWED_STAFF_DOMAINS': ['@college.edu', '@gmail.com']})
+    assert 'public email domains (@gmail.com)' in caplog.text
