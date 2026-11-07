@@ -9,15 +9,18 @@ on:
     # Advisories are published without any change here; check every Monday as well.
     - cron: '0 3 * * 1'
 
+# Actions are pinned to commit SHAs (tags can be moved); the comment gives the release.
+# To update, look up the new tag's commit, e.g. `git ls-remote https://github.com/actions/checkout v4`.
+
 jobs:
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
       with:
         python-version: "3.13"
 
@@ -37,10 +40,10 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
@@ -73,7 +76,7 @@ jobs:
     env:
       APP_BASE_URL: http://127.0.0.1:5000
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
     - name: Build image
       run: docker compose build
