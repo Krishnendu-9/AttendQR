@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 
 from flask import abort, current_app, g, jsonify, request, session
 from sqlalchemy.exc import IntegrityError
+from werkzeug.security import generate_password_hash
 
 from .extensions import db
 from .models import LoginThrottle
@@ -161,6 +162,18 @@ def generate_temporary_password():
     """A one-time password such as "K7RM-2XQD-9HFA" (12 random characters, about 59 bits)."""
     chars = ''.join(secrets.choice(TEMPORARY_PASSWORD_ALPHABET) for _ in range(12))
     return '-'.join(chars[i:i + 4] for i in range(0, 12, 4))
+
+
+# Still memory-hard, but about ten times faster than Werkzeug's default scrypt cost.
+# That default exists to slow down guessing of passwords people choose; a random
+# 59-bit password that must be replaced at first login does not need it, and a
+# bulk import of a few hundred students would otherwise take most of a minute.
+TEMPORARY_PASSWORD_HASH_METHOD = 'scrypt:4096:8:1'  # noqa: S105 - a hashing method name, not a password
+
+
+def hash_temporary_password(password):
+    """Hash a password from generate_temporary_password(). Passwords people choose use the default cost."""
+    return generate_password_hash(password, method=TEMPORARY_PASSWORD_HASH_METHOD)
 
 
 # ── Response headers ─────────────────────────────────────────

@@ -6,7 +6,6 @@ from flask import Blueprint, abort, current_app, flash, redirect, render_templat
 from flask_login import login_required
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
-from werkzeug.security import generate_password_hash
 
 from ..access import (
     can_access_department,
@@ -23,7 +22,12 @@ from ..access import (
 )
 from ..extensions import db
 from ..models import Admin, Semester, Student
-from ..security import clear_login_failures, is_safe_redirect_target
+from ..security import (
+    clear_login_failures,
+    generate_temporary_password,
+    hash_temporary_password,
+    is_safe_redirect_target,
+)
 from ..services.roster import (
     ensure_student_account,
     import_students_from_rows,
@@ -49,6 +53,15 @@ def back_to_list():
     if is_safe_redirect_target(target) and urlsplit(target).path == url_for('students.index'):
         return redirect(target)
     return redirect(url_for('students.index'))
+
+
+def _one_time_password_notice(temporary_password):
+    if not temporary_password:
+        return "No new login was created because that email already has an account."
+    return (
+        f"Temporary password: {temporary_password} (shown only now; give it to the student, "
+        "who must change it at first login)."
+    )
 
 
 def _student_form():
@@ -110,14 +123,14 @@ def index():
         student = Student(**values)
         db.session.add(student)
         db.session.flush()
-        ensure_student_account(student)
+        temporary_password = ensure_student_account(student)
         log_activity(
             'student_created',
             f"Created student profile '{student.name}' ({student.roll_no}).",
             'student', student.id, student.department_id,
         )
         db.session.commit()
-        flash(f"Added {student.name}. Their initial password is the roll number.", "success")
+        flash(f"Added {student.name}. {_one_time_password_notice(temporary_password)}", "success")
         return back_to_list()
 
     filters = student_filters()
@@ -178,9 +191,9 @@ def import_students():
         return redirect(url_for('students.index'))
 
     try:
-        imported, errors = import_students_from_rows(rows)
-        if imported:
-            log_activity('student_imported', f"Imported {imported} student profile(s) by bulk upload.", 'student', None, current_department_id())
+        created, errors = import_students_from_rows(rows)
+        if created:
+            log_activity('student_imported', f"Imported {len(created)} student profile(s) by bulk upload.", 'student', None, current_department_id())
             db.session.commit()
     except Exception:
         db.session.rollback()
@@ -188,17 +201,21 @@ def import_students():
         flash("Import failed because of an unexpected error. No students were added.", "danger")
         return redirect(url_for('students.index'))
 
-    if imported:
-        flash(
-            f"Imported {imported} student profile{'s' if imported != 1 else ''}. "
-            "Student logins were created with roll number as initial password.",
-            "success",
-        )
     if errors:
         preview = '; '.join(errors[:5])
         suffix = f" and {len(errors) - 5} more" if len(errors) > 5 else ""
         flash(f"{len(errors)} row issue{'s' if len(errors) != 1 else ''}: {preview}{suffix}", "warning")
-    return redirect(url_for('students.index'))
+    if not created:
+        return redirect(url_for('students.index'))
+
+    # The one-time passwords exist only in this response, so show them here instead of redirecting.
+    credentials = [{
+        'roll_no': student.roll_no,
+        'name': student.name,
+        'email': student.email,
+        'password': password or '',
+    } for student, password in created]
+    return render_template('import_result.html', credentials=credentials)
 
 
 @bp.route('/students/import-template')
@@ -232,9 +249,11 @@ def edit(id):
         return back_to_list()
     for key, value in values.items():
         setattr(student, key, value)
-    ensure_student_account(student)
+    temporary_password = ensure_student_account(student)
     log_activity('student_updated', f"Updated student profile '{student.name}' ({student.roll_no}).", 'student', student.id, student.department_id)
     db.session.commit()
+    if temporary_password:
+        flash(f"Created a login for {student.name}. {_one_time_password_notice(temporary_password)}", "success")
     return back_to_list()
 
 
@@ -267,18 +286,19 @@ def reset_password(id):
         flash(f"{student.name} has no login account because {student.email} is used by another account.", "danger")
         return back_to_list()
 
-    account.password = generate_password_hash(student.roll_no)
+    temporary_password = generate_temporary_password()
+    account.password = hash_temporary_password(temporary_password)
     account.is_active = True
     account.must_change_password = True
     account.rotate_session_token()
     clear_login_failures(account.username)
     log_activity(
         'student_password_reset',
-        f"Reset student password for '{student.name}' to the roll number.",
+        f"Reset student password for '{student.name}' to a new temporary password.",
         'student', student.id, student.department_id,
     )
     db.session.commit()
-    flash(f"Password for {student.name} was reset to the roll number ({student.roll_no}).", 'success')
+    flash(f"Password for {student.name} was reset. {_one_time_password_notice(temporary_password)}", 'success')
     return back_to_list()
 
 

@@ -4,8 +4,8 @@ Usage: PRINCIPAL_PASSWORD=... python scripts/docker_smoke.py http://127.0.0.1:50
 
 Starts from a fresh database: the seeded Principal logs in with the generated
 one-time password and is forced to replace it, sets up a class, and starts a
-QR session for a special class. A new student opens the scan link, logs in,
-replaces their roll-number password, and marks attendance. The Principal then
+QR session for a special class. A new student opens the scan link, logs in
+with the one-time password shown to the Principal, replaces it, and marks attendance. The Principal then
 sees exactly one entry. Standard library only, so it runs on the CI runner
 without installing the app.
 """
@@ -23,6 +23,7 @@ PRINCIPAL_EMAIL = os.environ.get('DEFAULT_PRINCIPAL_EMAIL', 'principal@example.c
 PRINCIPAL_PASSWORD = os.environ.get('PRINCIPAL_PASSWORD', '')
 STUDENT = {'name': 'Smoke Student', 'roll_no': 'SMK001', 'email': 'smoke.student@example.com'}
 CSRF_PATTERN = re.compile(r'name="(?:_csrf_token|csrf-token)"\s+(?:value|content)="([^"]+)"')
+TEMPORARY_PASSWORD_PATTERN = re.compile(r'Temporary password: ([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})')
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -119,6 +120,9 @@ def main(base_url):
     semester_id = semesters[0]['id']
 
     principal.post('/students', department_id=department_id, semester_id=semester_id, **STUDENT)
+    match = TEMPORARY_PASSWORD_PATTERN.search(principal.get('/students')[2])
+    check(match is not None, "student added and their one-time password shown once")
+    student_first_password = match.group(1)
     location = expect_redirect(
         # A special class needs no teacher account; scanning and marking work the same way.
         principal.post('/generate_qr', class_mode='special', special_title='Smoke test class',
@@ -133,12 +137,12 @@ def main(base_url):
     expect_redirect(phone.get(scan_url), '/attend', "student's phone opens the scan link")
     expect_redirect(phone.get('/attend'), '/login', "not logged in yet, so the scan waits for login")
     phone.get('/login?next=/attend')
-    expect_redirect(phone.post('/login', username=STUDENT['email'], password=STUDENT['roll_no'], next='/attend'),
-                    '/attend', "student logs in with the roll-number password")
-    expect_redirect(phone.get('/attend'), '/account', "student must replace the roll-number password")
+    expect_redirect(phone.post('/login', username=STUDENT['email'], password=student_first_password, next='/attend'),
+                    '/attend', "student logs in with the one-time password")
+    expect_redirect(phone.get('/attend'), '/account', "student must replace the one-time password")
     phone.get('/account?next=/attend')
     student_password = 'Smoke-Student-2026'
-    expect_redirect(phone.post('/account', current_password=STUDENT['roll_no'], new_password=student_password,
+    expect_redirect(phone.post('/account', current_password=student_first_password, new_password=student_password,
                                confirm_password=student_password, next='/attend'),
                     '/attend', "student sets a private password and returns to the scan")
     status, _, page = phone.get('/attend')

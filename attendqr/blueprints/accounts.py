@@ -26,7 +26,13 @@ from ..access import (
 )
 from ..extensions import db
 from ..models import ActivityLog, Admin, ClassSession, Subject, Teacher
-from ..security import clear_login_failures, generate_temporary_password, locked_usernames, password_policy_error
+from ..security import (
+    clear_login_failures,
+    generate_temporary_password,
+    hash_temporary_password,
+    locked_usernames,
+    password_policy_error,
+)
 from ..utils import normalize_email, normalize_text, parse_int_value
 
 bp = Blueprint('accounts', __name__)
@@ -301,7 +307,7 @@ def reset_password(id):
         abort(403)
 
     temporary_password = generate_temporary_password()
-    account.password = generate_password_hash(temporary_password)
+    account.password = hash_temporary_password(temporary_password)
     account.must_change_password = True
     account.rotate_session_token()
     clear_login_failures(account.username)

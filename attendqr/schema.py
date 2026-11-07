@@ -99,8 +99,13 @@ def _legacy_data_fixups():
             subject.teacher_id = teacher_ids.pop()
 
     from .services.roster import ensure_student_account
-    for student in Student.query.all():
-        ensure_student_account(student)
+    created = sum(1 for student in Student.query.all() if ensure_student_account(student))
+    if created:
+        # Their random passwords are not shown anywhere, so staff must reset them.
+        current_app.logger.warning(
+            "Created %d student login(s) for existing student profiles. Use 'Reset password' on the "
+            "Students page to give each student a temporary password.", created,
+        )
 
     principal_email = normalize_email(current_app.config['DEFAULT_PRINCIPAL_EMAIL'])
     old_default = Admin.query.filter_by(username='admin', role='super_admin').first()

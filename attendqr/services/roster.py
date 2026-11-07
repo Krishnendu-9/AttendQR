@@ -3,35 +3,43 @@ import csv
 import io
 
 import openpyxl
-from werkzeug.security import generate_password_hash
 
 from ..access import can_access_department, current_department_id, is_super_admin, is_valid_email
 from ..extensions import db
 from ..models import Admin, Department, Semester, Student
+from ..security import generate_temporary_password, hash_temporary_password
 from ..utils import normalize_course_name, normalize_email, normalize_header, normalize_roll_no, normalize_text
 
 
 def ensure_student_account(student):
-    """Create or update the login account linked to a student profile."""
+    """Create or update the login account linked to a student profile.
+
+    Returns the one-time password when a new account was created (show it to
+    the staff member once; it is not stored), otherwise None.
+    """
     if not student.email:
-        return
+        return None
     existing = Admin.query.filter_by(student_id=student.id).first()
     if existing:
         existing.role = 'student'
         existing.username = student.email
         existing.department_id = student.department_id
-        return
+        return None
     if Admin.query.filter_by(username=student.email).first():
-        return
+        return None
+    # Random rather than the roll number: roll numbers and student emails are easy
+    # to guess, so anyone could otherwise claim an account before its owner.
+    temporary_password = generate_temporary_password()
     db.session.add(Admin(
         username=student.email,
-        password=generate_password_hash(student.roll_no),
+        password=hash_temporary_password(temporary_password),
         role='student',
         department_id=student.department_id,
         student_id=student.id,
         is_active=True,
         must_change_password=True,
     ))
+    return temporary_password
 
 
 def department_labels(department):
@@ -140,7 +148,8 @@ def resolve_import_semester(row, department_id):
 
 
 def import_students_from_rows(rows):
-    imported = 0
+    """Add valid rows. Returns (created, errors): created is a list of (student, one-time password or None)."""
+    created = []
     errors = []
     seen_rolls = set()
     seen_emails = set()
@@ -192,10 +201,9 @@ def import_students_from_rows(rows):
                           department_id=department.id, semester_id=semester.id)
         db.session.add(student)
         db.session.flush()
-        ensure_student_account(student)
-        imported += 1
+        created.append((student, ensure_student_account(student)))
         seen_rolls.add(roll_key)
         seen_emails.add(email)
 
     db.session.commit()
-    return imported, errors
+    return created, errors

@@ -117,7 +117,7 @@
     <div class="col-lg-4">
       <div class="alert alert-info mb-0">
         <i class="bi bi-shield-check me-1"></i>
-        Student accounts are managed here, not from Accounts. Initial password = roll number; students must change it at first login.
+        Student accounts are managed here, not from Accounts. New and reset logins get a random temporary password, shown once; students must change it at first login.
       </div>
     </div>
   </div>
@@ -152,7 +152,7 @@
           </td>
           <td class="text-end text-nowrap">
             <form method="POST" action="{{ url_for('students.reset_password', id=s.id) }}" class="d-inline"
-              data-confirm="Reset password for {{ s.name }} to the roll number?">
+              data-confirm="Reset password for {{ s.name }}? A new temporary password will be shown once.">
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="return_to" value="{{ return_to }}">
               <button class="btn btn-sm btn-info btn-icon" type="submit" data-bs-toggle="tooltip" title="Reset password">

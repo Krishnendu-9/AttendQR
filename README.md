@@ -147,11 +147,11 @@ To choose the first password yourself, set `DEFAULT_PRINCIPAL_PASSWORD`; it must
 
 ### Student Accounts
 
-Student accounts are created automatically when a student is added on the Students page or by bulk upload:
+Student accounts are created automatically when a student is added on the Students page or by bulk upload. The temporary password is shown once to the staff member: in a message after adding or resetting one student, and on a one-time list (with CSV download and print) after a bulk import. It is never stored, so hand it over then or reset it later. It is random rather than the roll number because roll numbers and student emails are easy to guess.
 
 ```text
 username: student email
-initial password: roll number (must be changed at first login)
+initial password: a random temporary password such as K7RM-2XQD-9HFA (must be changed at first login)
 ```
 
 ## Bulk Student Import

@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}Imported Students | AttendQR{% endblock %}
+{% block page_title %}Imported Students{% endblock %}
+{% block page_subtitle %}One-time passwords for the new student logins{% endblock %}
+
+{% block content %}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  These passwords are shown <strong>only on this page</strong> and are not stored. Download or print them now and give
+  each student their own. Students must change the password at first login.
+</div>
+
+<div class="table-card mb-4">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+      <h2 class="section-title"><i class="bi bi-person-plus me-1"></i> Imported {{ credentials|length }} student profile{{ 's' if credentials|length != 1 }}</h2>
+      <p class="section-subtitle">Student logins were created with a random temporary password.</p>
+    </div>
+    <div class="d-flex gap-2 no-print">
+      <button type="button" class="btn btn-primary" id="downloadCredentials">
+        <i class="bi bi-download me-1"></i> Download CSV
+      </button>
+      <button type="button" class="btn btn-outline-secondary" id="printCredentials">
+        <i class="bi bi-printer me-1"></i> Print
+      </button>
+      <a href="{{ url_for('students.index') }}" class="btn btn-outline-secondary">Done</a>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Roll No</th>
+          <th>Name</th>
+          <th>Email (login)</th>
+          <th>Temporary password</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in credentials %}
+        <tr>
+          <td class="fw-semibold">{{ row.roll_no }}</td>
+          <td>{{ row.name }}</td>
+          <td>{{ row.email }}</td>
+          <td class="font-monospace">{{ row.password or 'Existing account (unchanged)' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script id="credentialData" type="application/json">{{ credentials|tojson }}</script>
+<script nonce="{{ csp_nonce() }}">
+  (function () {
+    const rows = JSON.parse(document.getElementById('credentialData').textContent);
+
+    function csvCell(value) {
+      let text = String(value == null ? '' : value);
+      // Spreadsheet apps run cells that start with these as formulas.
+      if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
+      return '"' + text.replace(/"/g, '""') + '"';
+    }
+
+    document.getElementById('downloadCredentials').addEventListener('click', function () {
+      const lines = [['roll_no', 'name', 'email', 'temporary_password']].concat(
+        rows.map(function (r) { return [r.roll_no, r.name, r.email, r.password]; })
+      );
+      const csv = lines.map(function (line) { return line.map(csvCell).join(','); }).join('\r\n');
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+      link.download = 'student_logins.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    });
+
+    document.getElementById('printCredentials').addEventListener('click', function () { window.print(); });
+  })();
+</script>
+{% endblock %}

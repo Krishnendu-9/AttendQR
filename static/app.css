@@ -1389,6 +1389,21 @@ button.logout-btn {
   }
 }
 
+/* Printing a page such as the one-time password list: content only. */
+@media print {
+  .sidebar,
+  .toggle-sidebar,
+  .no-print,
+  .alert .btn-close {
+    display: none !important;
+  }
+
+  .main-content {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
 /* QR session view (kept here rather than in style attributes, which the CSP blocks). */
 .qr-session-mark {
   transform: scale(0.7);

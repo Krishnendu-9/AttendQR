@@ -43,7 +43,7 @@ The system supports four roles:
 
 - Views only personal attendance.
 - Sees subject-wise percentage, overall percentage, and classes needed for the 80% target.
-- Logs in with the student email and initial password as roll number, and must set a private password at first login.
+- Logs in with the student email and the temporary password given by staff, and must set a private password at first login.
 - Marks attendance only from their own registered phone; each phone can be registered to one student.
 
 ## Account Verification
@@ -57,7 +57,7 @@ HOD and Teacher usernames must use an allowed email domain:
 
 Teacher login usernames must match the linked teacher profile email.
 
-Student login usernames are the student email, and the initial password is the student roll number.
+Student login usernames are the student email. The initial password is a random temporary password, shown once to the staff member who added or imported the student (bulk imports show a one-time list to download or print).
 
 Newly created or reset accounts must change their password before they can use the app. Passwords need at least 8 characters with letters and numbers, must not contain the user's email name or roll number, and must not be a common password.
 
@@ -66,7 +66,7 @@ Newly created or reset accounts must change their password before they can use t
 - Subject access for teachers is now based on subject assignment, not department-wide access.
 - The Accounts page keeps an activity log for sensitive account actions.
 - Staff sign-ins, failed sign-in attempts on real accounts, and the pauses they trigger are recorded in the activity log. Each user sees failed attempts and pauses on their own account under Recent Security Activity.
-- Student password reset returns the password to the roll number.
+- Student password reset sets a new random temporary password, shown once to the staff member.
 - Repeated failed logins pause that account on that device for 10 minutes; other devices are unaffected. Resetting the password clears it.
 - Changing or resetting a password, or deactivating an account, signs out all of its existing sessions.
 - Accounts with an unknown role get no access.
