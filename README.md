@@ -112,7 +112,7 @@ CI builds the image, starts it with compose, waits for the health check, and run
 
 - Default database: SQLite at `instance/attendance.db` (set `DATABASE_URL` to change it)
 - Schema changes are managed by Alembic migrations in `migrations/`. Pending migrations run automatically at startup.
-- Databases created by older versions of AttendQR are detected and upgraded automatically on first start, keeping all data. Before that first start, back up `instance/attendance.db`.
+- Databases created by older versions of AttendQR are detected and upgraded automatically on first start, keeping all data. Before that first start, back up `instance/attendance.db` (stop the server and copy the file).
 
 Useful commands:
 

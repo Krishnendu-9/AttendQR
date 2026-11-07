@@ -127,3 +127,14 @@ def test_upgrading_twice_is_a_no_op(tmp_path):
             from attendqr.models import Admin
             assert Admin.query.count() == 1
             db.engine.dispose()
+
+
+def test_sqlite_uses_write_ahead_logging_and_waits_for_locks(app):
+    from sqlalchemy import text
+
+    from attendqr.extensions import SQLITE_BUSY_TIMEOUT_MS, db
+
+    with db.engine.connect() as connection:
+        assert connection.execute(text('PRAGMA journal_mode')).scalar() == 'wal'
+        assert connection.execute(text('PRAGMA busy_timeout')).scalar() == SQLITE_BUSY_TIMEOUT_MS
+        assert connection.execute(text('PRAGMA foreign_keys')).scalar() == 1

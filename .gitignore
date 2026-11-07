@@ -13,6 +13,8 @@ env/
 # Flask
 instance/
 *.db
+*.db-wal
+*.db-shm
 
 # QR images written by older versions (QR codes are now generated in memory)
 static/qrcodes/

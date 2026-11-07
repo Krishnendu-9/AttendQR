@@ -7,7 +7,7 @@ AttendQR/
   attendqr/
     __init__.py         create_app(): config checks, extensions, blueprints, request guards, error pages, template helpers, CLI
     config.py           Config class read from environment variables / .env
-    extensions.py       db, login_manager, migrate; SQLite foreign-key pragma
+    extensions.py       db, login_manager, migrate; SQLite foreign keys, WAL mode and busy timeout
     models.py           SQLAlchemy models
     access.py           Roles, scope checks, visible_*_query() helpers, display helpers, activity log
     security.py         Secret key, CSRF, safe redirects, password policy, temporary passwords, CSP/security headers,
@@ -48,6 +48,7 @@ AttendQR/
 `instance/` holds runtime data and is ignored by git:
 
 - `attendance.db`: the SQLite database (default `DATABASE_URL`)
+- `attendance.db-wal`, `attendance.db-shm`: SQLite's write-ahead log, present while the app runs.
 - `secret_key`: generated on first start when `SECRET_KEY` is not set. Keep it private; deleting it signs everyone out.
 - `initial_principal_password`: the first Principal's one-time password; deleted once it has been replaced.
 
