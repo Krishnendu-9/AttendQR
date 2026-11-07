@@ -308,18 +308,32 @@ def render_excel(headers, data, notes=(), title="Attendance Report"):
     return buffer
 
 
+def pdf_session_chunks(session_count, per_page):
+    """Split session column indexes into groups that fit across one page."""
+    if not session_count:
+        return [range(0)]
+    return [range(start, min(start + per_page, session_count)) for start in range(0, session_count, per_page)]
+
+
 def render_pdf(headers, data, title, notes=()):
+    """Attendance matrix as a landscape PDF.
+
+    `headers` and each row are: Roll No, Name, Email, one column per session, Total, %.
+    Sessions that do not fit across the page continue in further tables, each
+    repeating the student and total columns, instead of being drawn off the page.
+    """
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import cm
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
+    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table
 
     buffer = io.BytesIO()
     margin = 1.5 * cm
-    usable_width = A4[0] - 2 * margin
-    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=margin, rightMargin=margin,
+    pagesize = landscape(A4)
+    usable_width = pagesize[0] - 2 * margin
+    doc = SimpleDocTemplate(buffer, pagesize=pagesize, leftMargin=margin, rightMargin=margin,
                             topMargin=margin, bottomMargin=margin)
 
     styles = getSampleStyleSheet()
@@ -335,21 +349,30 @@ def render_pdf(headers, data, title, notes=()):
         lines = value if isinstance(value, list) else [value]
         return Paragraph('<br/>'.join(escape('' if v is None else str(v)) for v in lines), style)
 
-    table_data = [[cell(h, header_style) for h in headers]]
-    table_data += [[cell(v, body_style) for v in row] for row in data]
-
     # Fixed widths for Roll No, Name, Email, Total, %; sessions share the rest.
-    col_roll, col_name, col_email, col_total, col_pct = 2.0 * cm, 3.2 * cm, 4.2 * cm, 1.1 * cm, 1.6 * cm
-    fixed_width = col_roll + col_name + col_email + col_total + col_pct
+    lead_widths = [2.0 * cm, 3.2 * cm, 4.2 * cm]
+    trail_widths = [1.1 * cm, 1.6 * cm]
+    min_session_width, max_session_width = 1.5 * cm, 3.5 * cm
+    session_space = usable_width - sum(lead_widths) - sum(trail_widths)
     num_sessions = max(len(headers) - 5, 0)
-    session_width = min(max((usable_width - fixed_width) / num_sessions, 1.5 * cm), 3.5 * cm) if num_sessions else 0
-    col_widths = [col_roll, col_name, col_email] + [session_width] * num_sessions + [col_total, col_pct]
-    total_width = sum(col_widths)
-    if 0 < total_width < usable_width:
-        col_widths = [w * usable_width / total_width for w in col_widths]
+    chunks = pdf_session_chunks(num_sessions, max(1, int(session_space // min_session_width)))
 
-    table = Table(table_data, colWidths=col_widths, repeatRows=1)
-    table.setStyle([
+    def chunk_columns(values, chunk):
+        return list(values[:3]) + [values[3 + index] for index in chunk] + list(values[-2:])
+
+    def build_table(chunk):
+        table_data = [[cell(h, header_style) for h in chunk_columns(headers, chunk)]]
+        table_data += [[cell(v, body_style) for v in chunk_columns(row, chunk)] for row in data]
+        session_width = min(max(session_space / len(chunk), min_session_width), max_session_width) if chunk else 0
+        col_widths = lead_widths + [session_width] * len(chunk) + trail_widths
+        total_width = sum(col_widths)
+        if total_width < usable_width:
+            col_widths = [w * usable_width / total_width for w in col_widths]
+        table = Table(table_data, colWidths=col_widths, repeatRows=1)
+        table.setStyle(table_style)
+        return table
+
+    table_style = [
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#366092')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -364,10 +387,17 @@ def render_pdf(headers, data, title, notes=()):
         ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#AAAAAA')),
         ('LINEBELOW', (0, 0), (-1, 0), 1.5, colors.HexColor('#1E3F66')),
-    ])
+    ]
 
     note_style = ParagraphStyle('Note', parent=styles['Normal'], fontSize=7, textColor=colors.HexColor('#555555'))
-    story = [Paragraph(escape(title), title_style), Spacer(1, 0.3 * cm), table]
+    story = [Paragraph(escape(title), title_style), Spacer(1, 0.3 * cm)]
+    for position, chunk in enumerate(chunks):
+        if position:
+            story.append(PageBreak())
+        if len(chunks) > 1:
+            story.append(Paragraph(f"Sessions {chunk.start + 1} to {chunk.stop} of {num_sessions}", note_style))
+            story.append(Spacer(1, 0.2 * cm))
+        story.append(build_table(chunk))
     if notes:
         story.append(Spacer(1, 0.3 * cm))
         story += [Paragraph(escape(note), note_style) for note in notes]

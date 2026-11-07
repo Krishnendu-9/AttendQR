@@ -1,6 +1,7 @@
 """Attendance statistics, reports, exports, imports, and sorting."""
 import csv
 import io
+import re
 
 import openpyxl
 
@@ -137,6 +138,31 @@ def test_classes_needed_matches_brute_force():
                 assert classes_needed_for_target(attended, total, target) == brute(attended, total, target), \
                     (attended, total, target)
     assert classes_needed_for_target(4, 6, 80) == 4  # float maths used to say 5
+
+
+def _pdf_pages(pdf_bytes):
+    return len(re.findall(rb'/Type /Page\b(?!s)', pdf_bytes))
+
+
+def test_pdf_splits_many_sessions_across_pages_instead_of_cutting_them_off():
+    from attendqr.services.reports import pdf_session_chunks, render_pdf
+
+    sessions = 40
+    headers = ['Roll No', 'Name', 'Email'] + [[f'Class {n}', 'MCA101'] for n in range(sessions)] + ['Total', '%']
+    rows = [['MCA001', 'Rahul Das', 'rahul@example.com'] + ['P'] * sessions + [sessions, '100.0%']]
+    pdf = render_pdf(headers, rows, 'Attendance Report').getvalue()
+
+    chunks = pdf_session_chunks(sessions, 9)
+    assert [len(chunk) for chunk in chunks] == [9, 9, 9, 9, 4]
+    assert _pdf_pages(pdf) == len(chunks)
+
+
+def test_pdf_with_few_sessions_is_one_page():
+    from attendqr.services.reports import render_pdf
+
+    headers = ['Roll No', 'Name', 'Email', ['DBMS', 'MCA101'], 'Total', '%']
+    pdf = render_pdf(headers, [['MCA001', 'Rahul', 'r@example.com', 'P', 1, '100.0%']], 'Report').getvalue()
+    assert _pdf_pages(pdf) == 1
 
 
 def test_detailed_report_percentage_matches_the_dashboard_with_special_classes(app, data, client_for):
