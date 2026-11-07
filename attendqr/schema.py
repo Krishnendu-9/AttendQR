@@ -5,6 +5,7 @@ import secrets
 from flask import current_app
 from flask_migrate import stamp, upgrade
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .access import SPECIAL_CLASS_SUBJECT_NAME
@@ -109,30 +110,58 @@ def _legacy_data_fixups():
 
     principal_email = normalize_email(current_app.config['DEFAULT_PRINCIPAL_EMAIL'])
     old_default = Admin.query.filter_by(username='admin', role='super_admin').first()
+    new_password = write_file = None
     if old_default and not Admin.query.filter(db.func.lower(Admin.username) == principal_email).first():
+        new_password, write_file = initial_principal_password()
         old_default.username = principal_email
-        old_default.password = generate_password_hash(initial_principal_password()[0])
+        old_default.password = generate_password_hash(new_password)
         old_default.is_active = True
         old_default.must_change_password = True
         old_default.rotate_session_token()
 
     db.session.commit()
+    if write_file:
+        write_initial_password_file(new_password)
+
+
+def _has_accounts():
+    return db.session.query(Admin.query.exists()).scalar()
 
 
 def ensure_default_principal():
-    if Admin.query.first():
+    if _has_accounts():
         return
     email = normalize_email(current_app.config['DEFAULT_PRINCIPAL_EMAIL'])
-    password, password_file = initial_principal_password()
-    db.session.add(Admin(
+    password, write_file = initial_principal_password()
+    account = Admin(
         username=email,
         password=generate_password_hash(password),
         role='super_admin',
         is_active=True,
         # Whoever set up the server knows this password, so the Principal must replace it.
         must_change_password=True,
-    ))
-    db.session.commit()
+    )
+    db.session.add(account)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Several worker processes starting together: another one created the account
+        # first. Its password file is the right one, so leave the file alone.
+        db.session.rollback()
+        current_app.logger.info("The initial Principal account was created by another process.")
+        return
+
+    password_file = None
+    if write_file:
+        # Written only after the account exists, so a process that lost the race above
+        # can never replace the file with a password that no account has.
+        try:
+            password_file = write_initial_password_file(password)
+        except OSError:
+            # Without the file nobody could log in; remove the account so the next start retries.
+            db.session.delete(account)
+            db.session.commit()
+            raise
     source = f"the one-time password in {password_file}" if password_file else "DEFAULT_PRINCIPAL_PASSWORD"
     current_app.logger.warning(
         "Created the initial Principal account %s with %s; it must be changed at first login.", email, source,
@@ -157,21 +186,28 @@ def _configured_principal_password():
 
 
 def initial_principal_password():
-    """Return (password, file): the configured password and None, or a random one and the file it was written to.
+    """Return (password, write_file): the configured password and False, or a new random one and True.
 
-    Only the file's path is ever logged. The file is readable by the app's user
-    only (on Windows it inherits the instance folder's permissions).
+    Call write_initial_password_file() once the account using it is committed.
     """
     configured = _configured_principal_password()
     if configured:
-        return configured, None
-    password = secrets.token_urlsafe(18)
+        return configured, False
+    return secrets.token_urlsafe(18), True
+
+
+def write_initial_password_file(password):
+    """Write the generated first password and return the file's path.
+
+    Only the path is ever logged. The file is readable by the app's user only
+    (on Windows it inherits the instance folder's permissions).
+    """
     path = initial_password_path()
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8') as handle:
         handle.write(f"{password}\n")
     os.chmod(path, 0o600)  # The mode given to os.open does not apply to a file that already existed.
-    return password, path
+    return path
 
 
 def discard_used_initial_password():

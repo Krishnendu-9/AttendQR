@@ -112,3 +112,22 @@ def test_stale_file_is_deleted_at_startup(run_app, initial_password_file):
 
     run_app()
     assert not initial_password_file.exists()
+
+
+def test_a_process_that_loses_the_first_start_race_keeps_the_winners_password(
+    run_app, initial_password_file, monkeypatch,
+):
+    """Several workers starting on an empty database must not overwrite the password file."""
+    from attendqr import schema
+
+    app = run_app()  # the "winning" worker: account and file created
+    winning_password = initial_password_file.read_text().strip()
+
+    with app.app_context():
+        # The losing worker checked for accounts before the winner committed.
+        monkeypatch.setattr(schema, '_has_accounts', lambda: False)
+        schema.ensure_default_principal()
+        assert Admin.query.filter_by(role='super_admin').count() == 1
+
+    assert initial_password_file.read_text().strip() == winning_password
+    assert can_log_in(app, winning_password)

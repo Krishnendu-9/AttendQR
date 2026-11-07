@@ -49,6 +49,7 @@ AttendQR/
 
 - `attendance.db`: the SQLite database (default `DATABASE_URL`)
 - `secret_key`: generated on first start when `SECRET_KEY` is not set. Keep it private; deleting it signs everyone out.
+- `initial_principal_password`: the first Principal's one-time password; deleted once it has been replaced.
 
 QR images are generated in memory and are never written to disk.
 
