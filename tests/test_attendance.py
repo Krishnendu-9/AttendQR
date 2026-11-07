@@ -172,6 +172,9 @@ def test_session_qr_endpoint(data, client_for):
 
     body = teacher.get(f'/api/session/{class_session.id}/qr').get_json()
     assert body['image'].startswith('data:image/png;base64,')
+    assert body['present'] == 0  # the session view compares this to refresh its attendance list
+    page = teacher.get(f'/generate_qr?session_id={class_session.id}').get_data(as_text=True)
+    assert 'id="qr-attendance" data-present="0"' in page
     assert body['scan_url'].startswith('http://attendqr.test/scan/')
 
     assert client_for(data.student).get(f'/api/session/{class_session.id}/qr').status_code == 403

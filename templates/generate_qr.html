@@ -84,7 +84,7 @@
   </div>
 </div>
 
-<div class="table-card mb-4" id="qr-attendance">
+<div class="table-card mb-4" id="qr-attendance" data-present="{{ attendance_records|length }}">
   <div class="card-header">
     <h2 class="section-title"><i class="bi bi-clipboard-check me-1"></i> Attendance</h2>
     <p class="section-subtitle">
@@ -214,13 +214,14 @@
 </div>
 
 <script nonce="{{ csp_nonce() }}">
-  document.querySelectorAll('.remove-attendance').forEach(function (button) {
-    button.addEventListener('click', function () {
-      document.getElementById('removeAttendanceForm').action = button.dataset.action;
-      document.getElementById('removeAttendanceStudent').textContent = button.dataset.student;
-      document.getElementById('remove_note').value = '';
-      bootstrap.Modal.getOrCreateInstance(document.getElementById('removeAttendanceModal')).show();
-    });
+  // Delegated, so it also works for rows added when the attendance list refreshes itself.
+  document.addEventListener('click', function (event) {
+    const button = event.target.closest('.remove-attendance');
+    if (!button) return;
+    document.getElementById('removeAttendanceForm').action = button.dataset.action;
+    document.getElementById('removeAttendanceStudent').textContent = button.dataset.student;
+    document.getElementById('remove_note').value = '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('removeAttendanceModal')).show();
   });
 </script>
 
@@ -240,11 +241,50 @@
       ended.classList.remove('d-none');
     }
 
+    function attendanceSection() {
+      return document.getElementById('qr-attendance');
+    }
+
+    // Never replace the list under someone typing a reason or using the remove dialog.
+    function staffIsEditing() {
+      const active = document.activeElement;
+      const editingForm = active && attendanceSection().contains(active) && active.matches('input, select, textarea');
+      return Boolean(editingForm || document.querySelector('#removeAttendanceModal.show'));
+    }
+
+    let reloadingAttendance = false;
+
+    // When the number present changes, fetch this page again and swap in its attendance section,
+    // so new scans appear without a manual reload.
+    function refreshAttendance(present) {
+      if (reloadingAttendance || String(present) === attendanceSection().dataset.present || staffIsEditing()) return;
+      reloadingAttendance = true;
+      fetch(window.location.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } })
+        .then(function (response) { return response.ok ? response.text() : Promise.reject(response.status); })
+        .then(function (html) {
+          const fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('qr-attendance');
+          if (!fresh || staffIsEditing()) return;
+          const current = attendanceSection();
+          current.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+            const tooltip = bootstrap.Tooltip.getInstance(el);
+            if (tooltip) tooltip.dispose();
+          });
+          const replacement = document.importNode(fresh, true);
+          current.replaceWith(replacement);
+          replacement.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+            new bootstrap.Tooltip(el);
+          });
+        })
+        .catch(function () { /* try again on the next refresh */ })
+        .then(function () { reloadingAttendance = false; });
+    }
+
     function refreshQR() {
       AttendQR.getJSON(AttendQR.url('sessionQr', sessionId))
         .then(function (data) {
           qrImg.src = data.image;
           scanUrlText.textContent = data.scan_url;
+          refreshAttendance(data.present);
         })
         .catch(function (err) {
           if (err.status === 410 || err.status === 403 || err.status === 404) stop();

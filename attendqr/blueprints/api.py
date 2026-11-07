@@ -108,6 +108,8 @@ def session_qr(id):
         'scan_url': scan_url,
         'image': qr_data_uri(scan_url),
         'refresh_seconds': current_app.config['QR_REFRESH_SECONDS'],
+        # Lets the session view notice new attendance without polling another endpoint.
+        'present': Attendance.query.filter_by(session_id=class_session.id).count(),
     })
 
 
