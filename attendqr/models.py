@@ -140,6 +140,8 @@ class Attendance(db.Model):
 
     __table_args__ = (
         db.Index('uq_attendance_student_session', 'student_id', 'session_id', unique=True),
+        # One QR scan grant produces at most one attendance (NULLs allowed many times).
+        db.Index('uq_attendance_scan_grant', 'scan_grant', unique=True),
     )
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False)
@@ -155,6 +157,8 @@ class Attendance(db.Model):
     note = db.Column(db.String(200), nullable=True)
     # Address the scan link was opened from. Cleared after SCAN_IP_RETENTION_DAYS; never set for manual entries.
     scan_ip = db.Column(db.String(45), nullable=True)
+    # Id of the scan grant this entry was marked with; never set for manual entries.
+    scan_grant = db.Column(db.String(32), nullable=True)
     student = db.relationship('Student', backref=db.backref('attendances', cascade='all, delete-orphan'))
     session = db.relationship('ClassSession', backref=db.backref('attendances', cascade='all, delete-orphan'))
     marked_by = db.relationship('Admin', foreign_keys=[marked_by_admin_id])

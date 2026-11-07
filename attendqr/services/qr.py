@@ -6,8 +6,10 @@ student's own (signed) session, which survives logging in and changing an
 initial password. Attendance is then marked against that grant.
 
 The session is a cookie the browser holds, so a grant can be copied to another
-browser. To keep a grant on the phone that scanned, it carries that phone's
-device cookie; the campus network is checked again when attendance is confirmed.
+browser. To keep one scan worth one attendance, a grant carries a random id
+that is stored with the attendance it produced (unique in the database), and
+the device cookie of the phone that scanned; the campus network is checked
+again when attendance is confirmed.
 """
 import base64
 import io
@@ -28,6 +30,7 @@ SCAN_GRANT_KEY = 'scan_grant'
 DEVICE_COOKIE = 'device_id'
 DEVICE_COOKIE_MAX_AGE = 10 * 365 * 24 * 3600
 _DEVICE_ID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+_GRANT_ID_PATTERN = re.compile(r'^[0-9a-f]{32}$')
 
 DEVICE_LOCKED_MESSAGE = (
     'This account is locked to a different device. You can only mark attendance from your registered device.'
@@ -95,6 +98,7 @@ def qr_data_uri(text):
 def grant_scan(class_session_id, device_id, scan_ip=None):
     """Store a scan grant for the phone whose device cookie is `device_id`."""
     grant = {
+        'id': secrets.token_hex(16),
         'session_id': class_session_id,
         'device': device_id,
         'expires': int(time.time()) + current_app.config['SCAN_GRANT_SECONDS'],
@@ -111,14 +115,16 @@ def scan_grant_ip(grant):
 
 
 def current_scan_grant():
-    """The unexpired scan grant, a dict with session_id and device (and ip if recorded), or None."""
+    """The unexpired scan grant, a dict with id, session_id and device (and ip if recorded), or None."""
     grant = session.get(SCAN_GRANT_KEY)
     if not isinstance(grant, dict):
         return None
+    grant_id = grant.get('id')
     device = grant.get('device')
     expires = grant.get('expires')
     valid = (
-        isinstance(grant.get('session_id'), int)
+        isinstance(grant_id, str) and _GRANT_ID_PATTERN.fullmatch(grant_id)
+        and isinstance(grant.get('session_id'), int)
         and isinstance(device, str) and _DEVICE_ID_PATTERN.fullmatch(device)
         and isinstance(expires, int) and expires >= time.time()
     )

@@ -420,6 +420,8 @@ OTHER_BROWSER_TITLE = 'Scan Again on This Phone'
 OTHER_BROWSER_MESSAGE = (
     'This scan was opened in a different browser. Scan the QR code again with the phone you are marking attendance on.'
 )
+GRANT_USED_TITLE = 'Scan Already Used'
+GRANT_USED_MESSAGE = 'This scan has already been used to mark attendance. Scan the QR code shown in class again.'
 
 
 def _network_refusal(stage):
@@ -435,13 +437,16 @@ def _grant_refusal(grant):
     """Why this scan grant cannot be used from this request, as (title, message, status), or None.
 
     The grant lives in a cookie, so it could have been copied to another browser
-    off campus; check the network again and the phone it was issued to.
+    off campus; check the network again, the phone it was issued to, and that it
+    has not already produced an attendance entry.
     """
     refusal = _network_refusal('attendance confirmation')
     if refusal:
         return refusal
     if read_device_cookie() != grant['device']:
         return OTHER_BROWSER_TITLE, OTHER_BROWSER_MESSAGE, 403
+    if db.session.query(Attendance.query.filter_by(scan_grant=grant['id']).exists()).scalar():
+        return GRANT_USED_TITLE, GRANT_USED_MESSAGE, 409
     return None
 
 
@@ -574,6 +579,7 @@ def mark_attendance():
     db.session.add(Attendance(
         student_id=student.id, session_id=class_session.id, timestamp=ist_now(),
         scan_ip=scan_grant_ip(grant) if scan_ip_recording_enabled() else None,
+        scan_grant=grant['id'],
     ))
     try:
         db.session.commit()
@@ -582,6 +588,9 @@ def mark_attendance():
         if Attendance.query.filter_by(student_id=student.id, session_id=class_session.id).first():
             clear_scan_grant()
             return _json_error('Attendance already marked')
+        if Attendance.query.filter_by(scan_grant=grant['id']).first():
+            # The same grant, copied to another browser, was used at the same moment.
+            return _json_error(GRANT_USED_MESSAGE, 409)
         # Another student registered this device at the same moment.
         return _json_error(DEVICE_TAKEN_MESSAGE, 403)
 
