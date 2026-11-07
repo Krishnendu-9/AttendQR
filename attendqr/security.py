@@ -2,6 +2,7 @@
 import os
 import re
 import secrets
+import time
 from datetime import timedelta
 from urllib.parse import urlsplit
 
@@ -217,6 +218,29 @@ def apply_security_headers(response):
         # Pages contain personal data and are often viewed on shared lab machines.
         headers.setdefault('Cache-Control', 'no-store')
     return response
+
+
+# ── Idle sign-out ────────────────────────────────────────────
+
+LAST_SEEN_KEY = '_last_seen'
+
+
+def mark_session_active():
+    session[LAST_SEEN_KEY] = int(time.time())
+
+
+def session_idle_expired():
+    """True when the signed-in session has been idle longer than SESSION_IDLE_MINUTES (0 disables the check).
+
+    Updates the last-activity time otherwise. The session cookie is signed, so
+    the time cannot be changed by the browser.
+    """
+    minutes = current_app.config['SESSION_IDLE_MINUTES']
+    last_seen = session.get(LAST_SEEN_KEY)
+    if minutes and isinstance(last_seen, int) and time.time() - last_seen > minutes * 60:
+        return True
+    mark_session_active()
+    return False
 
 
 # ── Login throttling ─────────────────────────────────────────

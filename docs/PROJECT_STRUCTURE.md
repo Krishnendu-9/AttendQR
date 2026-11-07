@@ -10,7 +10,8 @@ AttendQR/
     extensions.py       db, login_manager, migrate; SQLite foreign-key pragma
     models.py           SQLAlchemy models
     access.py           Roles, scope checks, visible_*_query() helpers, display helpers, activity log
-    security.py         Secret key, CSRF, safe redirects, password policy, temporary passwords, CSP/security headers, login throttling
+    security.py         Secret key, CSRF, safe redirects, password policy, temporary passwords, CSP/security headers,
+                        idle sign-out, login throttling
     schema.py           prepare_database(): migrations, upgrade of pre-migration databases, first Principal
     utils.py            Time, normalisation, natural sorting, date-range parsing
     services/

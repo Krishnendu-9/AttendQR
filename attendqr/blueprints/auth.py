@@ -20,6 +20,7 @@ from ..security import (
     client_ip,
     is_login_locked,
     is_safe_redirect_target,
+    mark_session_active,
     password_policy_error,
     register_login_failure,
 )
@@ -87,6 +88,7 @@ def login():
                     clear_login_failures(username)
                     session.pop('_flashes', None)
                     login_user(admin)
+                    mark_session_active()
                     if admin.role != 'student':
                         # Staff sign-ins are audited; students sign in daily, which would flood the log.
                         log_activity(

@@ -62,6 +62,9 @@ class Config:
     MAX_IMPORT_ROWS = 2000
 
     SESSION_COOKIE_HTTPONLY = True
+    # Sign out a session after this many minutes without a request (0 = never). The
+    # cookie also ends when the browser closes. Staff often use shared lab machines.
+    SESSION_IDLE_MINUTES = env_int('SESSION_IDLE_MINUTES', 60)
     SESSION_COOKIE_SAMESITE = 'Lax'
     # Turn on once the app is served over HTTPS.
     SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', False)

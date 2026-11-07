@@ -27,6 +27,7 @@ from .security import (
     configure_secret_key,
     csp_nonce,
     get_csrf_token,
+    session_idle_expired,
     validate_csrf_request,
     wants_json_response,
 )
@@ -109,6 +110,9 @@ def _check_settings(app):
         )
     if grant < 30:
         problems.append(f"SCAN_GRANT_SECONDS must be at least 30 seconds, time to log in after scanning (got {grant}).")
+    idle = cfg['SESSION_IDLE_MINUTES']
+    if idle and idle < 5:
+        problems.append(f"SESSION_IDLE_MINUTES must be 0 (never sign out) or at least 5 (got {idle}).")
     if cfg['TRUSTED_PROXY_COUNT'] < 0:
         problems.append(f"TRUSTED_PROXY_COUNT cannot be negative (got {cfg['TRUSTED_PROXY_COUNT']}).")
     if problems:
@@ -147,6 +151,16 @@ def _register_request_hooks(app):
 
         if not current_user.is_authenticated:
             return None
+
+        # Static files are not activity, and refreshing the session on them would only add cookies.
+        if request.endpoint != 'static' and session_idle_expired():
+            logout_user()
+            message = 'You were signed out after a period of inactivity. Please log in again.'
+            if wants_json_response():
+                return jsonify({'success': False, 'message': message}), 401
+            flash(message, "warning")
+            next_url = request.full_path.rstrip('?') if request.method == 'GET' else None
+            return redirect(url_for('auth.login', next=next_url))
 
         if not current_user.is_active:
             logout_user()

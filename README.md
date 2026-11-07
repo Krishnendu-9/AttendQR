@@ -143,6 +143,7 @@ To choose the first password yourself, set `DEFAULT_PRINCIPAL_PASSWORD`; it must
 - Passwords need at least 8 characters with letters and numbers, must not contain the user's email name or roll number, and must not be a common password or a common word plus digits (such as `Welcome@2026`)
 - New and reset accounts must change their password before using the app
 - Changing or resetting a password, or deactivating an account, signs out all of that account's existing sessions
+- A login ends when the browser is closed, or after 60 minutes without activity (`SESSION_IDLE_MINUTES`), so a session left open on a shared lab computer does not stay usable
 - After 5 failed logins from one device, that device is paused for 10 minutes for that account. Other devices are unaffected, so classmates cannot lock each other out. An account-wide limit (30 failures per hour) still bounds brute force. Resetting the password clears the lock.
 
 ### Student Accounts

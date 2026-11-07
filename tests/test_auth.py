@@ -283,6 +283,41 @@ def test_styles_come_from_stylesheets_only(app, data, client_for):
     assert offenders == []
 
 
+def _pretend_idle_for(client, minutes):
+    import time as _time
+
+    with client.session_transaction() as sess:
+        sess['_last_seen'] = int(_time.time()) - minutes * 60
+
+
+def test_idle_session_is_signed_out(app, data, client_for):
+    client = client_for(data.teacher)
+    assert client.get('/students').status_code == 200
+    _pretend_idle_for(client, 61)
+    response = client.get('/students')
+    assert response.status_code == 302 and '/login' in response.headers['Location']
+    assert response.headers['Location'].endswith('/login?next=/students')
+    page = client.get(response.headers['Location']).get_data(as_text=True)
+    assert 'signed out after a period of inactivity' in page
+    assert client.get('/students').status_code == 302  # still signed out
+
+
+def test_idle_api_call_gets_json(app, data, client_for):
+    client = client_for(data.teacher)
+    _pretend_idle_for(client, 61)
+    response = client.get(f'/api/semesters/{data.mca_id}')
+    assert response.status_code == 401 and 'inactivity' in response.get_json()['message']
+
+
+def test_activity_keeps_the_session_and_zero_disables_the_limit(app, data, client_for):
+    client = client_for(data.teacher)
+    _pretend_idle_for(client, 59)
+    assert client.get('/students').status_code == 200
+    app.config['SESSION_IDLE_MINUTES'] = 0
+    _pretend_idle_for(client, 600)
+    assert client.get('/students').status_code == 200
+
+
 def test_sign_ins_are_audited(app, data, client_for):
     from attendqr.models import ActivityLog
 
