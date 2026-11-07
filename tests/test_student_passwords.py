@@ -79,3 +79,13 @@ def test_temporary_passwords_use_the_cheaper_hash_and_still_verify():
     hashed = hash_temporary_password('K7RM-2XQD-9HFA')
     assert hashed.startswith(TEMPORARY_PASSWORD_HASH_METHOD + '$')
     assert check_password_hash(hashed, 'K7RM-2XQD-9HFA')
+
+
+def test_oversized_import_is_refused_before_adding_anyone(app, data, client_for):
+    app.config['MAX_IMPORT_ROWS'] = 3
+    rows = ''.join(f"Student {n},MCA9{n:02d},bulk{n}@example.com,Semester 1\n" for n in range(4))
+    response = post(client_for(data.hod), '/students/import', {
+        'student_file': (io.BytesIO(("name,roll_no,email,semester\n" + rows).encode()), 'students.csv'),
+    }, content_type='multipart/form-data', follow_redirects=True)
+    assert 'more than 3 student rows' in response.get_data(as_text=True)
+    assert not Admin.query.filter(Admin.username.like('bulk%')).count()

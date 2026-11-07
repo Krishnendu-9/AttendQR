@@ -1,8 +1,10 @@
 """Student accounts and bulk student import."""
 import csv
 import io
+import itertools
 
 import openpyxl
+from flask import current_app
 
 from ..access import can_access_department, current_department_id, is_super_admin, is_valid_email
 from ..extensions import db
@@ -65,7 +67,16 @@ def import_template_rows():
     return headers, sample
 
 
+def _limited(rows, limit):
+    """At most `limit` rows; a ValueError for the user if there are more (read lazily, so a huge file stops early)."""
+    result = list(itertools.islice(rows, limit + 1))
+    if len(result) > limit:
+        raise ValueError(f"The file has more than {limit} student rows. Split it into smaller files and upload each one.")
+    return result
+
+
 def parse_student_import(file_storage):
+    limit = current_app.config['MAX_IMPORT_ROWS']
     filename = (file_storage.filename or '').lower()
     file_storage.stream.seek(0)
     if filename.endswith('.csv'):
@@ -74,18 +85,22 @@ def parse_student_import(file_storage):
             content = raw_bytes.decode('utf-8-sig')
         except UnicodeDecodeError:
             content = raw_bytes.decode('latin-1', errors='replace')
-        return list(csv.DictReader(io.StringIO(content)))
+        return _limited(csv.DictReader(io.StringIO(content)), limit)
 
     if filename.endswith('.xlsx'):
         workbook = openpyxl.load_workbook(file_storage.stream, read_only=True, data_only=True)
-        rows = list(workbook.active.iter_rows(values_only=True))
-        if not rows:
-            return []
-        headers = [normalize_header(value) for value in rows[0]]
-        return [
-            {headers[index]: value for index, value in enumerate(values) if index < len(headers)}
-            for values in rows[1:]
-        ]
+        try:
+            rows = workbook.active.iter_rows(values_only=True)
+            header_row = next(rows, None)
+            if header_row is None:
+                return []
+            headers = [normalize_header(value) for value in header_row]
+            return _limited((
+                {headers[index]: value for index, value in enumerate(values) if index < len(headers)}
+                for values in rows
+            ), limit)
+        finally:
+            workbook.close()
 
     raise ValueError("Upload a .csv or .xlsx file")
 

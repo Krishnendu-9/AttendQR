@@ -54,6 +54,8 @@ class Config:
     ALLOWED_STAFF_DOMAINS = staff_domains_from_env()
 
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB max upload size
+    # Rows accepted in one bulk student import; larger files are refused before any row is added.
+    MAX_IMPORT_ROWS = 2000
 
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'

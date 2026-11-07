@@ -156,7 +156,7 @@ initial password: a random temporary password such as K7RM-2XQD-9HFA (must be ch
 
 ## Bulk Student Import
 
-Columns: `name, roll_no, email, semester`. Principal uploads also need `department` (the label shown in the downloadable template) or `department_id`. HOD and Teacher uploads are automatically scoped to their department.
+Columns: `name, roll_no, email, semester`. Principal uploads also need `department` (the label shown in the downloadable template) or `department_id`. HOD and Teacher uploads are automatically scoped to their department. A file may hold up to 2,000 students (`MAX_IMPORT_ROWS`); split larger lists.
 
 ## QR Attendance Flow
 
