@@ -1,10 +1,10 @@
 """Small, dependency-free helpers shared across the application."""
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
-import pytz
-
-IST = pytz.timezone('Asia/Kolkata')
+# India Standard Time has been UTC+05:30 all year since 1945 (no daylight saving),
+# so a fixed offset is exact and needs no time zone database.
+IST = timezone(timedelta(hours=5, minutes=30), 'IST')
 
 
 def ist_now():

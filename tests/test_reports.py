@@ -165,6 +165,7 @@ def test_pdf_with_few_sessions_is_one_page():
     assert _pdf_pages(pdf) == 1
 
 
+
 def test_detailed_report_percentage_matches_the_dashboard_with_special_classes(app, data, client_for):
     """Special classes appear in the matrix but, as on the dashboard, do not change the percentage."""
     from attendqr.blueprints.attendance import get_or_create_special_subject
@@ -192,3 +193,13 @@ def test_detailed_report_percentage_matches_the_dashboard_with_special_classes(a
     assert rahul[header.index('%')] == '50.0%'
     notes = [row[0] for row in sheet.iter_rows(values_only=True) if row[0] and 'Special classes' in str(row[0])]
     assert notes
+
+
+def test_ist_now_is_india_time():
+    from datetime import UTC, datetime, timedelta
+
+    from attendqr.utils import ist_now
+
+    expected = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
+    assert abs((ist_now() - expected).total_seconds()) < 5
+    assert ist_now().tzinfo is None  # stored as naive IST, as before
