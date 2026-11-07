@@ -153,8 +153,14 @@ def password_policy_error(password, identifiers=()):
     return None
 
 
+# No 0/O or 1/I/L, so a password read off a printout or a screen is typed correctly.
+TEMPORARY_PASSWORD_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'  # noqa: S105 - characters to pick from, not a password
+
+
 def generate_temporary_password():
-    return f"Tmp-{secrets.token_urlsafe(9)}"
+    """A one-time password such as "K7RM-2XQD-9HFA" (12 random characters, about 59 bits)."""
+    chars = ''.join(secrets.choice(TEMPORARY_PASSWORD_ALPHABET) for _ in range(12))
+    return '-'.join(chars[i:i + 4] for i in range(0, 12, 4))
 
 
 # ── Response headers ─────────────────────────────────────────
