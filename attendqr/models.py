@@ -87,6 +87,9 @@ class Semester(db.Model):
 
 
 class Subject(db.Model):
+    __table_args__ = (
+        db.Index('ix_subject_department_semester', 'department_id', 'semester_id'),
+    )
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     paper_code = db.Column(db.String(50), nullable=True)
@@ -108,6 +111,8 @@ class Student(db.Model):
         db.UniqueConstraint('roll_no', 'department_id', 'semester_id', name='unique_roll_dept_sem'),
         # A registered device belongs to exactly one student (NULLs are allowed many times).
         db.Index('uq_student_device_id', 'device_id', unique=True),
+        # Every report and the session view list the students of one class.
+        db.Index('ix_student_department_semester', 'department_id', 'semester_id'),
     )
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -119,6 +124,11 @@ class Student(db.Model):
 
 
 class ClassSession(db.Model):
+    __table_args__ = (
+        db.Index('ix_class_session_subject_id', 'subject_id'),
+        db.Index('ix_class_session_teacher_id', 'teacher_id'),
+        db.Index('ix_class_session_created_at', 'created_at'),
+    )
     id = db.Column(db.Integer, primary_key=True)
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id', ondelete='CASCADE'), nullable=False)
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id', ondelete='SET NULL'), nullable=True)
@@ -142,6 +152,8 @@ class Attendance(db.Model):
         db.Index('uq_attendance_student_session', 'student_id', 'session_id', unique=True),
         # One QR scan grant produces at most one attendance (NULLs allowed many times).
         db.Index('uq_attendance_scan_grant', 'scan_grant', unique=True),
+        # The unique index above starts with student_id, so lookups by session need their own.
+        db.Index('ix_attendance_session_id', 'session_id'),
     )
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False)
@@ -169,6 +181,10 @@ class Attendance(db.Model):
 
 
 class ActivityLog(db.Model):
+    __table_args__ = (
+        db.Index('ix_activity_log_created_at', 'created_at'),
+        db.Index('ix_activity_log_actor_admin_id', 'actor_admin_id'),
+    )
     id = db.Column(db.Integer, primary_key=True)
     actor_admin_id = db.Column(db.Integer, db.ForeignKey('admin.id', ondelete='SET NULL'), nullable=True)
     actor_username = db.Column(db.String(120), nullable=False)
