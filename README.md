@@ -166,7 +166,7 @@ Columns: `name, roll_no, email, semester`. Principal uploads also need `departme
 4. The system checks the session is still active, the student belongs to that department and semester, and the phone is the student's registered device. The scan window belongs to the phone and browser that scanned, the campus network is checked again when attendance is confirmed, and each scan can mark attendance once, so copying the browser's cookies elsewhere does not help.
 5. Attendance is stored once per student per session. The IP address the scan came from is stored with it for 30 days (see [Scan IP addresses](#scan-ip-addresses)).
 
-Device rules: a student's first successful attendance registers that phone, and each phone can belong to only one student. Teachers, HODs, and the Principal can reset a student's device lock from the Students page (for example after a phone change).
+Device rules: a student's first successful attendance registers that phone, and each phone can belong to only one student. Teachers, HODs, and the Principal can reset a student's device lock from the Students page (for example after a phone change). The device lock is a browser cookie, so a student who has not registered a phone yet could register any browser; scans that register a device are labelled **New device** in the session view, with a count, so several at once (especially from one address) stand out.
 
 Sessions deactivated before anyone marked attendance are treated as void (created by mistake) and do not count as classes held. Deactivating after attendance was taken still counts the class.
 

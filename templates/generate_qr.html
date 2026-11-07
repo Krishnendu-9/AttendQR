@@ -91,6 +91,15 @@
       {{ attendance_records|length }} present for this session ·
       {{ view_session.subject.department.display_name }} - {{ view_session.subject.semester.name }}
     </p>
+    {% set new_devices = attendance_records|selectattr('new_device')|list|length %}
+    {% if new_devices %}
+    <div class="alert alert-warning small mt-2 mb-0">
+      <i class="bi bi-phone me-1"></i>
+      {{ new_devices }} {{ 'scan' if new_devices == 1 else 'scans' }} in this session registered a new device
+      (the student's first scan, or the first since a device reset). Several at once, especially from one
+      address, can mean one phone or computer is marking for others; check those students are in the room.
+    </div>
+    {% endif %}
   </div>
 
   <form method="POST" action="{{ url_for('attendance.mark_present', id=view_session.id) }}" class="px-3 pt-3">
@@ -153,6 +162,9 @@
             </div>
             {% else %}
             <span class="badge text-bg-light border">QR scan</span>
+            {% if attendance.new_device %}
+            <span class="badge text-bg-warning" title="This scan registered the phone as the student's device">New device</span>
+            {% endif %}
             {% if attendance.scan_ip %}
             <div class="small text-muted font-monospace" title="Address the scan came from">{{ attendance.scan_ip }}</div>
             {% endif %}

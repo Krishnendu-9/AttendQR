@@ -86,3 +86,20 @@ def test_attendance_records_the_grant_it_used(app, data):
     assert post_json(phone, '/mark_attendance').get_json()['success'] is True
     entry = Attendance.query.filter_by(session_id=class_session.id).one()
     assert entry.scan_grant and len(entry.scan_grant) == 32
+
+
+def test_scans_that_register_a_device_are_flagged_for_staff(app, data, client_for):
+    class_session = add_session(data)
+    phone = open_scan_without_logging_in(app, class_session)
+    login(phone, data.student)
+    assert post_json(phone, '/mark_attendance').get_json()['success'] is True
+    assert Attendance.query.filter_by(session_id=class_session.id).one().new_device is True
+
+    page = client_for(data.teacher).get(f'/generate_qr?session_id={class_session.id}').get_data(as_text=True)
+    assert 'New device' in page and '1 scan in this session registered a new device' in page
+
+    # The same phone in the next session is the registered device, not a new one.
+    second = add_session(data, subject_id=data.subject2_id)
+    assert phone.get(f'/scan/{make_qr_token(second.id)}').status_code == 302
+    assert post_json(phone, '/mark_attendance').get_json()['success'] is True
+    assert Attendance.query.filter_by(session_id=second.id).one().new_device is False

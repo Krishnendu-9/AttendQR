@@ -573,13 +573,15 @@ def mark_attendance():
         _, message, status = refusal
         return _json_error(message, status)
 
-    if not student.device_id:
+    registers_device = not student.device_id
+    if registers_device:
         student.device_id = device_id
 
     db.session.add(Attendance(
         student_id=student.id, session_id=class_session.id, timestamp=ist_now(),
         scan_ip=scan_grant_ip(grant) if scan_ip_recording_enabled() else None,
         scan_grant=grant['id'],
+        new_device=registers_device,
     ))
     try:
         db.session.commit()

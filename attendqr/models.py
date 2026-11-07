@@ -1,6 +1,7 @@
 import re
 import secrets
 
+import sqlalchemy as sa
 from flask_login import UserMixin
 
 from .extensions import db
@@ -171,6 +172,9 @@ class Attendance(db.Model):
     scan_ip = db.Column(db.String(45), nullable=True)
     # Id of the scan grant this entry was marked with; never set for manual entries.
     scan_grant = db.Column(db.String(32), nullable=True)
+    # True when this scan registered the student's phone (their first scan, or the first after a device
+    # reset). The device lock is a browser cookie, so many of these at once deserve a look.
+    new_device = db.Column(db.Boolean, nullable=False, default=False, server_default=sa.false())
     student = db.relationship('Student', backref=db.backref('attendances', cascade='all, delete-orphan'))
     session = db.relationship('ClassSession', backref=db.backref('attendances', cascade='all, delete-orphan'))
     marked_by = db.relationship('Admin', foreign_keys=[marked_by_admin_id])
