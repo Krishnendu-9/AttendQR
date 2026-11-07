@@ -236,6 +236,41 @@ def test_simultaneous_first_failures_do_not_crash_the_login(app, data, monkeypat
     assert max(row.failures for row in LoginThrottle.query.filter_by(username=data.student)) == 2
 
 
+def _app_with(tmp_path, **settings):
+    from attendqr import create_app
+
+    return create_app({
+        'TESTING': True,
+        'SECRET_KEY': 'x' * 32,
+        'SQLALCHEMY_DATABASE_URI': f"sqlite:///{(tmp_path / 'settings.db').as_posix()}",
+        'AUTO_MIGRATE': False,
+        **settings,
+    })
+
+
+@pytest.mark.parametrize('settings, message', [
+    ({'QR_REFRESH_SECONDS': 30, 'QR_TOKEN_MAX_AGE': 30}, 'must be less than QR_TOKEN_MAX_AGE'),
+    ({'QR_REFRESH_SECONDS': 0}, 'QR_REFRESH_SECONDS must be at least 1'),
+    ({'QR_TOKEN_MAX_AGE': 2, 'QR_REFRESH_SECONDS': 1}, 'QR_TOKEN_MAX_AGE must be at least 5'),
+    ({'SCAN_GRANT_SECONDS': 5}, 'SCAN_GRANT_SECONDS must be at least 30'),
+])
+def test_inconsistent_qr_timings_stop_the_app_starting(tmp_path, settings, message):
+    with pytest.raises(ValueError, match=message):
+        _app_with(tmp_path, **settings)
+
+
+def test_non_numeric_settings_are_reported_not_ignored(monkeypatch):
+    from attendqr.config import env_int
+
+    monkeypatch.setenv('QR_TOKEN_MAX_AGE', '30s')
+    with pytest.raises(ValueError, match="QR_TOKEN_MAX_AGE must be a whole number"):
+        env_int('QR_TOKEN_MAX_AGE', 30)
+    monkeypatch.setenv('QR_TOKEN_MAX_AGE', ' 45 ')
+    assert env_int('QR_TOKEN_MAX_AGE', 30) == 45
+    monkeypatch.setenv('QR_TOKEN_MAX_AGE', '')
+    assert env_int('QR_TOKEN_MAX_AGE', 30) == 30
+
+
 def test_styles_come_from_stylesheets_only(app, data, client_for):
     import pathlib
 

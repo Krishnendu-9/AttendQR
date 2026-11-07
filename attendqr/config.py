@@ -15,10 +15,14 @@ def env_bool(name, default=False):
 
 
 def env_int(name, default):
-    try:
-        return int(os.environ.get(name, default))
-    except (TypeError, ValueError):
+    """An integer setting. A value that is not a whole number stops the app instead of being ignored."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
         return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        raise ValueError(f"{name} must be a whole number (got {raw!r}).") from None
 
 
 def staff_domains_from_env():

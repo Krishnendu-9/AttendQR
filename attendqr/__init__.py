@@ -63,6 +63,7 @@ def create_app(overrides=None):
     os.makedirs(app.instance_path, exist_ok=True)
 
     configure_secret_key(app)
+    _check_settings(app)
     _check_scan_networks(app)
     proxies = app.config['TRUSTED_PROXY_COUNT']
     if proxies:
@@ -89,6 +90,29 @@ def create_app(overrides=None):
             prepare_database()
 
     return app
+
+
+def _check_settings(app):
+    """Refuse to start with timing settings that would break scanning."""
+    cfg = app.config
+    max_age, refresh, grant = cfg['QR_TOKEN_MAX_AGE'], cfg['QR_REFRESH_SECONDS'], cfg['SCAN_GRANT_SECONDS']
+    problems = []
+    if max_age < 5:
+        problems.append(f"QR_TOKEN_MAX_AGE must be at least 5 seconds (got {max_age}).")
+    if refresh < 1:
+        problems.append(f"QR_REFRESH_SECONDS must be at least 1 second (got {refresh}).")
+    elif refresh >= max_age:
+        # Otherwise the code on screen stops working before it is replaced.
+        problems.append(
+            f"QR_REFRESH_SECONDS ({refresh}) must be less than QR_TOKEN_MAX_AGE ({max_age}), "
+            "so the code on screen is replaced before it expires."
+        )
+    if grant < 30:
+        problems.append(f"SCAN_GRANT_SECONDS must be at least 30 seconds, time to log in after scanning (got {grant}).")
+    if cfg['TRUSTED_PROXY_COUNT'] < 0:
+        problems.append(f"TRUSTED_PROXY_COUNT cannot be negative (got {cfg['TRUSTED_PROXY_COUNT']}).")
+    if problems:
+        raise ValueError(' '.join(problems))
 
 
 def _check_scan_networks(app):
