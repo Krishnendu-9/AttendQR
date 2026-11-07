@@ -222,7 +222,7 @@ def visible_activity_logs_query():
 
 def own_security_activity_logs_query():
     return ActivityLog.query.filter(
-        ActivityLog.action.in_(['password_changed', 'account_password_reset', 'account_status_changed']),
+        ActivityLog.action.in_(OWN_SECURITY_ACTIONS),
         or_(
             ActivityLog.actor_admin_id == current_user.id,
             and_(ActivityLog.target_type == 'admin', ActivityLog.target_id == current_user.id),
@@ -343,11 +343,18 @@ def build_account_profile(admin):
     return profile
 
 
-def log_activity(action, description, target_type=None, target_id=None, department_id=None):
+# Actions shown to users in their own "Recent Security Activity".
+OWN_SECURITY_ACTIONS = (
+    'password_changed', 'account_password_reset', 'account_status_changed', 'login_failed', 'login_locked',
+)
+SIGN_IN_ATTEMPT_ACTOR = 'Sign-in attempt'
+
+
+def log_activity(action, description, target_type=None, target_id=None, department_id=None, anonymous_actor='System'):
     authenticated = current_user.is_authenticated
     db.session.add(ActivityLog(
         actor_admin_id=current_user.id if authenticated else None,
-        actor_username=current_user.username if authenticated else 'System',
+        actor_username=current_user.username if authenticated else anonymous_actor,
         department_id=department_id,
         action=action,
         target_type=target_type,

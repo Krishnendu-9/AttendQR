@@ -209,13 +209,14 @@ def register_login_failure(username, ip):
     Two failed logins for the same account and address at the same moment can
     both find no throttle row and both insert one; the second insert then
     violates the unique key. Retry once: by then the row exists and is updated.
+    Returns True when this failure started a lockout.
     """
     for attempt in range(2):
         try:
             # The conflict can surface on an autoflush inside, not only on commit.
-            record_login_failure(username, ip)
+            locked = record_login_failure(username, ip)
             db.session.commit()
-            return
+            return locked
         except IntegrityError:
             db.session.rollback()
             if attempt:
@@ -223,7 +224,9 @@ def register_login_failure(username, ip):
 
 
 def record_login_failure(username, ip):
+    """Count a failed login against each throttle rule. Returns True if one of them now locks."""
     now = ist_now()
+    locked = False
     for key, limit, window, lock in _throttle_rules(username, ip):
         row = _throttle_row(key)
         if row is None:
@@ -237,12 +240,14 @@ def record_login_failure(username, ip):
             row.locked_until = now + lock
             row.failures = 0
             row.window_started_at = now
+            locked = True
 
     stale_before = now - timedelta(days=1)
     LoginThrottle.query.filter(
         LoginThrottle.window_started_at < stale_before,
         db.or_(LoginThrottle.locked_until.is_(None), LoginThrottle.locked_until < now),
     ).delete(synchronize_session=False)
+    return locked
 
 
 def clear_login_failures(username):

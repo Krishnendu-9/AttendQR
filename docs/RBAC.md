@@ -65,6 +65,7 @@ Newly created or reset accounts must change their password before they can use t
 
 - Subject access for teachers is now based on subject assignment, not department-wide access.
 - The Accounts page keeps an activity log for sensitive account actions.
+- Staff sign-ins, failed sign-in attempts on real accounts, and the pauses they trigger are recorded in the activity log. Each user sees failed attempts and pauses on their own account under Recent Security Activity.
 - Student password reset returns the password to the roll number.
 - Repeated failed logins pause that account on that device for 10 minutes; other devices are unaffected. Resetting the password clears it.
 - Changing or resetting a password, or deactivating an account, signs out all of its existing sessions.

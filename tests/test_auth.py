@@ -248,6 +248,37 @@ def test_styles_come_from_stylesheets_only(app, data, client_for):
     assert offenders == []
 
 
+def test_sign_ins_are_audited(app, data, client_for):
+    from attendqr.models import ActivityLog
+
+    login(app.test_client(), data.teacher, 'wrong-password', expect_success=False)
+    login(app.test_client(), 'nobody@example.com', 'wrong-password', expect_success=False)
+    client_for(data.teacher)
+    client_for(data.student)
+
+    actions = [(log.action, log.target_id) for log in ActivityLog.query.order_by(ActivityLog.id)]
+    teacher_id = Admin.query.filter_by(username=data.teacher).one().id
+    assert ('login_failed', teacher_id) in actions
+    assert ('login_succeeded', teacher_id) in actions
+    # Unknown usernames and student sign-ins are not recorded.
+    assert len([a for a in actions if a[0].startswith('login_')]) == 2
+
+
+def test_lockout_is_audited_and_shown_to_the_account_owner(app, data, client_for):
+    from attendqr.models import ActivityLog, LoginThrottle
+
+    for _ in range(app.config['LOGIN_IP_FAILURE_LIMIT']):
+        login(app.test_client(), data.teacher, 'wrong-password', expect_success=False)
+    assert ActivityLog.query.filter_by(action='login_locked').count() == 1
+
+    # The pause is per device and every test client shares one address, so lift it to sign in.
+    LoginThrottle.query.delete()
+    db.session.commit()
+    page = client_for(data.teacher).get('/account').get_data(as_text=True)
+    assert 'paused after repeated failed attempts' in page
+    assert 'Failed sign-in attempt' in page
+
+
 def test_throttling_treats_ipv4_mapped_addresses_as_the_same_device(app, data):
     from attendqr.models import LoginThrottle
 

@@ -5,6 +5,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ..access import (
+    SIGN_IN_ATTEMPT_ACTOR,
     build_account_profile,
     current_department_id,
     log_activity,
@@ -34,6 +35,24 @@ LOCKED_LOGIN_MESSAGE = "Too many failed attempts from this device. Please wait a
 @lru_cache(maxsize=1)
 def _dummy_password_hash():
     return generate_password_hash('attendqr-timing-equaliser')
+
+
+def _log_failed_login(admin, locked):
+    """Audit failed sign-ins to real accounts (unknown usernames are not logged, so they cannot flood it).
+
+    The throttle bounds how many can be recorded: once an account is paused,
+    further attempts are refused before the password is checked.
+    """
+    log_activity(
+        'login_failed', f"Failed sign-in attempt for '{admin.username}' (wrong password).",
+        'admin', admin.id, admin.department_id, anonymous_actor=SIGN_IN_ATTEMPT_ACTOR,
+    )
+    if locked:
+        log_activity(
+            'login_locked', f"Sign-in for '{admin.username}' paused after repeated failed attempts.",
+            'admin', admin.id, admin.department_id, anonymous_actor=SIGN_IN_ATTEMPT_ACTOR,
+        )
+    db.session.commit()
 
 
 def safe_next_url():
@@ -66,12 +85,20 @@ def login():
                     error = "This account is inactive. Please contact the Principal or HOD."
                 else:
                     clear_login_failures(username)
-                    db.session.commit()
                     session.pop('_flashes', None)
                     login_user(admin)
+                    if admin.role != 'student':
+                        # Staff sign-ins are audited; students sign in daily, which would flood the log.
+                        log_activity(
+                            'login_succeeded', f"{role_label(admin.role)} account '{admin.username}' signed in.",
+                            'admin', admin.id, admin.department_id,
+                        )
+                    db.session.commit()
                     return redirect(next_url or url_for('main.dashboard'))
             else:
-                register_login_failure(username, ip)
+                locked = register_login_failure(username, ip)
+                if admin:
+                    _log_failed_login(admin, locked)
                 error = INVALID_LOGIN_MESSAGE
 
     return render_template('login.html', error=error, next_url=next_url)
