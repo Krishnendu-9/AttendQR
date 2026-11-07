@@ -122,6 +122,25 @@ flask db migrate -m "describe change" # generate a migration after editing model
 flask db upgrade                      # apply migrations
 ```
 
+### Backups
+
+The database holds every attendance record, so back it up regularly, for example daily from Task Scheduler or cron. Do not copy `attendance.db` with the file manager while the server runs: the copy can be inconsistent, and recent changes may still be in `attendance.db-wal`. Use:
+
+```powershell
+flask --app wsgi backup-db                 # writes instance/backups/attendance-<date>-<time>.db
+flask --app wsgi backup-db --keep 14       # the same, then keeps only the 14 newest in that folder
+flask --app wsgi backup-db -o D:ackupsttendqr.db
+```
+
+With Docker, run it in the container and copy the folder out (the volume itself is lost with `docker compose down --volumes`):
+
+```powershell
+docker compose exec attendqr flask --app wsgi backup-db --keep 14
+docker compose cp attendqr:/app/instance/backups ./attendqr-backups
+```
+
+To restore, stop the server and replace `instance/attendance.db` with the backup (delete any `attendance.db-wal` and `attendance.db-shm` beside it). Keep backups somewhere other than the server's disk. They contain personal data and scan IP addresses, so give them the same retention as the live data (see [Scan IP addresses](#scan-ip-addresses)). Other databases (`DATABASE_URL`) need their own tool, such as `pg_dump`.
+
 ## Initial Login
 
 When the database has no accounts, the first Principal account is created as `DEFAULT_PRINCIPAL_EMAIL` (default `principal@example.com`) with a random one-time password. The password is written to `instance/initial_principal_password`, readable only by the account running the server. The server log shows that path, never the password itself:

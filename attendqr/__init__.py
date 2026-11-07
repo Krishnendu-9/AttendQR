@@ -296,6 +296,22 @@ def _register_cli(app):
         prepare_database()
         click.echo("Database is up to date.")
 
+    @app.cli.command('backup-db')
+    @click.option('--output', '-o', type=click.Path(dir_okay=False), default=None,
+                  help='File to write. Default: instance/backups/attendance-<date>-<time>.db')
+    @click.option('--keep', type=click.IntRange(min=0), default=0,
+                  help='After backing up, keep only this many backups in the default folder (0 keeps all).')
+    def backup_db_command(output, keep):
+        """Copy the SQLite database safely while the app is running."""
+        from .services.backup import BackupError, backup_database, prune_backups
+        try:
+            path = backup_database(output)
+        except BackupError as exc:
+            raise click.ClickException(str(exc)) from None
+        click.echo(f"Backed up the database to {path}")
+        for removed in prune_backups(keep):
+            click.echo(f"Removed old backup {removed}")
+
     @app.cli.command('purge-scan-ips')
     def purge_scan_ips_command():
         """Clear scan IP addresses older than SCAN_IP_RETENTION_DAYS (the app also does this hourly)."""

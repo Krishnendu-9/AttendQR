@@ -20,6 +20,7 @@ AttendQR/
       reports.py        Attendance summaries, report filters, Excel/PDF export
       roster.py         Student login accounts and bulk import
       retention.py      Clearing scan IP addresses after SCAN_IP_RETENTION_DAYS
+      backup.py         Consistent SQLite backups (`flask backup-db`)
     blueprints/
       auth.py           /login, /logout, /account
       main.py           Dashboards; /healthz for container health checks
@@ -48,9 +49,10 @@ AttendQR/
 `instance/` holds runtime data and is ignored by git:
 
 - `attendance.db`: the SQLite database (default `DATABASE_URL`)
-- `attendance.db-wal`, `attendance.db-shm`: SQLite's write-ahead log, present while the app runs.
+- `attendance.db-wal`, `attendance.db-shm`: SQLite's write-ahead log, present while the app runs. Back up with `flask backup-db`, not by copying files.
 - `secret_key`: generated on first start when `SECRET_KEY` is not set. Keep it private; deleting it signs everyone out.
 - `initial_principal_password`: the first Principal's one-time password; deleted once it has been replaced.
+- `backups/`: written by `flask backup-db`.
 
 QR images are generated in memory and are never written to disk.
 
