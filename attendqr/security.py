@@ -43,8 +43,7 @@ def configure_secret_key(app):
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
-        with open(path, encoding='utf-8') as handle:
-            key = handle.read().strip()
+        key = _read_secret_key(path)
     else:
         key = secrets.token_hex(32)
         with os.fdopen(fd, 'w', encoding='utf-8') as handle:
@@ -52,6 +51,21 @@ def configure_secret_key(app):
     if not key:
         raise RuntimeError(f"{path} is empty. Delete it to generate a new secret key.")
     app.config['SECRET_KEY'] = key
+
+
+def _read_secret_key(path, wait_seconds=2.0):
+    """Read the key file, waiting briefly if it is still empty.
+
+    When several worker processes start at once, one creates the file and the
+    others may open it in the moment before the key is written.
+    """
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        with open(path, encoding='utf-8') as handle:
+            key = handle.read().strip()
+        if key or time.monotonic() >= deadline:
+            return key
+        time.sleep(0.05)
 
 
 # ── CSRF ─────────────────────────────────────────────────────

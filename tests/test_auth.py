@@ -281,6 +281,22 @@ def test_non_numeric_settings_are_reported_not_ignored(monkeypatch):
     assert env_int('QR_TOKEN_MAX_AGE', 30) == 30
 
 
+def test_secret_key_written_by_another_worker_a_moment_later_is_used(tmp_path):
+    """A worker may open the key file just after another created it but before it wrote the key."""
+    import threading
+
+    path = tmp_path / 'secret_key'
+    path.write_text('')  # created by the other worker, not yet written
+    timer = threading.Timer(0.2, lambda: path.write_text('k' * 64))
+    timer.start()
+    try:
+        app = _bare_app(tmp_path, SECRET_KEY=None)
+        configure_secret_key(app)
+    finally:
+        timer.join()
+    assert app.config['SECRET_KEY'] == 'k' * 64
+
+
 def test_styles_come_from_stylesheets_only(app, data, client_for):
     import pathlib
 
