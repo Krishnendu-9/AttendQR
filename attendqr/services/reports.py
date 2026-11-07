@@ -186,8 +186,16 @@ def report_sessions_query(filters, countable_only=False):
     return query
 
 
+def is_special_session(class_session):
+    return bool(class_session.subject and class_session.subject.name == SPECIAL_CLASS_SUBJECT_NAME)
+
+
 def build_attendance_matrix(filters):
-    """Students of the class with present/absent per countable session."""
+    """Students of the class with present/absent per countable session.
+
+    Special classes are shown but, as on the student dashboard and the shortage
+    list, not counted in each student's total and percentage.
+    """
     session_query = report_sessions_query(filters, countable_only=True)
     sessions = (
         session_query.options(joinedload(ClassSession.subject))
@@ -207,15 +215,17 @@ def build_attendance_matrix(filters):
         ).filter(Attendance.session_id.in_(session_ids_select(session_query)))
     } if sessions else {}
 
+    counted_ids = [s.id for s in sessions if not is_special_session(s)]
     rows = []
     for student in students:
         marks = {s.id: attended.get((student.id, s.id)) for s in sessions}
-        present = sum(1 for mark in marks.values() if mark)
+        present = sum(1 for session_id in counted_ids if marks[session_id])
         rows.append({
             'student': student,
             'attendance': marks,
             'total': present,
-            'percentage': round(present / len(sessions) * 100, 2) if sessions else 0,
+            'counted': len(counted_ids),
+            'percentage': round(present / len(counted_ids) * 100, 2) if counted_ids else 0,
         })
     return sessions, rows
 
@@ -251,6 +261,7 @@ def export_filename(department, semester, sessions, filters):
 
 
 MANUAL_MARK_LEGEND = "P = present (QR scan), P* = present (entered manually by staff), A = absent"
+SPECIAL_CLASS_LEGEND = "Special classes are listed but not counted in Total and %."
 
 
 def attendance_mark(source):
@@ -267,7 +278,7 @@ def build_export_rows(sessions, rows):
         line = [student.roll_no, student.name, student.email]
         line += [attendance_mark(row['attendance'][s.id]) for s in sessions]
         line.append(row['total'])
-        line.append(f"{round(row['total'] / len(sessions) * 100, 1)}%" if sessions else "0%")
+        line.append(f"{round(row['total'] / row['counted'] * 100, 1)}%" if row['counted'] else "0%")
         data.append(line)
     return headers, data
 

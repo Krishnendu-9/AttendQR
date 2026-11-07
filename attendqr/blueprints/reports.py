@@ -13,12 +13,14 @@ from ..extensions import db
 from ..models import ClassSession, Department, Semester, Student, Subject
 from ..services.reports import (
     MANUAL_MARK_LEGEND,
+    SPECIAL_CLASS_LEGEND,
     attendance_counts,
     build_attendance_matrix,
     build_export_rows,
     build_shortage_export_rows,
     build_shortage_report,
     export_filename,
+    is_special_session,
     parse_report_filters,
     parse_threshold,
     render_excel,
@@ -150,6 +152,8 @@ def export(department_id, semester_id, fmt):
     headers, data = build_export_rows(sessions, rows)
     filename = export_filename(department, semester, sessions, filters)
     notes = [MANUAL_MARK_LEGEND]
+    if any(is_special_session(s) for s in sessions):
+        notes.append(SPECIAL_CLASS_LEGEND)
 
     if fmt == 'excel':
         return send_file(render_excel(headers, data, notes), download_name=f'{filename}.xlsx', as_attachment=True)

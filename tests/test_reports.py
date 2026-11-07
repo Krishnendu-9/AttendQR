@@ -137,3 +137,32 @@ def test_classes_needed_matches_brute_force():
                 assert classes_needed_for_target(attended, total, target) == brute(attended, total, target), \
                     (attended, total, target)
     assert classes_needed_for_target(4, 6, 80) == 4  # float maths used to say 5
+
+
+def test_detailed_report_percentage_matches_the_dashboard_with_special_classes(app, data, client_for):
+    """Special classes appear in the matrix but, as on the dashboard, do not change the percentage."""
+    from attendqr.blueprints.attendance import get_or_create_special_subject
+
+    special = get_or_create_special_subject(data.mca_id, data.sem1_id)
+    db.session.commit()
+    add_session(data, present=[data.student_id])               # regular, present
+    add_session(data)                                          # regular, absent
+    add_session(data, subject_id=special.id, special_title='Aptitude Workshop')  # special, absent
+
+    summary = build_student_attendance_summary(db.session.get(Student, data.student_id))
+    assert summary['overall_percentage'] == 50.0
+
+    client = client_for(data.principal)
+    page = client.get('/reports/detailed', query_string={
+        'department_id': data.mca_id, 'semester_id': data.sem1_id,
+    }).get_data(as_text=True)
+    assert 'Aptitude Workshop' in page and 'Special · not counted' in page
+    assert '1/2' in page and '50.0%' in page
+
+    export = client.get(f'/export/{data.mca_id}/{data.sem1_id}/excel')
+    sheet = openpyxl.load_workbook(io.BytesIO(export.data)).active
+    header = [cell.value for cell in sheet[1]]
+    rahul = next(row for row in sheet.iter_rows(min_row=2, values_only=True) if row[0] == 'MCA001')
+    assert rahul[header.index('%')] == '50.0%'
+    notes = [row[0] for row in sheet.iter_rows(values_only=True) if row[0] and 'Special classes' in str(row[0])]
+    assert notes
