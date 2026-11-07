@@ -236,6 +236,16 @@ def test_simultaneous_first_failures_do_not_crash_the_login(app, data, monkeypat
     assert max(row.failures for row in LoginThrottle.query.filter_by(username=data.student)) == 2
 
 
+def test_browser_password_check_uses_the_configured_minimum(app, data, client_for):
+    import json
+    import re
+
+    app.config['MIN_PASSWORD_LENGTH'] = 12
+    page = client_for(data.student).get('/account').get_data(as_text=True)
+    config = json.loads(re.search(r'<script id="app-config" type="application/json">(.*?)</script>', page).group(1))
+    assert config['minPasswordLength'] == 12
+
+
 def _app_with(tmp_path, **settings):
     from attendqr import create_app
 

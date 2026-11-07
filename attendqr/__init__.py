@@ -5,7 +5,7 @@ import re
 import secrets
 
 import click
-from flask import Flask, flash, jsonify, redirect, request, url_for
+from flask import Flask, current_app, flash, jsonify, redirect, request, url_for
 from flask_login import current_user, logout_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -206,7 +206,7 @@ def build_js_config():
     p = URL_ID_PLACEHOLDER
     return {
         'idPlaceholder': str(p),
-        'minPasswordLength': Config.MIN_PASSWORD_LENGTH,
+        'minPasswordLength': current_app.config['MIN_PASSWORD_LENGTH'],
         'urls': {
             'semesters': url_for('api.semesters', department_id=p),
             'subjects': url_for('api.subjects', semester_id=p),
