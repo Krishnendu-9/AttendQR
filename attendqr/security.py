@@ -9,6 +9,7 @@ from flask import abort, current_app, g, jsonify, request, session
 
 from .extensions import db
 from .models import LoginThrottle
+from .services.network import client_ip as network_client_ip
 from .utils import ist_now
 
 # Values that have been published in this repository or are common placeholders.
@@ -168,7 +169,8 @@ def apply_security_headers(response):
 # ── Login throttling ─────────────────────────────────────────
 
 def client_ip():
-    return request.remote_addr or 'unknown'
+    """The client address for throttling: normalized like scan addresses, or 'unknown'."""
+    return network_client_ip() or 'unknown'
 
 
 def _throttle_rules(username, ip):

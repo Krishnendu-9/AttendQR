@@ -225,3 +225,12 @@ def test_styles_come_from_stylesheets_only(app, data, client_for):
     templates = pathlib.Path(app.template_folder)
     offenders = [p.name for p in templates.glob('*.html') if 'style="' in p.read_text(encoding='utf-8') or '<style' in p.read_text(encoding='utf-8')]
     assert offenders == []
+
+
+def test_throttling_treats_ipv4_mapped_addresses_as_the_same_device(app, data):
+    from attendqr.models import LoginThrottle
+
+    login(app.test_client(), data.teacher, 'wrong-password', expect_success=False,
+          environ_base={'REMOTE_ADDR': '::ffff:192.0.2.9'})
+    keys = {row.key for row in LoginThrottle.query.filter_by(username=data.teacher)}
+    assert f'ip:192.0.2.9|{data.teacher}' in keys
