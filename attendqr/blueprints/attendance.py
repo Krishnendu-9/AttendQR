@@ -416,6 +416,10 @@ NETWORK_REQUIRED_TITLE = 'Campus Network Required'
 NETWORK_REQUIRED_MESSAGE = (
     'Attendance can only be marked from the campus network. Connect to the campus Wi-Fi and scan the code again.'
 )
+OTHER_BROWSER_TITLE = 'Scan Again on This Phone'
+OTHER_BROWSER_MESSAGE = (
+    'This scan was opened in a different browser. Scan the QR code again with the phone you are marking attendance on.'
+)
 
 
 def _network_refusal(stage):
@@ -425,6 +429,20 @@ def _network_refusal(stage):
         return None
     current_app.logger.warning("Refused QR %s: %s", stage, network_error)
     return NETWORK_REQUIRED_TITLE, NETWORK_REQUIRED_MESSAGE, 403
+
+
+def _grant_refusal(grant):
+    """Why this scan grant cannot be used from this request, as (title, message, status), or None.
+
+    The grant lives in a cookie, so it could have been copied to another browser
+    off campus; check the network again and the phone it was issued to.
+    """
+    refusal = _network_refusal('attendance confirmation')
+    if refusal:
+        return refusal
+    if read_device_cookie() != grant['device']:
+        return OTHER_BROWSER_TITLE, OTHER_BROWSER_MESSAGE, 403
+    return None
 
 
 @bp.route('/scan/<token>')
@@ -449,18 +467,23 @@ def scan(token):
         title, message = _ended_status(class_session)
         return _status_page(title, message, 410, _session_info(class_session))
 
-    grant_scan(class_session.id, client_ip() if scan_ip_recording_enabled() else None)
-    return ensure_device_cookie(redirect(url_for('attendance.attend')))
+    existing_device = read_device_cookie()
+    device_id = existing_device or new_device_id()
+    grant_scan(class_session.id, device_id, client_ip() if scan_ip_recording_enabled() else None)
+    response = redirect(url_for('attendance.attend'))
+    if device_id != existing_device:
+        set_device_cookie(response, device_id)
+    return response
 
 
 @bp.route('/attend')
 @login_required
 def attend():
-    class_session_id = current_scan_grant()
-    if not class_session_id:
+    grant = current_scan_grant()
+    if not grant:
         return _status_page('Scan Required', 'Scan the QR code shown in class to mark your attendance.')
 
-    class_session = db.session.get(ClassSession, class_session_id)
+    class_session = db.session.get(ClassSession, grant['session_id'])
     if not class_session or not class_session.subject:
         clear_scan_grant()
         return _status_page('Invalid QR', 'This QR session no longer exists.', 404)
@@ -489,8 +512,7 @@ def attend():
         return _status_page('Attendance Already Marked', 'Your attendance has already been marked for this QR session.',
                             session_info=info, student=student)
 
-    # The scan grant lives in a cookie that could have been copied off campus.
-    refusal = _network_refusal('attendance confirmation')
+    refusal = _grant_refusal(grant)
     if refusal:
         title, message, status = refusal
         return _status_page(title, message, status, info, student=student)
@@ -517,11 +539,11 @@ def mark_attendance():
     if user_role() != 'student' or not current_user.student:
         return _json_error('Attendance marking is only available for student accounts.', 403)
 
-    class_session_id = current_scan_grant()
-    if not class_session_id:
+    grant = current_scan_grant()
+    if not grant:
         return _json_error('Your scan has expired. Scan the QR code shown in class again.', 410)
 
-    class_session = db.session.get(ClassSession, class_session_id)
+    class_session = db.session.get(ClassSession, grant['session_id'])
     if not class_session or not class_session.subject or not class_session.is_live():
         clear_scan_grant()
         return _json_error('This QR session has ended.', 410)
@@ -536,25 +558,22 @@ def mark_attendance():
     if device_error:
         return _json_error(device_error, 403)
 
-    refusal = _network_refusal('attendance confirmation')
+    if Attendance.query.filter_by(student_id=student.id, session_id=class_session.id).first():
+        clear_scan_grant()
+        return _json_error('Attendance already marked')
+
+    # Also guarantees the device cookie is present: it must match the grant's.
+    refusal = _grant_refusal(grant)
     if refusal:
         _, message, status = refusal
         return _json_error(message, status)
 
-    new_cookie = None
     if not student.device_id:
-        if not device_id:
-            device_id = new_cookie = new_device_id()
         student.device_id = device_id
-
-    if Attendance.query.filter_by(student_id=student.id, session_id=class_session.id).first():
-        db.session.rollback()
-        clear_scan_grant()
-        return _json_error('Attendance already marked')
 
     db.session.add(Attendance(
         student_id=student.id, session_id=class_session.id, timestamp=ist_now(),
-        scan_ip=scan_grant_ip() if scan_ip_recording_enabled() else None,
+        scan_ip=scan_grant_ip(grant) if scan_ip_recording_enabled() else None,
     ))
     try:
         db.session.commit()
@@ -567,7 +586,4 @@ def mark_attendance():
         return _json_error(DEVICE_TAKEN_MESSAGE, 403)
 
     clear_scan_grant()
-    response = jsonify({'success': True, 'message': f'Attendance marked for {student.name}'})
-    if new_cookie:
-        set_device_cookie(response, new_cookie)
-    return response
+    return jsonify({'success': True, 'message': f'Attendance marked for {student.name}'})

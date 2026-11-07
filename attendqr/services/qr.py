@@ -4,6 +4,10 @@ Flow: the teacher's screen shows a QR whose signed token is valid for
 QR_TOKEN_MAX_AGE seconds. Opening it stores a short-lived "scan grant" in the
 student's own (signed) session, which survives logging in and changing an
 initial password. Attendance is then marked against that grant.
+
+The session is a cookie the browser holds, so a grant can be copied to another
+browser. To keep a grant on the phone that scanned, it carries that phone's
+device cookie; the campus network is checked again when attendance is confirmed.
 """
 import base64
 import io
@@ -88,9 +92,11 @@ def qr_data_uri(text):
 
 # ── Scan grants ──────────────────────────────────────────────
 
-def grant_scan(class_session_id, scan_ip=None):
+def grant_scan(class_session_id, device_id, scan_ip=None):
+    """Store a scan grant for the phone whose device cookie is `device_id`."""
     grant = {
         'session_id': class_session_id,
+        'device': device_id,
         'expires': int(time.time()) + current_app.config['SCAN_GRANT_SECONDS'],
     }
     if scan_ip:
@@ -98,24 +104,28 @@ def grant_scan(class_session_id, scan_ip=None):
     session[SCAN_GRANT_KEY] = grant
 
 
-def scan_grant_ip():
-    """The address the current scan grant was issued to, if it was recorded."""
-    grant = session.get(SCAN_GRANT_KEY)
+def scan_grant_ip(grant):
+    """The address the scan grant was issued to, if it was recorded."""
     ip = grant.get('ip') if isinstance(grant, dict) else None
     return ip if isinstance(ip, str) and len(ip) <= 45 else None
 
 
 def current_scan_grant():
-    """The class session id from an unexpired scan grant, or None."""
+    """The unexpired scan grant, a dict with session_id and device (and ip if recorded), or None."""
     grant = session.get(SCAN_GRANT_KEY)
     if not isinstance(grant, dict):
         return None
-    class_session_id = grant.get('session_id')
+    device = grant.get('device')
     expires = grant.get('expires')
-    if not isinstance(class_session_id, int) or not isinstance(expires, int) or expires < time.time():
+    valid = (
+        isinstance(grant.get('session_id'), int)
+        and isinstance(device, str) and _DEVICE_ID_PATTERN.fullmatch(device)
+        and isinstance(expires, int) and expires >= time.time()
+    )
+    if not valid:
         session.pop(SCAN_GRANT_KEY, None)
         return None
-    return class_session_id
+    return grant
 
 
 def clear_scan_grant():
