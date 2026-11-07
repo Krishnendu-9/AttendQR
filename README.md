@@ -129,7 +129,7 @@ The database holds every attendance record, so back it up regularly, for example
 ```powershell
 flask --app wsgi backup-db                 # writes instance/backups/attendance-<date>-<time>.db
 flask --app wsgi backup-db --keep 14       # the same, then keeps only the 14 newest in that folder
-flask --app wsgi backup-db -o D:ackupsttendqr.db
+flask --app wsgi backup-db -o D:\backups\attendqr.db
 ```
 
 With Docker, run it in the container and copy the folder out (the volume itself is lost with `docker compose down --volumes`):
