@@ -70,6 +70,24 @@ def test_scan_survives_login_and_first_password_change(app, data, client_for):
     assert post_json(phone, '/mark_attendance').get_json()['success'] is True
 
 
+def test_logged_in_student_who_must_change_password_keeps_the_scan(app, data, client_for):
+    class_session = create_session(client_for(data.teacher), data)
+    account = Admin.query.filter_by(username=data.student).one()
+    account.must_change_password = True
+    db.session.commit()
+
+    phone = app.test_client()
+    login(phone, data.student)
+    scan = phone.get(f'/scan/{make_qr_token(class_session.id)}')
+    assert scan.headers['Location'].endswith('/attend')
+    assert phone.get('/attend').headers['Location'].endswith('/account?next=/attend')
+
+    post(phone, '/account', {
+        'current_password': PASSWORD, 'new_password': 'MyOwnPass1', 'confirm_password': 'MyOwnPass1', 'next': '/attend',
+    })
+    assert post_json(phone, '/mark_attendance').get_json()['success'] is True
+
+
 def test_one_phone_cannot_mark_for_several_students(app, data, client_for):
     class_session = create_session(client_for(data.teacher), data)
     phone = app.test_client()

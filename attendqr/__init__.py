@@ -36,8 +36,11 @@ from .utils import format_12h, ist_now
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Endpoints a user who must change their password may still reach.
-PASSWORD_CHANGE_ALLOWED = {'auth.account', 'auth.logout', 'static'}
+# Endpoints a user who must change their password may still reach. The scan link
+# only stores a scan grant and redirects to /attend (which is blocked), so a QR
+# opened before the password change is not lost: its 30-second token would
+# otherwise expire while the student picks a new password.
+PASSWORD_CHANGE_ALLOWED = {'auth.account', 'auth.logout', 'static', 'attendance.scan'}
 
 # Stand-in id used to render API URL templates for JavaScript.
 URL_ID_PLACEHOLDER = 987654321
