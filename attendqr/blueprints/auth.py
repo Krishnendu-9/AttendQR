@@ -20,7 +20,7 @@ from ..security import (
     is_login_locked,
     is_safe_redirect_target,
     password_policy_error,
-    record_login_failure,
+    register_login_failure,
 )
 from ..services.qr import clear_scan_grant
 from ..utils import normalize_email
@@ -71,8 +71,7 @@ def login():
                     login_user(admin)
                     return redirect(next_url or url_for('main.dashboard'))
             else:
-                record_login_failure(username, ip)
-                db.session.commit()
+                register_login_failure(username, ip)
                 error = INVALID_LOGIN_MESSAGE
 
     return render_template('login.html', error=error, next_url=next_url)

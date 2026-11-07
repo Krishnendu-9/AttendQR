@@ -215,6 +215,27 @@ def test_health_check_needs_no_login_and_checks_the_database(app):
     assert response.status_code == 200 and response.get_json() == {'status': 'ok'}
 
 
+def test_simultaneous_first_failures_do_not_crash_the_login(app, data, monkeypatch):
+    """Two failed logins at once can both try to insert the same throttle row; the loser retries."""
+    from attendqr import security
+    from attendqr.models import LoginThrottle
+
+    login(app.test_client(), data.student, 'wrong-password', expect_success=False)  # rows now exist
+    real_lookup = security._throttle_row
+    calls = {'n': 0}
+
+    def stale_lookup(key):
+        # The first lookups behave as if the other request had not committed yet.
+        calls['n'] += 1
+        return None if calls['n'] <= 2 else real_lookup(key)
+
+    monkeypatch.setattr(security, '_throttle_row', stale_lookup)
+    response = login(app.test_client(), data.student, 'wrong-password', expect_success=False)
+    assert response.status_code == 200 and 'Invalid email or password.' in response.get_data(as_text=True)
+    assert LoginThrottle.query.filter_by(username=data.student).count() == 2
+    assert max(row.failures for row in LoginThrottle.query.filter_by(username=data.student)) == 2
+
+
 def test_styles_come_from_stylesheets_only(app, data, client_for):
     import pathlib
 

@@ -6,6 +6,7 @@ from datetime import timedelta
 from urllib.parse import urlsplit
 
 from flask import abort, current_app, g, jsonify, request, session
+from sqlalchemy.exc import IntegrityError
 
 from .extensions import db
 from .models import LoginThrottle
@@ -198,10 +199,33 @@ def is_login_locked(username, ip):
     ).scalar()
 
 
+def _throttle_row(key):
+    return LoginThrottle.query.filter_by(key=key).first()
+
+
+def register_login_failure(username, ip):
+    """Record a failed login and commit it.
+
+    Two failed logins for the same account and address at the same moment can
+    both find no throttle row and both insert one; the second insert then
+    violates the unique key. Retry once: by then the row exists and is updated.
+    """
+    for attempt in range(2):
+        try:
+            # The conflict can surface on an autoflush inside, not only on commit.
+            record_login_failure(username, ip)
+            db.session.commit()
+            return
+        except IntegrityError:
+            db.session.rollback()
+            if attempt:
+                raise
+
+
 def record_login_failure(username, ip):
     now = ist_now()
     for key, limit, window, lock in _throttle_rules(username, ip):
-        row = LoginThrottle.query.filter_by(key=key).first()
+        row = _throttle_row(key)
         if row is None:
             row = LoginThrottle(key=key, username=username, failures=0, window_started_at=now)
             db.session.add(row)
