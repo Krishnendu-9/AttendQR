@@ -52,7 +52,7 @@ def test_student_accounts_cannot_be_created_or_deleted_from_accounts(data, clien
     client = client_for(data.principal)
     response = post(client, '/add_admin', {
         'username': 'blocked@gmail.com', 'role': 'student',
-        'password': 'Secret123', 'confirm_password': 'Secret123',
+        'password': 'Bright7Lamp', 'confirm_password': 'Bright7Lamp',
     }, follow_redirects=True)
     assert 'Invalid role selected' in response.get_data(as_text=True)
 
@@ -71,7 +71,7 @@ def test_principal_account_rules(data, client_for):
     client = client_for(data.principal)
     response = post(client, '/add_admin', {
         'username': 'second.principal@gmail.com', 'role': 'super_admin',
-        'password': 'Secret123', 'confirm_password': 'Secret123',
+        'password': 'Bright7Lamp', 'confirm_password': 'Bright7Lamp',
     }, follow_redirects=True)
     assert "Principal account 'second.principal@gmail.com' added" in html.unescape(response.get_data(as_text=True))
 
@@ -87,7 +87,7 @@ def test_creating_teacher_account_creates_linked_profile(data, client_for):
     client = client_for(data.principal)
     response = post(client, '/add_admin', {
         'username': 'new.teacher@gmail.com', 'role': 'teacher', 'teacher_name': 'New Teacher',
-        'department_id': data.mca_id, 'password': 'Secret123', 'confirm_password': 'Secret123',
+        'department_id': data.mca_id, 'password': 'Bright7Lamp', 'confirm_password': 'Bright7Lamp',
     }, follow_redirects=True)
     assert 'Teacher account' in response.get_data(as_text=True)
     profile = Teacher.query.filter_by(email='new.teacher@gmail.com').one()

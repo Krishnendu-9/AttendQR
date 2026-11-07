@@ -279,6 +279,25 @@ def test_lockout_is_audited_and_shown_to_the_account_owner(app, data, client_for
     assert 'Failed sign-in attempt' in page
 
 
+@pytest.mark.parametrize('password', [
+    'Password123', 'Welcome@2026', 'India@123', 'qwerty123', 'P@ssw0rd', '1q2w3e4r5t', 'Student2026!',
+])
+def test_common_passwords_are_refused(app, password):
+    assert 'too common' in password_policy_error(password, ['someone@example.com'])
+
+
+def test_passwords_containing_the_email_name_or_roll_number_are_refused(app):
+    assert 'email name' in password_policy_error('asha2026!', ['asha@rcciit.org.in'])
+    assert 'roll number' in password_policy_error('x-MCA2026001-y', ['s@example.com', 'MCA2026001'])
+    # Very short email names are not treated as contained.
+    assert password_policy_error('Bright7Lamp', ['al@example.com']) is None
+
+
+def test_ordinary_strong_passwords_are_accepted(app):
+    for password in ('Bright7Lamp', 'Harbor-2026-own', 'MyOwnPass1', 'tea and 2 biscuits'):
+        assert password_policy_error(password, ['someone@example.com', 'MCA001']) is None
+
+
 def test_throttling_treats_ipv4_mapped_addresses_as_the_same_device(app, data):
     from attendqr.models import LoginThrottle
 

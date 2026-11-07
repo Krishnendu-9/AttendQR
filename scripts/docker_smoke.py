@@ -101,7 +101,7 @@ def main(base_url):
     expect_redirect(principal.post('/login', username=PRINCIPAL_EMAIL, password=PRINCIPAL_PASSWORD),
                     '/', "seeded Principal logs in with the generated password")
     expect_redirect(principal.get('/departments'), '/account', "Principal must replace the one-time password first")
-    new_password = 'Smoke-Principal-2026'
+    new_password = 'Smoke-Harbor-2026'
     principal.get('/account')
     expect_redirect(principal.post('/account', current_password=PRINCIPAL_PASSWORD,
                                    new_password=new_password, confirm_password=new_password),

@@ -11,7 +11,7 @@ from attendqr.models import Admin
 from conftest import login, post
 
 EMAIL = 'principal@example.com'
-NEW_PASSWORD = 'Principal-2026-own'
+NEW_PASSWORD = 'Harbor-2026-own'
 
 
 def make_app(tmp_path, **overrides):

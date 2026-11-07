@@ -140,7 +140,7 @@ To choose the first password yourself, set `DEFAULT_PRINCIPAL_PASSWORD`; it must
 - Staff account emails must end with one of `ALLOWED_STAFF_DOMAINS` (default `@rcciit.org.in` or `@gmail.com`; remove Gmail for a real deployment)
 - Principal can create Principal, HOD, and Teacher accounts; HOD can create Teacher accounts for their department
 - Only one active HOD is allowed per department
-- Passwords need at least 8 characters with letters and numbers, and must differ from the user's email and roll number
+- Passwords need at least 8 characters with letters and numbers, must not contain the user's email name or roll number, and must not be a common password or a common word plus digits (such as `Welcome@2026`)
 - New and reset accounts must change their password before using the app
 - Changing or resetting a password, or deactivating an account, signs out all of that account's existing sessions
 - After 5 failed logins from one device, that device is paused for 10 minutes for that account. Other devices are unaffected, so classmates cannot lock each other out. An account-wide limit (30 failures per hour) still bounds brute force. Resetting the password clears the lock.

@@ -106,6 +106,35 @@ def is_safe_redirect_target(target):
 
 # ── Passwords ────────────────────────────────────────────────
 
+# Passwords that pass the length/letter/digit rule but are among the first ones guessed.
+COMMON_PASSWORDS = frozenset({
+    'password1', 'password12', 'password123', 'password1234', 'passw0rd', 'p@ssw0rd', 'p@ssword1',
+    'qwerty123', 'qwerty12', 'qwerty1234', 'qwertyuiop1', 'qwer1234', 'asdf1234', 'zxcv1234',
+    'abc12345', 'abc123456', 'abcd1234', 'abcdef12', 'abcdef123', '1234abcd', 'aa123456',
+    '1qaz2wsx', '1q2w3e4r', '1q2w3e4r5t', 'zaq12wsx', 'q1w2e3r4', 'a1b2c3d4',
+    '12345678a', 'a12345678', '123456789a', '1234567a', 'test1234', 'pass1234', 'user1234',
+    'hello123', 'trustno1', 'iloveyou1', 'qr123456',
+})
+# Common words that people extend with digits or symbols ("Welcome@2026", "India123").
+COMMON_PASSWORD_WORDS = frozenset({
+    'password', 'passw0rd', 'qwerty', 'qwertyuiop', 'welcome', 'admin', 'administrator', 'letmein',
+    'iloveyou', 'changeme', 'monkey', 'dragon', 'master', 'sunshine', 'princess', 'football',
+    'cricket', 'baseball', 'superman', 'batman', 'india', 'hello', 'test', 'user', 'login', 'secret',
+    'student', 'teacher', 'principal', 'college', 'school', 'attendance', 'attendqr',
+})
+# Identifier parts shorter than this are too short to count as "containing" them.
+MIN_IDENTIFIER_PART = 4
+
+
+def _identifier_parts(identifier):
+    """The full identifier and, for an email, the part before the @."""
+    value = str(identifier or '').strip().lower()
+    parts = {value}
+    if '@' in value:
+        parts.add(value.split('@', 1)[0])
+    return {part for part in parts if len(part) >= MIN_IDENTIFIER_PART}
+
+
 def password_policy_error(password, identifiers=()):
     """Return an error message when a user-chosen password is too weak, else None."""
     min_length = current_app.config['MIN_PASSWORD_LENGTH']
@@ -115,8 +144,12 @@ def password_policy_error(password, identifiers=()):
         return "Password must include at least one letter and one number."
     lowered = password.strip().lower()
     for identifier in identifiers:
-        if identifier and lowered == str(identifier).strip().lower():
-            return "Password must not be the same as your email or roll number."
+        if any(part in lowered for part in _identifier_parts(identifier)):
+            return "Password must not contain your email name or roll number."
+    alphanumeric = re.sub(r'[^a-z0-9]', '', lowered)
+    core = re.sub(r'^[\W\d_]+|[\W\d_]+$', '', lowered)
+    if lowered in COMMON_PASSWORDS or alphanumeric in COMMON_PASSWORDS or core in COMMON_PASSWORD_WORDS:
+        return "That password is too common and easy to guess. Choose something less predictable, such as a short phrase."
     return None
 
 

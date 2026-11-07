@@ -59,7 +59,7 @@ Teacher login usernames must match the linked teacher profile email.
 
 Student login usernames are the student email, and the initial password is the student roll number.
 
-Newly created or reset accounts must change their password before they can use the app. Passwords need at least 8 characters with letters and numbers.
+Newly created or reset accounts must change their password before they can use the app. Passwords need at least 8 characters with letters and numbers, must not contain the user's email name or roll number, and must not be a common password.
 
 ## Additional Governance
 
