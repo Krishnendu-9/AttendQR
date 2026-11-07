@@ -163,7 +163,7 @@ Columns: `name, roll_no, email, semester`. Principal uploads also need `departme
 1. The teacher selects department, semester, subject, and duration, and the system creates a `ClassSession`.
 2. The teacher's screen shows a QR code that changes every 10 seconds. Each code expires 30 seconds after it is shown, so screenshots and forwarded links stop working almost immediately.
 3. The student scans with their own phone. A valid scan gives that phone's browser a 5-minute window to log in (and set a new password on first login) before confirming.
-4. The system checks the session is still active, the student belongs to that department and semester, and the phone is the student's registered device.
+4. The system checks the session is still active, the student belongs to that department and semester, and the phone is the student's registered device. The campus network is checked again when attendance is confirmed, not only when the scan link is opened.
 5. Attendance is stored once per student per session. The IP address the scan came from is stored with it for 30 days (see [Scan IP addresses](#scan-ip-addresses)).
 
 Device rules: a student's first successful attendance registers that phone, and each phone can belong to only one student. Teachers, HODs, and the Principal can reset a student's device lock from the Students page (for example after a phone change).

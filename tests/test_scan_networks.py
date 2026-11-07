@@ -85,6 +85,9 @@ def test_scan_from_outside_the_allowed_ranges_is_refused_and_grants_nothing(app,
 
     allowed = scan(phone, token, CAMPUS)
     assert allowed.status_code == 302 and allowed.headers['Location'].endswith('/attend')
+    # Confirming is checked against the allowed ranges too.
+    assert post_json(phone, '/mark_attendance').status_code == 403
+    phone.environ_base['REMOTE_ADDR'] = CAMPUS
     assert post_json(phone, '/mark_attendance').get_json()['success'] is True
 
 

@@ -412,18 +412,28 @@ def _ended_status(class_session):
     return 'QR Deactivated', 'This QR session has been deactivated by the teacher.'
 
 
+NETWORK_REQUIRED_TITLE = 'Campus Network Required'
+NETWORK_REQUIRED_MESSAGE = (
+    'Attendance can only be marked from the campus network. Connect to the campus Wi-Fi and scan the code again.'
+)
+
+
+def _network_refusal(stage):
+    """None if this request comes from an allowed network, else (title, message, status) after logging it."""
+    network_error = scan_network_error()
+    if not network_error:
+        return None
+    current_app.logger.warning("Refused QR %s: %s", stage, network_error)
+    return NETWORK_REQUIRED_TITLE, NETWORK_REQUIRED_MESSAGE, 403
+
+
 @bp.route('/scan/<token>')
 def scan(token):
     """Entry point encoded in the QR. Validates the rotating token once, then hands over to /attend."""
     # Checked before the token, so off-network clients learn nothing about it.
-    network_error = scan_network_error()
-    if network_error:
-        current_app.logger.warning("Refused QR scan: %s", network_error)
-        return _status_page(
-            'Campus Network Required',
-            'Attendance can only be marked from the campus network. Connect to the campus Wi-Fi and scan the code again.',
-            403,
-        )
+    refusal = _network_refusal('scan')
+    if refusal:
+        return _status_page(*refusal)
 
     try:
         class_session_id = read_qr_token(token)
@@ -479,6 +489,12 @@ def attend():
         return _status_page('Attendance Already Marked', 'Your attendance has already been marked for this QR session.',
                             session_info=info, student=student)
 
+    # The scan grant lives in a cookie that could have been copied off campus.
+    refusal = _network_refusal('attendance confirmation')
+    if refusal:
+        title, message, status = refusal
+        return _status_page(title, message, status, info, student=student)
+
     response = make_response(render_template(
         'scan_qr.html',
         status_title='Mark Attendance',
@@ -519,6 +535,11 @@ def mark_attendance():
     device_error = device_binding_error(student, device_id)
     if device_error:
         return _json_error(device_error, 403)
+
+    refusal = _network_refusal('attendance confirmation')
+    if refusal:
+        _, message, status = refusal
+        return _json_error(message, status)
 
     new_cookie = None
     if not student.device_id:
