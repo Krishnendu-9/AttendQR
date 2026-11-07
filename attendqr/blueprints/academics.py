@@ -311,6 +311,17 @@ def edit_subject(id):
     if error:
         flash(error, "warning" if "already exists" in error else "danger")
         return redirect(url_for('academics.subjects'))
+    moving = (values['department_id'], values['semester_id']) != (subject.department_id, subject.semester_id)
+    sessions_count = ClassSession.query.filter_by(subject_id=subject.id).count() if moving else 0
+    if sessions_count:
+        # Its sessions and attendance belong to the students of the current class;
+        # moving it would put them in another class's reports.
+        flash(
+            f"Subject '{subject_display_name(subject)}' already has {sessions_count} QR session(s), so it cannot "
+            "move to another semester or department. Create a new subject for the other class instead.",
+            "warning",
+        )
+        return redirect(url_for('academics.subjects'))
     for key, value in values.items():
         setattr(subject, key, value)
     db.session.flush()
