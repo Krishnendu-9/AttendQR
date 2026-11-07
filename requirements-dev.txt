@@ -1,4 +1,5 @@
 -r requirements.txt
-pytest>=8.0
+# CI pins the exact version (see .github/workflows/ci.yml).
+pytest~=9.1.1
 # Ruff adds and changes rules between minor releases; CI pins the exact version.
 ruff~=0.17.2
