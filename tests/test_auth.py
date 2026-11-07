@@ -1,4 +1,6 @@
 """Login, sessions, passwords, redirects, secret key, and response headers."""
+import io
+
 import pytest
 from flask import Flask
 
@@ -373,6 +375,42 @@ def test_lockout_is_audited_and_shown_to_the_account_owner(app, data, client_for
     page = client_for(data.teacher).get('/account').get_data(as_text=True)
     assert 'paused after repeated failed attempts' in page
     assert 'Failed sign-in attempt' in page
+
+
+def test_error_pages_are_friendly_and_keep_their_status(app, data, client_for):
+    teacher = client_for(data.teacher)
+    page = teacher.get('/add_admin')
+    assert page.status_code == 403 and 'Access Denied' in page.get_data(as_text=True)
+    missing = teacher.get('/no-such-page')
+    assert missing.status_code == 404 and 'Page Not Found' in missing.get_data(as_text=True)
+    assert 'Content-Security-Policy' in missing.headers
+
+    csrf = teacher.post('/students', data={'name': 'x'})
+    assert csrf.status_code == 400 and 'Security token expired' in csrf.get_data(as_text=True)
+
+
+def test_api_errors_stay_json(data, client_for):
+    response = client_for(data.teacher).get('/api/semesters/999999')
+    assert response.status_code == 403 and response.get_json()['success'] is False
+
+
+def test_oversized_upload_explains_the_limit(app, data, client_for):
+    app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
+    big = io.BytesIO(b'x' * (1024 * 1024 + 10))
+    response = post(client_for(data.hod), '/students/import', {'student_file': (big, 'big.csv')},
+                    content_type='multipart/form-data')
+    assert response.status_code == 413 and '1 MB limit' in response.get_data(as_text=True)
+
+
+def test_unexpected_errors_show_a_page_and_roll_back(app):
+    app.config['PROPAGATE_EXCEPTIONS'] = False
+
+    def boom():
+        raise RuntimeError('boom')
+
+    app.add_url_rule('/boom-for-test', 'boom_for_test', boom)
+    response = app.test_client().get('/boom-for-test')
+    assert response.status_code == 500 and 'Something Went Wrong' in response.get_data(as_text=True)
 
 
 @pytest.mark.parametrize('password', [

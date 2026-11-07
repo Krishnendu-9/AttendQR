@@ -5,7 +5,7 @@ AttendQR is a Flask application built with an application factory and blueprints
 ```text
 AttendQR/
   attendqr/
-    __init__.py         create_app(): config, extensions, blueprints, request guards, template helpers
+    __init__.py         create_app(): config checks, extensions, blueprints, request guards, error pages, template helpers, CLI
     config.py           Config class read from environment variables / .env
     extensions.py       db, login_manager, migrate; SQLite foreign-key pragma
     models.py           SQLAlchemy models
@@ -30,7 +30,7 @@ AttendQR/
       accounts.py       Staff account management (/add_admin)
       api.py            JSON endpoints used by the pages (/api/...)
   migrations/           Alembic environment and versions (Flask-Migrate)
-  templates/            Jinja2 templates; _head.html and _pagination.html are shared partials
+  templates/            Jinja2 templates; _head.html and _pagination.html are shared partials, error.html is the error page
   static/
     app.css             Application styles
     js/app.js           Shared page helpers (dropdown loading, password meter, confirmations)

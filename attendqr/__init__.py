@@ -5,8 +5,9 @@ import re
 import secrets
 
 import click
-from flask import Flask, current_app, flash, jsonify, redirect, request, url_for
+from flask import Flask, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, logout_user
+from werkzeug.exceptions import BadRequest
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .access import (
@@ -89,6 +90,7 @@ def create_app(overrides=None):
         app.register_blueprint(blueprint)
 
     _register_request_hooks(app)
+    _register_error_pages(app)
     register_scan_ip_purge(app)
     _register_template_helpers(app)
     _register_cli(app)
@@ -200,6 +202,47 @@ def _register_request_hooks(app):
         return None
 
     app.after_request(apply_security_headers)
+
+
+# (title, message, icon) shown for each error status.
+ERROR_PAGES = {
+    400: ('Request Not Accepted', 'The request could not be processed. Go back, refresh the page, and try again.',
+          'bi-exclamation-circle'),
+    403: ('Access Denied', 'Your account does not have access to this page or action.', 'bi-shield-lock'),
+    404: ('Page Not Found', 'This page or record does not exist. It may have been deleted.', 'bi-question-circle'),
+    405: ('Not Allowed', 'This page cannot be used that way. Go back and use the buttons on the page.',
+          'bi-slash-circle'),
+    413: ('File Too Large', 'The upload is larger than the {limit} MB limit. Split the file and try again.',
+          'bi-file-earmark-x'),
+    500: ('Something Went Wrong', 'An unexpected error occurred and has been logged. Please try again.',
+          'bi-exclamation-triangle'),
+}
+
+
+def _register_error_pages(app):
+    def render_error(code, description=None):
+        title, message, icon = ERROR_PAGES[code]
+        message = message.format(limit=(app.config.get('MAX_CONTENT_LENGTH') or 0) // (1024 * 1024))
+        if description:
+            message = description
+        if wants_json_response() or request.accept_mimetypes.best == 'application/json':
+            return jsonify({'success': False, 'message': message}), code
+        return render_template('error.html', code=code, title=title, message=message, icon=icon), code
+
+    def http_error(error):
+        # Only our own abort(400, description=...) texts (such as the CSRF message) are shown;
+        # Werkzeug's default descriptions are technical.
+        custom = error.description if error.code == 400 and error.description != BadRequest.description else None
+        return render_error(error.code, custom)
+
+    for code in (400, 403, 404, 405, 413):
+        app.register_error_handler(code, http_error)
+
+    @app.errorhandler(500)
+    def server_error(error):
+        # The request's transaction may be half done; never let the next query reuse it.
+        db.session.rollback()
+        return render_error(500)
 
 
 def build_js_config():
