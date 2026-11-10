@@ -11,6 +11,7 @@ from ..access import (
     can_manage_account,
     can_reset_staff_account,
     current_department_id,
+    department_filter,
     describe_delete_block,
     has_active_hod,
     is_allowed_staff_email,
@@ -158,7 +159,7 @@ def index():
 
     accounts = Admin.query.filter(Admin.role != 'student')
     if not is_super_admin():
-        accounts = accounts.filter(Admin.department_id == current_department_id())
+        accounts = accounts.filter(department_filter(Admin.department_id))
     accounts = accounts.order_by(Admin.role, Admin.is_active.desc(), Admin.username).all()
 
     return render_template(

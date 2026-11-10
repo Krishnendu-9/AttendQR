@@ -95,8 +95,9 @@ def current_department_id():
     if not current_user.is_authenticated:
         return None
     role = user_role()
-    if role == 'teacher' and current_user.teacher:
-        return current_user.teacher.department_id
+    if role == 'teacher':
+        # A teacher account without a teacher profile has no scope at all.
+        return current_user.teacher.department_id if current_user.teacher else None
     if role == 'student' and current_user.student:
         return current_user.student.department_id
     return current_user.department_id
@@ -106,6 +107,19 @@ def current_teacher_id():
     if current_user.is_authenticated and user_role() == 'teacher':
         return current_user.teacher_id
     return None
+
+
+def own_teacher_filter(column):
+    """SQL condition: `column` is the current teacher. Never true without a teacher profile,
+    because `column == None` would become `IS NULL` and match every unassigned row."""
+    teacher_id = current_teacher_id()
+    return column == teacher_id if teacher_id else false()
+
+
+def is_own_teacher(teacher_id):
+    """Whether `teacher_id` is the current teacher's profile (never true without one)."""
+    own = current_teacher_id()
+    return own is not None and teacher_id == own
 
 
 def can_access_department(department_id):
@@ -129,7 +143,7 @@ def can_access_teacher(teacher):
     if is_super_admin():
         return True
     if user_role() == 'teacher':
-        return current_user.teacher_id == teacher.id
+        return is_own_teacher(teacher.id)
     return can_access_department(teacher.department_id)
 
 
@@ -137,7 +151,7 @@ def can_access_subject(subject):
     if not subject:
         return False
     if user_role() == 'teacher':
-        return subject.teacher_id == current_teacher_id()
+        return is_own_teacher(subject.teacher_id)
     return can_access_department(subject.department_id)
 
 
@@ -147,20 +161,28 @@ def can_access_session(class_session):
     if user_role() == 'teacher':
         return (
             can_access_department(class_session.subject.department_id)
-            and class_session.teacher_id == current_teacher_id()
+            and is_own_teacher(class_session.teacher_id)
         )
     return user_role() in ('super_admin', 'hod') and can_access_subject(class_session.subject)
 
 
-def _department_filter(column):
+def department_filter(column):
+    """SQL condition: `column` is the current user's department. Never true without one
+    (`column == None` would become `IS NULL`)."""
     dept_id = current_department_id()
     return column == dept_id if dept_id else false()
+
+
+def is_teacher_in_own_department(admin):
+    """For HODs: whether `admin` is a teacher account in the HOD's department."""
+    dept_id = current_department_id()
+    return admin.role == 'teacher' and dept_id is not None and admin.department_id == dept_id
 
 
 def visible_departments_query():
     query = Department.query
     if not is_super_admin():
-        query = query.filter(_department_filter(Department.id))
+        query = query.filter(department_filter(Department.id))
     return query
 
 
@@ -171,25 +193,25 @@ def ordered_departments_query():
 def visible_semesters_query():
     query = Semester.query
     if not is_super_admin():
-        query = query.filter(_department_filter(Semester.department_id))
+        query = query.filter(department_filter(Semester.department_id))
     return query
 
 
 def visible_subjects_query():
     query = Subject.query.filter(Subject.name != SPECIAL_CLASS_SUBJECT_NAME)
     if user_role() == 'teacher':
-        query = query.filter(Subject.teacher_id == current_teacher_id())
+        query = query.filter(own_teacher_filter(Subject.teacher_id))
     elif not is_super_admin():
-        query = query.filter(_department_filter(Subject.department_id))
+        query = query.filter(department_filter(Subject.department_id))
     return query
 
 
 def visible_teachers_query():
     query = Teacher.query
     if user_role() == 'teacher':
-        query = query.filter(Teacher.id == current_teacher_id())
+        query = query.filter(own_teacher_filter(Teacher.id))
     elif not is_super_admin():
-        query = query.filter(_department_filter(Teacher.department_id))
+        query = query.filter(department_filter(Teacher.department_id))
     return query
 
 
@@ -198,16 +220,16 @@ def visible_students_query():
     if user_role() == 'student':
         query = query.filter(Student.id == current_user.student_id)
     elif not is_super_admin():
-        query = query.filter(_department_filter(Student.department_id))
+        query = query.filter(department_filter(Student.department_id))
     return query
 
 
 def visible_sessions_query():
     query = ClassSession.query.join(Subject)
     if user_role() == 'teacher':
-        query = query.filter(ClassSession.teacher_id == current_teacher_id())
+        query = query.filter(own_teacher_filter(ClassSession.teacher_id))
     elif not is_super_admin():
-        query = query.filter(_department_filter(Subject.department_id))
+        query = query.filter(department_filter(Subject.department_id))
     return query
 
 
@@ -219,7 +241,7 @@ def visible_activity_logs_query():
         return query.filter(
             or_(
                 ActivityLog.actor_admin_id == current_user.id,
-                and_(ActivityLog.department_id == current_department_id(), Admin.role == 'teacher'),
+                and_(department_filter(ActivityLog.department_id), Admin.role == 'teacher'),
             )
         )
     return query.filter(ActivityLog.actor_admin_id == current_user.id)
@@ -246,7 +268,7 @@ def has_active_hod(department_id, exclude_admin_id=None):
 
 def can_manage_account(admin):
     if user_role() == 'hod':
-        return admin.role == 'teacher' and admin.department_id == current_department_id()
+        return is_teacher_in_own_department(admin)
     if not is_super_admin():
         return False
     if admin.role == 'student' or admin.id == current_user.id:
@@ -264,13 +286,13 @@ def can_edit_account(admin):
     if admin.role == 'student':
         return False
     if user_role() == 'hod':
-        return admin.role == 'teacher' and admin.department_id == current_department_id()
+        return is_teacher_in_own_department(admin)
     return is_super_admin()
 
 
 def can_reset_staff_account(admin):
     if user_role() == 'hod':
-        return admin.role == 'teacher' and admin.department_id == current_department_id()
+        return is_teacher_in_own_department(admin)
     if not is_super_admin():
         return False
     return admin.role in STAFF_ROLES and admin.id != current_user.id

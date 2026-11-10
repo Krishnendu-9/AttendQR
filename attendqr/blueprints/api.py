@@ -6,7 +6,7 @@ from ..access import (
     SPECIAL_CLASS_SUBJECT_NAME,
     can_access_department,
     can_access_session,
-    current_teacher_id,
+    own_teacher_filter,
     role_required,
     session_display_name,
     subject_display_name,
@@ -87,7 +87,7 @@ def teachers(department_id):
         abort(403)
     rows = Teacher.query.filter_by(department_id=department_id)
     if user_role() == 'teacher':
-        rows = rows.filter(Teacher.id == current_teacher_id())
+        rows = rows.filter(own_teacher_filter(Teacher.id))
     return jsonify([{'id': r.id, 'name': r.name} for r in rows.order_by(Teacher.name)])
 
 

@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 
 from ..access import (
-    current_department_id,
+    department_filter,
     is_super_admin,
     role_required,
     session_display_name,
@@ -81,7 +81,7 @@ def dashboard():
         teachers = Admin.query.filter_by(role='teacher').count()
         accounts = {'total': principals + hods + teachers, 'principals': principals, 'hods': hods, 'teachers': teachers}
     else:
-        teachers = Admin.query.filter_by(role='teacher', department_id=current_department_id()).count()
+        teachers = Admin.query.filter(Admin.role == 'teacher', department_filter(Admin.department_id)).count()
         accounts = {'total': teachers, 'principals': None, 'hods': None, 'teachers': teachers}
 
     return render_template(
