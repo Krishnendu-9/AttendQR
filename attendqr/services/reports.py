@@ -9,10 +9,16 @@ from flask import current_app
 from sqlalchemy import exists, func, or_
 from sqlalchemy.orm import joinedload
 
-from ..access import SPECIAL_CLASS_SUBJECT_NAME, current_teacher_id, user_role
+from ..access import SPECIAL_CLASS_SUBJECT_NAME, own_teacher_filter, user_role
 from ..extensions import db
-from ..models import Attendance, ClassSession, Student, Subject
+from ..models import Attendance, ClassSession, Subject
 from ..utils import ist_now, normalize_paper_code, parse_date_range
+from .enrollment import class_roster, in_class_at
+
+# Matrix mark for a session held after the student moved to another class.
+NOT_IN_CLASS = 'not_in_class'
+# How that session shows in exports: an en dash, since a plain "-" would be escaped for Excel.
+NOT_IN_CLASS_MARK = chr(0x2013)
 
 
 def countable_session_clause():
@@ -173,7 +179,7 @@ def report_sessions_query(filters, countable_only=False):
         Subject.semester_id == filters.semester_id,
     )
     if user_role() == 'teacher':
-        query = query.filter(ClassSession.teacher_id == current_teacher_id())
+        query = query.filter(own_teacher_filter(ClassSession.teacher_id))
     if filters.subject_id:
         query = query.filter(Subject.id == filters.subject_id)
     if filters.parsed_from:
@@ -202,11 +208,6 @@ def build_attendance_matrix(filters):
         .order_by(ClassSession.created_at.desc())
         .all()
     )
-    students = (
-        Student.query.filter_by(department_id=filters.department_id, semester_id=filters.semester_id)
-        .order_by(Student.roll_no)
-        .all()
-    )
     # (student_id, session_id) -> 'scan' or 'manual'; absent pairs are missing.
     attended = {
         (student_id, session_id): source
@@ -215,13 +216,22 @@ def build_attendance_matrix(filters):
         ).filter(Attendance.session_id.in_(session_ids_select(session_query)))
     } if sessions else {}
 
-    counted_ids = [s.id for s in sessions if not is_special_session(s)]
     rows = []
-    for student in students:
-        marks = {s.id: attended.get((student.id, s.id)) for s in sessions}
+    for student, left_at in class_roster(filters.department_id, filters.semester_id):
+        marks = {}
+        for s in sessions:
+            mark = attended.get((student.id, s.id))
+            if not mark and not in_class_at(left_at, s.created_at):
+                # Held after the student moved to another class: neither present nor absent.
+                mark = NOT_IN_CLASS
+            marks[s.id] = mark
+        counted_ids = [s.id for s in sessions if not is_special_session(s) and marks[s.id] != NOT_IN_CLASS]
+        if left_at is not None and all(mark == NOT_IN_CLASS for mark in marks.values()):
+            continue  # Moved out before any of these sessions.
         present = sum(1 for session_id in counted_ids if marks[session_id])
         rows.append({
             'student': student,
+            'left_at': left_at,
             'attendance': marks,
             'total': present,
             'counted': len(counted_ids),
@@ -264,10 +274,23 @@ MANUAL_MARK_LEGEND = "P = present (QR scan), P* = present (entered manually by s
 SPECIAL_CLASS_LEGEND = "Special classes are listed but not counted in Total and %."
 
 
+MOVED_LEGEND = f"{NOT_IN_CLASS_MARK} = held after the student moved to another class (not counted)"
+
+
 def attendance_mark(source):
+    if source == NOT_IN_CLASS:
+        return NOT_IN_CLASS_MARK
     if not source:
         return 'A'
     return 'P*' if source == Attendance.SOURCE_MANUAL else 'P'
+
+
+def export_name(row):
+    """The student's name, marked when they have since moved to another class."""
+    left_at = row.get('left_at')
+    if left_at is None:
+        return row['student'].name
+    return f"{row['student'].name} (moved out {left_at:%d-%m-%Y})"
 
 
 def build_export_rows(sessions, rows):
@@ -275,7 +298,7 @@ def build_export_rows(sessions, rows):
     data = []
     for row in rows:
         student = row['student']
-        line = [student.roll_no, student.name, student.email]
+        line = [student.roll_no, export_name(row), student.email]
         line += [attendance_mark(row['attendance'][s.id]) for s in sessions]
         line.append(row['total'])
         line.append(f"{round(row['total'] / row['counted'] * 100, 1)}%" if row['counted'] else "0%")
@@ -452,22 +475,37 @@ def build_shortage_report(filters, threshold):
         .group_by(Attendance.student_id, ClassSession.subject_id)
     }
 
-    students = (
-        Student.query.filter_by(department_id=filters.department_id, semester_id=filters.semester_id)
-        .order_by(Student.roll_no)
-        .all()
-    )
-    overall_total = sum(subject_totals.values())
+    members = class_roster(filters.department_id, filters.semester_id)
+    # Start times, to count only the sessions a former member was in the class for.
+    session_times = db.session.query(ClassSession.subject_id, ClassSession.created_at).filter(
+        ClassSession.id.in_(session_ids)
+    ).all() if any(left_at for _, left_at in members) else []
+
+    def totals_for(left_at):
+        if left_at is None:
+            return subject_totals
+        totals = {}
+        for subject_id, created_at in session_times:
+            if in_class_at(left_at, created_at):
+                totals[subject_id] = totals.get(subject_id, 0) + 1
+        return totals
 
     rows = []
-    for student in students:
+    for student, left_at in members:
+        totals = totals_for(left_at)
         cells = []
-        overall_attended = 0
+        overall_attended = overall_total = 0
         for subject in subjects:
-            total = subject_totals[subject.id]
+            total = totals.get(subject.id, 0)
             present = attended.get((student.id, subject.id), 0)
+            if not total:
+                # Every session of this subject was held after the student moved out.
+                cells.append({'subject': subject, 'attended': present, 'total': 0, 'percentage': None,
+                              'short': False, 'needed': 0})
+                continue
             percentage = round(present / total * 100, 2)
             overall_attended += present
+            overall_total += total
             cells.append({
                 'subject': subject,
                 'attended': present,
@@ -483,6 +521,7 @@ def build_shortage_report(filters, threshold):
         if overall_percentage < threshold or short_subjects:
             rows.append({
                 'student': student,
+                'left_at': left_at,
                 'cells': cells,
                 'attended': overall_attended,
                 'total': overall_total,
@@ -496,8 +535,8 @@ def build_shortage_report(filters, threshold):
     return {
         'subjects': subjects,
         'rows': rows,
-        'class_size': len(students),
-        'classes_held': overall_total,
+        'class_size': sum(1 for _, left_at in members if left_at is None),
+        'classes_held': sum(subject_totals.values()),
         'threshold': threshold,
     }
 
@@ -509,9 +548,9 @@ def build_shortage_export_rows(report):
     data = []
     for row in report['rows']:
         student = row['student']
-        line = [student.roll_no, student.name, student.email,
+        line = [student.roll_no, export_name(row), student.email,
                 row['attended'], row['total'], row['percentage'], row['needed']]
-        line += [cell['percentage'] for cell in row['cells']]
+        line += [cell['percentage'] if cell['total'] else NOT_IN_CLASS_MARK for cell in row['cells']]
         line.append(', '.join(
             f"{normalize_paper_code(c['subject'].paper_code) or c['subject'].name} (needs {c['needed']})"
             for c in row['short_subjects']

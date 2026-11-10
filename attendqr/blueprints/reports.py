@@ -13,6 +13,7 @@ from ..extensions import db
 from ..models import ClassSession, Department, Semester, Student, Subject
 from ..services.reports import (
     MANUAL_MARK_LEGEND,
+    MOVED_LEGEND,
     SPECIAL_CLASS_LEGEND,
     attendance_counts,
     build_attendance_matrix,
@@ -154,6 +155,8 @@ def export(department_id, semester_id, fmt):
     notes = [MANUAL_MARK_LEGEND]
     if any(is_special_session(s) for s in sessions):
         notes.append(SPECIAL_CLASS_LEGEND)
+    if any(row['left_at'] for row in rows):
+        notes.append(MOVED_LEGEND)
 
     if fmt == 'excel':
         return send_file(render_excel(headers, data, notes), download_name=f'{filename}.xlsx', as_attachment=True)
