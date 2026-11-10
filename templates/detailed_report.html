@@ -35,10 +35,15 @@
         {% for row in attendance_data %}
         <tr>
           <td>{{ row.student.roll_no }}</td>
-          <td class="fw-semibold">{{ row.student.name }}</td>
+          <td class="fw-semibold">
+            {{ row.student.name }}
+            {% if row.left_at %}<span class="badge text-bg-secondary" title="Moved to another class on {{ format_12h(row.left_at) }}">Moved out</span>{% endif %}
+          </td>
           {% for session in sessions %}
           <td class="text-center">
-            {% if row.attendance[session.id] == 'manual' %}
+            {% if row.attendance[session.id] == 'not_in_class' %}
+            <span class="text-muted" title="Held after the student moved to another class; not counted">&ndash;</span>
+            {% elif row.attendance[session.id] == 'manual' %}
             <span class="badge text-bg-info" title="Entered manually by staff">P*</span>
             {% elif row.attendance[session.id] %}
             <span class="badge text-bg-success">P</span>
@@ -64,7 +69,8 @@
   </div>
 </div>
 <p class="small text-muted mt-2">
-  Target: {{ attendance_target }}%. P = QR scan, P* = entered manually by staff.
+  Target: {{ attendance_target }}%. P = QR scan, P* = entered manually by staff,
+  &ndash; = held after a student moved to another class (not counted for them).
   Sessions deactivated before anyone marked attendance, and special classes, are not counted in Total and %.
   <a href="{{ url_for('reports.shortage', department_id=dept.id, semester_id=sem.id, **filter_args) }}">View shortage list</a>
 </p>

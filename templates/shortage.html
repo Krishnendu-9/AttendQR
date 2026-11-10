@@ -128,6 +128,7 @@
           <td class="fw-semibold">{{ row.student.roll_no }}</td>
           <td>
             {{ row.student.name }}
+            {% if row.left_at %}<span class="badge text-bg-secondary" title="Moved to another class on {{ format_12h(row.left_at) }}; only sessions before that count">Moved out</span>{% endif %}
             <div class="small text-muted">{{ row.student.email }}</div>
           </td>
           <td class="text-center">
@@ -137,8 +138,12 @@
           <td class="text-center fw-semibold">{{ row.needed or '—' }}</td>
           {% for cell in row.cells %}
           <td class="text-center">
+            {% if cell.total %}
             <span class="badge {{ 'text-bg-danger' if cell.short else 'text-bg-light border' }}">{{ cell.percentage }}%</span>
             <div class="small text-muted">{{ cell.attended }}/{{ cell.total }}{% if cell.short %} · needs {{ cell.needed }}{% endif %}</div>
+            {% else %}
+            <span class="text-muted" title="No classes held while the student was in this class">&ndash;</span>
+            {% endif %}
           </td>
           {% endfor %}
         </tr>
