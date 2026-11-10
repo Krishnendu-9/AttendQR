@@ -26,6 +26,7 @@ The system supports four roles:
 - Creates or bulk-imports student profiles from the Students page; student login accounts are auto-created.
 - Can reset student passwords and device locks in the assigned department.
 - Can correct attendance on any session in the assigned department and view the department shortage list.
+- Can delete a session that has attendance in the assigned department, with a reason (this erases its records).
 - Cannot create Principal or HOD accounts.
 - Cannot access other departments.
 
@@ -33,6 +34,7 @@ The system supports four roles:
 
 - Generates QR sessions only for assigned subjects.
 - Can manually mark students present in, or remove entries from, their own sessions (with a reason).
+- Can delete their own sessions only while nobody has marked attendance in them; after that, deactivate instead or ask the HOD.
 - Sees the shortage list for their own sessions.
 - Views attendance only for own sessions.
 - Creates or bulk-imports student profiles for the assigned department.
@@ -66,7 +68,8 @@ Newly created or reset accounts must change their password before they can use t
 - Student password reset sets a new random temporary password, shown once to the staff member.
 - Repeated failed logins pause that account on that device for 10 minutes; other devices are unaffected. Resetting the password clears it.
 - Changing or resetting a password, or deactivating an account, signs out all of its existing sessions.
-- Accounts with an unknown role get no access.
+- Accounts with an unknown role get no access. A teacher account without a teacher profile, or an HOD without a department, gets no department or session access.
+- Logging out signs out every session of that account.
 - Department, semester, subject, and teacher deletes are blocked when linked records would make the action unsafe.
 
 Bulk student import is available from the Students page. Principal uploads include department information; HOD and Teacher imports are automatically limited to their assigned department.

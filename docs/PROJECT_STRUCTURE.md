@@ -19,6 +19,7 @@ AttendQR/
       qr.py             Rotating QR tokens, scan URLs, scan grants, device binding
       reports.py        Attendance summaries, report filters, Excel/PDF export
       roster.py         Student login accounts and bulk import
+      enrollment.py     Class membership over time, so moved students stay in their old class's reports
       retention.py      Clearing scan IP addresses after SCAN_IP_RETENTION_DAYS
       backup.py         Consistent SQLite backups (`flask backup-db`)
     blueprints/

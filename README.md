@@ -139,7 +139,7 @@ docker compose exec attendqr flask --app wsgi backup-db --keep 14
 docker compose cp attendqr:/app/instance/backups ./attendqr-backups
 ```
 
-To restore, stop the server and replace `instance/attendance.db` with the backup (delete any `attendance.db-wal` and `attendance.db-shm` beside it). Keep backups somewhere other than the server's disk. They contain personal data and scan IP addresses, so give them the same retention as the live data (see [Scan IP addresses](#scan-ip-addresses)). Other databases (`DATABASE_URL`) need their own tool, such as `pg_dump`.
+Backup files are readable only by the account running the server (on Windows they inherit the folder's permissions). To restore, stop the server and replace `instance/attendance.db` with the backup (delete any `attendance.db-wal` and `attendance.db-shm` beside it). Keep backups somewhere other than the server's disk. They contain personal data and scan IP addresses, so give them the same retention as the live data (see [Scan IP addresses](#scan-ip-addresses)). Other databases (`DATABASE_URL`) need their own tool, such as `pg_dump`.
 
 ## Initial Login
 
@@ -161,9 +161,10 @@ To choose the first password yourself, set `DEFAULT_PRINCIPAL_PASSWORD`; it must
 - Only one active HOD is allowed per department
 - Passwords need at least 8 characters with letters and numbers, must not contain the user's email name or roll number, and must not be a common password or a common word plus digits (such as `Welcome@2026`)
 - New and reset accounts must change their password before using the app
-- Changing or resetting a password, or deactivating an account, signs out all of that account's existing sessions
+- Changing or resetting a password, deactivating an account, or logging out signs out all of that account's existing sessions, on every device. A copied login cookie stops working too.
 - A login ends when the browser is closed, or after 60 minutes without activity (`SESSION_IDLE_MINUTES`), so a session left open on a shared lab computer does not stay usable
-- After 5 failed logins from one device, that device is paused for 10 minutes for that account. Other devices are unaffected, so classmates cannot lock each other out. An account-wide limit (30 failures per hour) still bounds brute force. Resetting the password clears the lock.
+- After 5 failed logins from one device, that device is paused for 10 minutes for that account. Other devices are unaffected, so classmates cannot lock each other out. An account-wide limit (30 failures per hour) still bounds brute force. Resetting the password clears the lock. A wrong current password on the Account page counts the same way.
+- One address that fails 100 logins in 10 minutes, across any accounts, is paused for 10 minutes (`LOGIN_IP_TOTAL_FAILURE_LIMIT`). On a LAN each phone has its own address. On a public deployment where the whole campus shares one public address, raise it or set it to `0`, or a burst of failures there pauses everyone.
 
 ### Student Accounts
 
@@ -193,6 +194,8 @@ Sessions deactivated before anyone marked attendance are treated as void (create
 ### Manual Corrections
 
 When a student was in class but could not scan (dead phone, device lock reset), the teacher who ran the session, the department HOD, or the Principal can open the session from Generate QR and mark them present. Entries can also be removed, for example if a student marked attendance without being in the room. Both actions require a short reason. Manual entries show as `P*` in the detailed report and exports, show the staff member and reason in the session view, and are recorded in the activity log.
+
+Deleting a whole session erases its attendance records. A session nobody marked can be deleted by anyone who can open it. Once it has attendance, only the department HOD or the Principal can delete it, with a reason that goes into the activity log; a teacher can deactivate it or remove single entries instead.
 
 ### Special Classes
 
@@ -283,6 +286,7 @@ Outside the app, copies remain in database backups until those expire, and web s
 - Excel and PDF export
 - Student-wise attendance percentage and classes needed to reach 80%
 - Shortage list: students below a chosen percentage (default 80%) overall or in any subject, worst first, with the consecutive classes each needs and Excel export
+- Students moved to another semester or department stay in their old class's reports, shortage list and exports, marked "Moved out". Sessions held after the move show `–` and do not count for them, and staff can still correct the old class's sessions for them.
 
 ## Testing
 
