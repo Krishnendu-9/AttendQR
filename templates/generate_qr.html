@@ -14,7 +14,7 @@
   {% endif %}
 {% endmacro %}
 
-{% macro session_actions(cs, compact=False, next_url=None) %}
+{% macro session_actions(cs, compact=False, next_url=None, present=0) %}
   {% set btn = 'btn btn-sm btn-icon' if compact else 'btn' %}
   {% if cs.expires_at > now() %}
     {% if cs.is_active %}
@@ -37,13 +37,24 @@
     </form>
     {% endif %}
   {% endif %}
+  {% if not present %}
   <form method="POST" action="{{ url_for('attendance.delete_session', id=cs.id) }}" class="d-inline"
-    data-confirm="Delete this session and all attendance records for {{ session_display_name(cs) }}?">
+    data-confirm="Delete this session for {{ session_display_name(cs) }}? Nobody has marked attendance in it.">
     <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
     <button class="{{ btn }} btn-danger" type="submit" {% if compact %}data-bs-toggle="tooltip" title="Delete session"{% endif %}>
       <i class="bi bi-trash{{ '' if compact else ' me-1' }}"></i>{% if not compact %} Delete Session{% endif %}
     </button>
   </form>
+  {% elif user_role() in ['super_admin', 'hod'] %}
+  {# It has attendance: deleting erases those records, so ask for a reason (teachers cannot). #}
+  <button class="{{ btn }} btn-danger delete-session" type="button"
+    data-action="{{ url_for('attendance.delete_session', id=cs.id) }}"
+    data-session="{{ session_display_name(cs) }}" data-present="{{ present }}" data-next="{{ next_url or '' }}"
+    {% if compact %}data-bs-toggle="tooltip" title="Delete session"{% endif %}>
+    <i class="bi bi-trash{{ '' if compact else ' me-1' }}"></i>{% if not compact %} Delete Session{% endif %}
+  </button>
+  {% endif %}
 {% endmacro %}
 
 {% block content %}
@@ -79,7 +90,7 @@
       <a href="#qr-attendance" class="btn btn-info">
         <i class="bi bi-eye me-1"></i> View Attendance
       </a>
-      {{ session_actions(view_session, next_url=this_page) }}
+      {{ session_actions(view_session, next_url=this_page, present=attendance_records|length) }}
     </div>
   </div>
 </div>
@@ -249,7 +260,7 @@
     function staffIsEditing() {
       const active = document.activeElement;
       const editingForm = active && attendanceSection().contains(active) && active.matches('input, select, textarea');
-      return Boolean(editingForm || document.querySelector('#removeAttendanceModal.show'));
+      return Boolean(editingForm || document.querySelector('#removeAttendanceModal.show, #deleteSessionModal.show'));
     }
 
     let reloadingAttendance = false;
@@ -402,7 +413,7 @@
               data-bs-toggle="tooltip" title="View QR">
               <i class="bi bi-qr-code"></i>
             </a>
-            {{ session_actions(cs, compact=True) }}
+            {{ session_actions(cs, compact=True, present=session_counts.get(cs.id, 0)) }}
           </td>
         </tr>
         {% endfor %}
@@ -469,6 +480,47 @@
     classMode.addEventListener('change', toggleClassMode);
     toggleClassMode();
   })();
+</script>
+{% endif %}
+
+{% if user_role() in ['super_admin', 'hod'] %}
+<div class="modal fade" id="deleteSessionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="POST" id="deleteSessionForm" class="modal-content">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" id="delete_session_next">
+      <div class="modal-header">
+        <h5 class="modal-title">Delete Session</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-3">
+          Delete <strong id="deleteSessionName"></strong>? Its <strong id="deleteSessionPresent"></strong>
+          attendance record(s) will be erased and cannot be recovered. To stop scanning only, deactivate it instead.
+        </p>
+        <label class="form-label" for="delete_session_note">Reason</label>
+        <input class="form-control" id="delete_session_note" name="note" maxlength="200" required
+          placeholder="e.g. Created for the wrong class">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-danger">Delete Session</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+  document.addEventListener('click', function (event) {
+    const button = event.target.closest('.delete-session');
+    if (!button) return;
+    document.getElementById('deleteSessionForm').action = button.dataset.action;
+    document.getElementById('deleteSessionName').textContent = button.dataset.session;
+    document.getElementById('deleteSessionPresent').textContent = button.dataset.present;
+    document.getElementById('delete_session_next').value = button.dataset.next;
+    document.getElementById('delete_session_note').value = '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteSessionModal')).show();
+  });
 </script>
 {% endif %}
 {% endblock %}

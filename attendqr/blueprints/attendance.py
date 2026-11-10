@@ -36,6 +36,7 @@ from ..access import (
 from ..extensions import db
 from ..models import Attendance, ClassSession, Semester, Student, Subject, Teacher
 from ..security import is_safe_redirect_target
+from ..services.enrollment import class_roster, in_class_at, was_in_class
 from ..services.network import client_ip, scan_network_error
 from ..services.qr import (
     DEVICE_TAKEN_MESSAGE,
@@ -58,6 +59,9 @@ from ..services.retention import scan_ip_recording_enabled
 from ..utils import format_12h, ist_now, normalize_text, parse_int_value
 
 bp = Blueprint('attendance', __name__)
+
+# Deleting a session that has attendance erases those records, so it is kept from teachers.
+SESSION_DELETE_WITH_ATTENDANCE_ROLES = ('super_admin', 'hod')
 
 
 def get_or_create_special_subject(department_id, semester_id):
@@ -152,21 +156,19 @@ def _render_session(class_session_id):
 
 
 def _absent_students(class_session):
-    """Students of the session's class who have no attendance entry for it."""
+    """Students who were in the session's class when it was held and have no attendance entry for it.
+
+    Includes students moved to another class since, so an old session can still be corrected.
+    """
     subject = class_session.subject
-    marked = Attendance.query.filter(
-        Attendance.session_id == class_session.id,
-        Attendance.student_id == Student.id,
-    ).exists()
-    return (
-        Student.query.filter(
-            Student.department_id == subject.department_id,
-            Student.semester_id == subject.semester_id,
-            ~marked,
-        )
-        .order_by(Student.roll_no)
-        .all()
-    )
+    marked = {
+        student_id for (student_id,) in
+        db.session.query(Attendance.student_id).filter(Attendance.session_id == class_session.id)
+    }
+    return [
+        student for student, left_at in class_roster(subject.department_id, subject.semester_id)
+        if student.id not in marked and in_class_at(left_at, class_session.created_at)
+    ]
 
 
 def _create_session():
@@ -284,10 +286,29 @@ def reactivate_session(id):
 @login_required
 @role_required('super_admin', 'hod', 'teacher')
 def delete_session(id):
+    """Delete a session. One that has attendance takes its records with it, so only
+    the HOD or Principal may do that, with a reason; a teacher can deactivate it or
+    remove single entries instead."""
     class_session = _session_for_action(id)
+    present = Attendance.query.filter_by(session_id=class_session.id).count()
+    description = f"Deleted QR session for '{session_display_name(class_session)}'"
+
+    if present:
+        if user_role() not in SESSION_DELETE_WITH_ATTENDANCE_ROLES:
+            flash(
+                f"This session has {present} attendance record(s), so only the HOD or Principal can delete it. "
+                "Deactivate it, or remove single entries from the session view, instead.",
+                'warning',
+            )
+            return _redirect_after_session_action()
+        note, error = _correction_reason()
+        if error:
+            flash(error, 'danger')
+            return _redirect_after_session_action()
+        description += f" with {present} attendance record(s). Reason: {note}"
+
     log_activity(
-        'qr_session_deleted',
-        f"Deleted QR session for '{session_display_name(class_session)}'.",
+        'qr_session_deleted', description + ('' if present else '.'),
         'class_session', class_session.id, class_session.subject.department_id,
     )
     db.session.delete(class_session)  # attendance rows cascade
@@ -327,7 +348,7 @@ def mark_present(id):
 
     if error:
         flash(error, 'danger')
-    elif not student or student.department_id != subject.department_id or student.semester_id != subject.semester_id:
+    elif not student or not was_in_class(student, subject.department_id, subject.semester_id, class_session.created_at):
         flash("Choose a student from this session's class.", 'danger')
     elif Attendance.query.filter_by(student_id=student.id, session_id=class_session.id).first():
         flash(f"{student.name} is already marked present for this session.", 'warning')
