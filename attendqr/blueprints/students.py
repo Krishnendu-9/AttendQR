@@ -28,6 +28,7 @@ from ..security import (
     hash_temporary_password,
     is_safe_redirect_target,
 )
+from ..services.enrollment import record_class_change
 from ..services.roster import (
     ensure_student_account,
     import_students_from_rows,
@@ -247,8 +248,11 @@ def edit(id):
     if error:
         flash(error, "danger")
         return back_to_list()
+    old_class = (student.department_id, student.semester_id)
     for key, value in values.items():
         setattr(student, key, value)
+    # Keeps the student in the old class's reports for the sessions held before the move.
+    record_class_change(student, *old_class)
     temporary_password = ensure_student_account(student)
     log_activity('student_updated', f"Updated student profile '{student.name}' ({student.roll_no}).", 'student', student.id, student.department_id)
     db.session.commit()
