@@ -265,21 +265,37 @@ def client_ip():
 
 
 def _throttle_rules(username, ip):
+    """(key, row username, failure limit, window, lock) for each throttle a failed login counts against.
+
+    The address-wide row has no username, so one account's successful login or
+    password reset does not clear it.
+    """
     cfg = current_app.config
-    return [
+    rules = [
         (
             f"ip:{ip}|{username}",
+            username,
             cfg['LOGIN_IP_FAILURE_LIMIT'],
             timedelta(minutes=cfg['LOGIN_IP_WINDOW_MINUTES']),
             timedelta(minutes=cfg['LOGIN_IP_LOCK_MINUTES']),
         ),
         (
             f"acct:{username}",
+            username,
             cfg['LOGIN_ACCOUNT_FAILURE_LIMIT'],
             timedelta(minutes=cfg['LOGIN_ACCOUNT_WINDOW_MINUTES']),
             timedelta(minutes=cfg['LOGIN_ACCOUNT_LOCK_MINUTES']),
         ),
     ]
+    if cfg['LOGIN_IP_TOTAL_FAILURE_LIMIT'] > 0:
+        rules.append((
+            f"ipall:{ip}",
+            '',
+            cfg['LOGIN_IP_TOTAL_FAILURE_LIMIT'],
+            timedelta(minutes=cfg['LOGIN_IP_TOTAL_WINDOW_MINUTES']),
+            timedelta(minutes=cfg['LOGIN_IP_TOTAL_LOCK_MINUTES']),
+        ))
+    return rules
 
 
 def is_login_locked(username, ip):
@@ -317,10 +333,10 @@ def record_login_failure(username, ip):
     """Count a failed login against each throttle rule. Returns True if one of them now locks."""
     now = ist_now()
     locked = False
-    for key, limit, window, lock in _throttle_rules(username, ip):
+    for key, row_username, limit, window, lock in _throttle_rules(username, ip):
         row = _throttle_row(key)
         if row is None:
-            row = LoginThrottle(key=key, username=username, failures=0, window_started_at=now)
+            row = LoginThrottle(key=key, username=row_username, failures=0, window_started_at=now)
             db.session.add(row)
         if row.window_started_at is None or now - row.window_started_at > window:
             row.failures = 0

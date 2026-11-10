@@ -108,6 +108,12 @@ class Config:
     LOGIN_ACCOUNT_FAILURE_LIMIT = 30
     LOGIN_ACCOUNT_WINDOW_MINUTES = 60
     LOGIN_ACCOUNT_LOCK_MINUTES = 15
+    # Failed logins from one address across all accounts, so one machine cannot try a
+    # few passwords against every student. 0 turns it off. Where many users share one
+    # public address (a public deployment behind campus NAT), raise it or set 0.
+    LOGIN_IP_TOTAL_FAILURE_LIMIT = env_int('LOGIN_IP_TOTAL_FAILURE_LIMIT', 100)
+    LOGIN_IP_TOTAL_WINDOW_MINUTES = 10
+    LOGIN_IP_TOTAL_LOCK_MINUTES = 10
 
     STUDENTS_PER_PAGE = 50
     SESSIONS_PER_PAGE = 50
