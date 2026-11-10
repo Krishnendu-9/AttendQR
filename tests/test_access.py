@@ -5,8 +5,9 @@ import io
 import pytest
 
 from attendqr.extensions import db
-from attendqr.models import Admin, Student, Teacher
-from conftest import PASSWORD, post
+from attendqr.models import Admin, ClassSession, Student, Subject, Teacher
+from attendqr.utils import ist_now
+from conftest import PASSWORD, make_account, post
 
 
 def test_protected_page_redirects_to_login_with_next(app):
@@ -186,3 +187,45 @@ def test_malformed_staff_domain_stops_the_app_and_public_ones_warn(tmp_path, cap
     with caplog.at_level(logging.WARNING):
         create_app({**settings, 'ALLOWED_STAFF_DOMAINS': ['@college.edu', '@gmail.com']})
     assert 'public email domains (@gmail.com)' in caplog.text
+
+
+# ── Accounts that lost their scope ───────────────────────────
+
+def test_teacher_account_without_a_profile_sees_nothing(app, data, client_for):
+    # A special class in another department with no teacher: `teacher_id IS NULL`.
+    special = Subject(name='__SPECIAL_CLASS__', department_id=data.other_id, semester_id=data.other_sem_id)
+    db.session.add(special)
+    db.session.flush()
+    now = ist_now()
+    orphan = ClassSession(subject_id=special.id, teacher_id=None, special_title='Hidden Workshop', token='orphan',
+                          created_at=now, expires_at=now, is_active=True)
+    db.session.add(orphan)
+    make_account('ghost@rcciit.org.in', 'teacher', department_id=data.mca_id)
+    db.session.commit()
+
+    client = client_for('ghost@rcciit.org.in')
+    assert 'Hidden Workshop' not in client.get('/').get_data(as_text=True)
+    assert 'Hidden Workshop' not in client.get('/generate_qr').get_data(as_text=True)
+    assert client.get(f'/generate_qr?session_id={orphan.id}').status_code == 403
+    assert client.get(f'/api/session_attendance/{orphan.id}').status_code == 403
+    assert client.get(f'/api/teachers/{data.mca_id}').status_code == 403
+    response = post(client, '/generate_qr', {
+        'class_mode': 'regular', 'department_id': data.mca_id, 'semester_id': data.sem1_id,
+        'subject_id': data.subject_id, 'duration': 30,
+    })
+    assert response.status_code == 403
+    assert ClassSession.query.count() == 1
+
+
+def test_hod_without_a_department_manages_no_accounts(app, data, client_for):
+    make_account('lost-hod@rcciit.org.in', 'hod')
+    make_account('loose-teacher@rcciit.org.in', 'teacher')
+    db.session.commit()
+    client = client_for('lost-hod@rcciit.org.in')
+
+    page = client.get('/add_admin').get_data(as_text=True)
+    assert data.principal not in page and 'loose-teacher@rcciit.org.in' not in page
+    loose = Admin.query.filter_by(username='loose-teacher@rcciit.org.in').one()
+    assert post(client, f'/toggle_admin_status/{loose.id}').status_code == 403
+    assert post(client, f'/reset_admin_password/{loose.id}').status_code == 403
+    assert client.get('/').status_code == 200
