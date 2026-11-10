@@ -3,9 +3,10 @@ import io
 
 import pytest
 from flask import Flask
+from werkzeug.security import check_password_hash
 
 from attendqr.extensions import db
-from attendqr.models import Admin
+from attendqr.models import ActivityLog, Admin
 from attendqr.security import configure_secret_key, is_safe_redirect_target, password_policy_error
 from conftest import PASSWORD, login, post
 
@@ -80,6 +81,61 @@ def test_logout_requires_post(data, client_for):
     assert client.get('/logout').status_code == 405
     assert post(client, '/logout').status_code == 302
     assert client.get('/').status_code == 302
+
+
+def test_logout_invalidates_a_copied_session_cookie(app, data, client_for):
+    client = client_for(data.teacher)
+    copy = app.test_client()
+    copy.set_cookie('session', client.get_cookie('session').value)
+    assert copy.get('/').status_code == 200
+
+    post(client, '/logout')
+    response = copy.get('/')
+    assert response.status_code == 302 and '/login' in response.headers['Location']
+    # Logging in again works as usual.
+    assert client_for(data.teacher).get('/').status_code == 200
+
+
+def test_failed_logins_across_accounts_pause_the_address(app, data):
+    app.config['LOGIN_IP_TOTAL_FAILURE_LIMIT'] = 3
+    attacker = {'environ_base': {'REMOTE_ADDR': '10.1.1.1'}}
+    for username in ('nobody1@example.com', data.student, 'nobody2@example.com'):
+        login(app.test_client(), username, 'guess-123', expect_success=False, **attacker)
+
+    # Even a correct password is refused from that address for now...
+    page = login(app.test_client(), data.teacher, expect_success=False, **attacker).get_data(as_text=True)
+    assert 'Too many failed attempts' in page
+    # ...but other addresses are unaffected.
+    login(app.test_client(), data.teacher, environ_base={'REMOTE_ADDR': '10.1.1.2'})
+
+
+def test_address_wide_limit_can_be_turned_off(app, data):
+    from attendqr.models import LoginThrottle
+
+    app.config['LOGIN_IP_TOTAL_FAILURE_LIMIT'] = 0
+    login(app.test_client(), 'nobody@example.com', 'guess-123', expect_success=False)
+    assert not LoginThrottle.query.filter(LoginThrottle.key.like('ipall:%')).count()
+
+
+def change_password(client, current, new='Fresh-Phrase-42'):
+    return post(client, '/account', {
+        'current_password': current, 'new_password': new, 'confirm_password': new,
+    })
+
+
+def test_wrong_current_password_is_throttled(app, data, client_for):
+    client = client_for(data.teacher)
+    for _ in range(app.config['LOGIN_IP_FAILURE_LIMIT']):
+        assert 'Current password is incorrect' in change_password(client, 'not-it-123').get_data(as_text=True)
+
+    # Paused now, even with the right password, and the pause is logged.
+    page = change_password(client, PASSWORD).get_data(as_text=True)
+    assert 'Too many failed attempts' in page
+    account = Admin.query.filter_by(username=data.teacher).one()
+    assert account.must_change_password is False
+    db.session.refresh(account)
+    assert check_password_hash(account.password, PASSWORD)
+    assert ActivityLog.query.filter_by(action='login_locked', target_id=account.id).count() == 1
 
 
 def test_post_without_csrf_token_is_rejected(data, client_for):
@@ -347,8 +403,6 @@ def test_activity_keeps_the_session_and_zero_disables_the_limit(app, data, clien
 
 
 def test_sign_ins_are_audited(app, data, client_for):
-    from attendqr.models import ActivityLog
-
     login(app.test_client(), data.teacher, 'wrong-password', expect_success=False)
     login(app.test_client(), 'nobody@example.com', 'wrong-password', expect_success=False)
     client_for(data.teacher)
@@ -363,7 +417,7 @@ def test_sign_ins_are_audited(app, data, client_for):
 
 
 def test_lockout_is_audited_and_shown_to_the_account_owner(app, data, client_for):
-    from attendqr.models import ActivityLog, LoginThrottle
+    from attendqr.models import LoginThrottle
 
     for _ in range(app.config['LOGIN_IP_FAILURE_LIMIT']):
         login(app.test_client(), data.teacher, 'wrong-password', expect_success=False)
