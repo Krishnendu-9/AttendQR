@@ -39,12 +39,17 @@ def backup_database(destination=None):
     if destination is None:
         destination = os.path.join(default_backup_dir(), f"attendance-{ist_now():%Y%m%d-%H%M%S}.db")
     destination = os.path.abspath(destination)
-    if os.path.exists(destination):
-        raise BackupError(f"{destination} already exists; choose another file name.")
-    os.makedirs(os.path.dirname(destination), exist_ok=True)
+    # Backups hold password hashes and personal data: only the server's account may read
+    # them, like the secret key. (On Windows the file inherits the folder's permissions.)
+    os.makedirs(os.path.dirname(destination), mode=0o700, exist_ok=True)
+    try:
+        os.close(os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+    except FileExistsError:
+        raise BackupError(f"{destination} already exists; choose another file name.") from None
 
     source = engine.raw_connection()
     try:
+        # SQLite accepts the empty file just created and keeps its permissions.
         target = sqlite3.connect(destination)
         try:
             source.driver_connection.backup(target)

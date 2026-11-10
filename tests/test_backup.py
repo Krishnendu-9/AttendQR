@@ -1,6 +1,9 @@
 """flask backup-db: a consistent copy of the SQLite database, taken while the app runs."""
 import os
 import sqlite3
+import stat
+
+import pytest
 
 from attendqr.services.backup import _BACKUP_NAME
 
@@ -13,6 +16,15 @@ def test_backup_contains_the_data(app, data, tmp_path):
     with sqlite3.connect(target) as copy:
         assert copy.execute("SELECT COUNT(*) FROM student").fetchone()[0] == 3
         assert copy.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='Windows has no POSIX permission bits; the file inherits the folder ACL')
+def test_backup_is_readable_by_the_owner_only(app, data, tmp_path):
+    target = tmp_path / 'private' / 'copy.db'
+    result = app.test_cli_runner().invoke(args=['backup-db', '--output', str(target)])
+    assert result.exit_code == 0, result.output
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert stat.S_IMODE(target.parent.stat().st_mode) == 0o700
 
 
 def test_backup_never_overwrites_a_file(app, tmp_path):
