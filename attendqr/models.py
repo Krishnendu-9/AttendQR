@@ -124,6 +124,23 @@ class Student(db.Model):
     device_id = db.Column(db.String(100), nullable=True)
 
 
+class StudentClassHistory(db.Model):
+    """A class (department and semester) a student was moved out of, and when.
+
+    Reports select students by their current class, so without this a promoted
+    student would vanish from their old semester's reports and shortage list.
+    """
+    __table_args__ = (
+        db.Index('ix_student_class_history_class', 'department_id', 'semester_id'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False, index=True)
+    department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
+    semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
+    # Sessions created from this moment on are not the student's.
+    left_at = db.Column(db.DateTime, nullable=False)
+
+
 class ClassSession(db.Model):
     __table_args__ = (
         db.Index('ix_class_session_subject_id', 'subject_id'),
