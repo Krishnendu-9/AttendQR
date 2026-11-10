@@ -108,6 +108,11 @@ def login():
 
 @bp.route('/logout', methods=['POST'])
 def logout():
+    if current_user.is_authenticated:
+        # The login lives in a cookie, so clearing it here would leave any copy of it
+        # usable. A new session token makes every copy, on any device, invalid.
+        current_user.rotate_session_token()
+        db.session.commit()
     logout_user()
     clear_scan_grant()
     return redirect(url_for('auth.login'))
@@ -134,11 +139,23 @@ def account():
         identifiers = [current_user.username]
         if current_user.student:
             identifiers.append(current_user.student.roll_no)
+        # Wrong current passwords count like failed logins, so an unattended or stolen
+        # session cannot be used to guess the password without limit.
+        throttle_name, ip = normalize_email(current_user.username), client_ip()
 
         if not current_password or not new_password or not confirm_password:
             error = "All password fields are required"
+        elif is_login_locked(throttle_name, ip):
+            error = LOCKED_LOGIN_MESSAGE
         elif not check_password_hash(current_user.password, current_password):
             error = "Current password is incorrect"
+            if register_login_failure(throttle_name, ip):
+                log_activity(
+                    'login_locked',
+                    f"Password change for '{current_user.username}' paused after repeated wrong current passwords.",
+                    'admin', current_user.id, current_department_id(),
+                )
+                db.session.commit()
         elif new_password != confirm_password:
             error = "New password and confirm password do not match"
         elif check_password_hash(current_user.password, new_password):
