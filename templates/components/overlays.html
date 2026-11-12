@@ -1,0 +1,84 @@
+{#- Toasts, the confirmation dialog and the Ctrl K palette. Included once by the app layout. -#}
+{% from 'components/ui.html' import icon %}
+{% from 'components/nav.html' import nav_groups, palette_actions with context %}
+
+{% macro toast_item(message, category) -%}
+{% set tones = {
+  'success': ('circle-check', 'text-success'),
+  'danger': ('circle-alert', 'text-destructive'),
+  'warning': ('triangle-alert', 'text-warning'),
+  'info': ('info', 'text-primary'),
+} %}
+{% set tone = category if category in tones else 'info' %}
+{#- Errors and warnings stay until closed, and so do one-time passwords: they are never shown again. -#}
+{% set sticky = tone in ['danger', 'warning'] or 'emporary password' in (message or '') %}
+<div x-data="toast" x-show="visible" x-transition.opacity.duration.200ms data-sticky="{{ 'true' if sticky else 'false' }}"
+  @mouseenter="pause" @mouseleave="schedule" class="toast pointer-events-auto" role="{{ 'alert' if tone == 'danger' else 'status' }}">
+  <span class="mt-0.5 shrink-0 {{ tones[tone][1] }}">{{ icon(tones[tone][0]) }}</span>
+  <p class="min-w-0 flex-1 break-words text-body-md text-foreground" data-toast-message>{{ message }}</p>
+  <button type="button" class="btn btn-ghost btn-sm btn-icon -mr-2 -mt-1.5 shrink-0" @click="dismiss" aria-label="Dismiss">{{ icon('x') }}</button>
+</div>
+{%- endmacro %}
+
+<div id="toast-region" class="print:hidden pointer-events-none fixed inset-x-4 bottom-4 z-[70] flex flex-col items-stretch gap-2 sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-96" aria-live="polite">
+  {% for category, message in get_flashed_messages(with_categories=True) %}
+  {{ toast_item(message, category) }}
+  {% endfor %}
+</div>
+{% for tone in ['success', 'danger', 'warning', 'info'] %}
+<template id="toast-template-{{ tone }}">{{ toast_item('', tone) }}</template>
+{% endfor %}
+
+<dialog id="confirm-dialog" class="dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+  <div class="flex gap-4 p-6">
+    <span data-confirm-icon-danger class="flex size-10 shrink-0 items-center justify-center rounded-full bg-destructive-soft text-destructive">{{ icon('triangle-alert', 'size-5') }}</span>
+    <span data-confirm-icon-info hidden class="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-ink">{{ icon('info', 'size-5') }}</span>
+    <div class="min-w-0 pt-0.5">
+      <h2 id="confirm-title" class="text-headline-sm text-foreground" data-confirm-title>Are you sure?</h2>
+      <p id="confirm-message" class="mt-1.5 text-body-md text-muted-foreground" data-confirm-message></p>
+    </div>
+  </div>
+  <form method="dialog" class="flex flex-col-reverse gap-2 border-t border-border px-6 py-4 sm:flex-row sm:justify-end">
+    <button type="submit" value="cancel" class="btn btn-outline" data-confirm-cancel>Cancel</button>
+    <button type="button" class="btn btn-destructive" data-confirm-accept>{{ icon('loader-circle', 'btn-spinner') }}<span data-confirm-label>Confirm</span></button>
+  </form>
+</dialog>
+
+<div x-data="palette">
+  <dialog x-ref="dialog" class="dialog dialog-lg mt-[12vh] mb-auto" aria-label="Search pages and actions" @click="onBackdrop">
+    <div class="flex items-center gap-3 border-b border-border px-4">
+      <span class="text-muted-foreground">{{ icon('search') }}</span>
+      <input x-ref="input" type="text" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" autocomplete="off" spellcheck="false"
+        class="h-14 w-full bg-transparent text-body-md text-foreground outline-none placeholder:text-placeholder" placeholder="Search pages and actions" aria-label="Search pages and actions"
+        @input="filter" @keydown="onKeydown">
+      <kbd class="kbd">Esc</kbd>
+    </div>
+    <div x-ref="list" id="palette-list" role="listbox" class="max-h-[60vh] overflow-y-auto p-2" @mousemove="onHover">
+      {% for group in nav_groups %}
+      <div data-palette-group role="group" aria-label="{{ group['label'] }}">
+        <p class="menu-heading">{{ group['label'] }}</p>
+        {% for item in group['items'] %}
+        <a href="{{ item['href'] }}" id="palette-{{ group['id'] }}-{{ loop.index }}" role="option" aria-selected="false" data-palette-item
+          data-search="{{ (item['label'] ~ ' ' ~ group['label'] ~ ' ' ~ item['keywords'])|lower }}"
+          class="menu-item aria-selected:bg-accent aria-selected:text-ink">{{ icon(item['icon']) }}<span>{{ item['label'] }}</span></a>
+        {% endfor %}
+      </div>
+      {% endfor %}
+      {% if palette_actions %}
+      <div data-palette-group role="group" aria-label="Actions">
+        <p class="menu-heading">Actions</p>
+        {% for item in palette_actions %}
+        <a href="{{ item['href'] }}" id="palette-action-{{ loop.index }}" role="option" aria-selected="false" data-palette-item
+          data-search="{{ (item['label'] ~ ' ' ~ item['keywords'])|lower }}"
+          class="menu-item aria-selected:bg-accent aria-selected:text-ink">{{ icon(item['icon']) }}<span>{{ item['label'] }}</span></a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <p x-ref="empty" hidden class="px-4 py-10 text-center text-body-md text-muted-foreground">No pages or actions match.</p>
+    </div>
+    <div class="hidden items-center gap-4 border-t border-border px-4 py-2.5 text-body-sm text-muted-foreground sm:flex">
+      <span class="flex items-center gap-1.5"><kbd class="kbd">&uarr;</kbd><kbd class="kbd">&darr;</kbd> to move</span>
+      <span class="flex items-center gap-1.5"><kbd class="kbd">{{ icon('corner-down-left', 'size-3') }}</kbd> to open</span>
+    </div>
+  </dialog>
+</div>

@@ -1,0 +1,45 @@
+{#- Sidebar: 260px on desktop, a 68px icon rail on tablets, a slide-over drawer on phones. -#}
+{% from 'components/ui.html' import icon %}
+{% from 'components/nav.html' import nav_groups with context %}
+<aside id="sidebar" aria-label="Main navigation"
+  class="fixed inset-y-0 left-0 z-50 print:hidden flex w-sidebar -translate-x-full flex-col border-r border-border bg-card transition-transform duration-200 ease-out data-[open=true]:translate-x-0 data-[open=true]:shadow-dialog md:w-rail md:translate-x-0 lg:w-sidebar"
+  :data-open="sidebarOpen ? 'true' : 'false'">
+  <div class="flex h-header-sm shrink-0 items-center justify-between gap-2 border-b border-border px-5 md:h-header md:max-lg:justify-center md:max-lg:px-0">
+    <a href="{{ url_for('main.dashboard') }}" class="flex items-center gap-3 rounded-lg focus-visible:shadow-focus focus-visible:outline-none" aria-label="AttendQR home">
+      <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">{{ icon('qr-code', 'size-5') }}</span>
+      <span class="min-w-0 md:max-lg:hidden">
+        <span class="block text-headline-sm text-foreground">AttendQR</span>
+        <span class="block text-body-sm text-muted-foreground">Attendance system</span>
+      </span>
+    </a>
+    <button type="button" class="btn btn-ghost btn-icon btn-sm md:hidden" @click="closeSidebar" aria-label="Close navigation">{{ icon('x') }}</button>
+  </div>
+
+  <nav class="flex-1 overflow-y-auto px-3 py-4 md:max-lg:px-2">
+    {% for group in nav_groups %}
+    {% set foldable = group['items']|length > 1 %}
+    <div class="{{ 'mt-5' if not loop.first }} md:max-lg:mt-2" x-data="navGroup" data-group="{{ group['id'] }}" data-current="{{ 'true' if group['current'] or not foldable else 'false' }}">
+      {% if foldable %}
+      <button type="button" @click="toggle" :aria-expanded="open ? 'true' : 'false'" aria-controls="nav-{{ group['id'] }}"
+        class="mb-1 flex w-full items-center justify-between rounded-md px-3 py-1 text-label-caps uppercase text-muted-foreground hover:text-foreground focus-visible:shadow-focus focus-visible:outline-none md:max-lg:hidden">
+        <span>{{ group['label'] }}</span>
+        <span class="transition-transform duration-150" :class="open ? '' : '-rotate-90'">{{ icon('chevron-down', 'size-3.5') }}</span>
+      </button>
+      {% else %}
+      <p class="mb-1 px-3 py-1 text-label-caps uppercase text-muted-foreground md:max-lg:hidden">{{ group['label'] }}</p>
+      {% endif %}
+      <ul id="nav-{{ group['id'] }}" class="space-y-0.5 md:max-lg:!block" x-show="open">
+        {% for item in group['items'] %}
+        <li>
+          <a href="{{ item['href'] }}" class="nav-item md:max-lg:justify-center md:max-lg:px-0"{% if item['current'] %} aria-current="page"{% endif %} title="{{ item['label'] }}">
+            {{ icon(item['icon']) }}
+            <span class="truncate md:max-lg:sr-only">{{ item['label'] }}</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% if not loop.last %}<div class="mx-3 mt-2 hidden h-px bg-border md:max-lg:block"></div>{% endif %}
+    </div>
+    {% endfor %}
+  </nav>
+</aside>

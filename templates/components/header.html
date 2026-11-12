@@ -1,0 +1,75 @@
+{#- Header: breadcrumb (page title on phones), search, user menu. Expects page_title, breadcrumbs. -#}
+{% from 'components/ui.html' import icon, btn %}
+{% set role = user_role() %}
+{% if role == 'student' and current_user.student %}
+  {% set display_name = current_user.student.name %}
+{% elif role == 'teacher' and current_user.teacher %}
+  {% set display_name = current_user.teacher.name %}
+{% else %}
+  {% set display_name = current_user.username.split('@')[0]|capitalize %}
+{% endif %}
+{% set words = display_name.replace('.', ' ').replace('_', ' ').split() %}
+{% set initials = ((words[0][:1] if words else '?') ~ (words[1][:1] if words|length > 1 else ''))|upper %}
+
+<header class="sticky top-0 z-30 print:hidden flex h-header-sm items-center gap-3 border-b border-border bg-card px-4 md:h-header md:px-6 lg:px-8">
+  <button type="button" class="btn btn-ghost btn-icon -ml-2 md:hidden" @click="openSidebar" aria-label="Open navigation" aria-controls="sidebar" :aria-expanded="sidebarOpen ? 'true' : 'false'">
+    {{ icon('menu', 'size-5') }}
+  </button>
+
+  <p class="min-w-0 truncate text-headline-sm text-foreground md:hidden">{{ page_title }}</p>
+  <nav aria-label="Breadcrumb" class="hidden min-w-0 md:block">
+    <ol class="flex items-center gap-1.5 text-body-md">
+      {% for label, href in breadcrumbs %}
+      <li class="flex min-w-0 items-center gap-1.5">
+        {% if not loop.first %}<span class="text-placeholder">{{ icon('chevron-right', 'size-3.5') }}</span>{% endif %}
+        {% if loop.last or not href %}
+        <span class="truncate {{ 'text-label-lg text-foreground' if loop.last else 'text-muted-foreground' }}"{% if loop.last %} aria-current="page"{% endif %}>{{ label }}</span>
+        {% else %}
+        <a href="{{ href }}" class="truncate rounded text-muted-foreground transition-colors hover:text-foreground focus-visible:shadow-focus focus-visible:outline-none">{{ label }}</a>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </nav>
+
+  <div class="ml-auto flex items-center gap-2">
+    <button type="button" @click="$dispatch('palette:open')"
+      class="hidden h-10 w-64 items-center gap-2 rounded-lg border border-input bg-background px-3 text-body-md text-placeholder transition-colors hover:border-placeholder focus-visible:border-primary focus-visible:shadow-focus focus-visible:outline-none md:flex lg:w-search">
+      {{ icon('search') }}
+      <span class="flex-1 truncate text-left"><span class="lg:hidden">Search</span><span class="max-lg:hidden">Search pages and actions</span></span>
+      <kbd class="kbd">Ctrl K</kbd>
+    </button>
+    <button type="button" class="btn btn-ghost btn-icon md:hidden" @click="$dispatch('palette:open')" aria-label="Search">{{ icon('search', 'size-5') }}</button>
+
+    <div x-data="dropdown" data-align="end" class="relative" @keydown="onKeydown" @click.outside="close(false)">
+      <button type="button" x-ref="button" @click="toggle" aria-haspopup="menu" :aria-expanded="open ? 'true' : 'false'" aria-label="Account menu"
+        class="flex items-center gap-2 rounded-full p-0.5 transition-shadow focus-visible:shadow-focus focus-visible:outline-none">
+        <span class="avatar">{{ initials }}</span>
+      </button>
+      <div x-ref="panel" x-show="open" x-cloak role="menu" class="menu fixed w-64 animate-pop-in">
+        <div class="flex items-center gap-3 px-2.5 pb-3 pt-2.5">
+          <span class="avatar">{{ initials }}</span>
+          <div class="min-w-0">
+            <p class="truncate text-label-lg text-foreground">{{ display_name }}</p>
+            <p class="truncate text-body-sm text-muted-foreground">{{ current_user.username }}</p>
+          </div>
+        </div>
+        <div class="px-2.5 pb-2"><span class="badge badge-info">{{ role_label(current_user.role) }}</span></div>
+        <div class="menu-separator"></div>
+        <a href="{{ url_for('auth.account') }}" role="menuitem" class="menu-item">{{ icon('circle-user-round') }}<span>Account and password</span></a>
+        <div class="menu-separator"></div>
+        <p class="menu-heading">Theme</p>
+        <div x-data="themePicker" role="group" aria-label="Theme">
+          <button type="button" role="menuitemradio" class="menu-item" :aria-checked="is('light') ? 'true' : 'false'" @click="choose('light')">{{ icon('sun') }}<span>Light</span></button>
+          <button type="button" role="menuitemradio" class="menu-item" :aria-checked="is('dark') ? 'true' : 'false'" @click="choose('dark')">{{ icon('moon') }}<span>Dark</span></button>
+          <button type="button" role="menuitemradio" class="menu-item" :aria-checked="is('system') ? 'true' : 'false'" @click="choose('system')">{{ icon('monitor') }}<span>System</span></button>
+        </div>
+        <div class="menu-separator"></div>
+        <form method="POST" action="{{ url_for('auth.logout') }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" role="menuitem" class="menu-item">{{ icon('log-out') }}<span>Sign out</span></button>
+        </form>
+      </div>
+    </div>
+  </div>
+</header>
