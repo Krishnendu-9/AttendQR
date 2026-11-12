@@ -1,56 +1,56 @@
-{% extends 'base.html' %}
-{% block title %}Imported Students | AttendQR{% endblock %}
-{% block page_title %}Imported Students{% endblock %}
-{% block page_subtitle %}One-time passwords for the new student logins{% endblock %}
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, page_header, callout, monogram with context %}
+{% set page_title = 'Imported students' %}
+{% set breadcrumbs = [('Students', url_for('students.index')), ('Imported students', None)] %}
 
 {% block content %}
-<div class="alert alert-warning">
-  <i class="bi bi-exclamation-triangle me-1"></i>
-  These passwords are shown <strong>only on this page</strong> and are not stored. Download or print them now and give
-  each student their own. Students must change the password at first login.
+{% call page_header('Imported students', 'Imported ' ~ credentials|length ~ ' student profile' ~ ('s' if credentials|length != 1 else '') ~ '. Each new login has a temporary password.') %}
+  <button type="button" class="{{ btn('outline') }} no-print" id="printCredentials">{{ icon('printer') }}<span>Print</span></button>
+  <button type="button" class="{{ btn('outline') }} no-print" id="downloadCredentials">{{ icon('download') }}<span>Download CSV</span></button>
+  <a href="{{ url_for('students.index') }}" class="{{ btn('primary') }} no-print">{{ icon('check') }}<span>Done</span></a>
+{% endcall %}
+
+<div class="mb-6">
+  {% call callout('Save these passwords now', 'warning') %}
+    These passwords are shown <strong>only on this page</strong> and are not stored. Download or print them, and give each student their own.
+    Students must change the password at first sign-in.
+  {% endcall %}
 </div>
 
-<div class="table-card mb-4">
-  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-    <div>
-      <h2 class="section-title"><i class="bi bi-person-plus me-1"></i> Imported {{ credentials|length }} student profile{{ 's' if credentials|length != 1 }}</h2>
-      <p class="section-subtitle">Student logins were created with a random temporary password.</p>
-    </div>
-    <div class="d-flex gap-2 no-print">
-      <button type="button" class="btn btn-primary" id="downloadCredentials">
-        <i class="bi bi-download me-1"></i> Download CSV
-      </button>
-      <button type="button" class="btn btn-outline-secondary" id="printCredentials">
-        <i class="bi bi-printer me-1"></i> Print
-      </button>
-      <a href="{{ url_for('students.index') }}" class="btn btn-outline-secondary">Done</a>
-    </div>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle">
+<section class="card overflow-hidden" aria-label="New student logins">
+  <div class="overflow-x-auto">
+    <table class="data-table">
       <thead>
         <tr>
-          <th>Roll No</th>
-          <th>Name</th>
-          <th>Email (login)</th>
-          <th>Temporary password</th>
+          <th scope="col">Student</th>
+          <th scope="col">Roll no</th>
+          <th scope="col">Email (login)</th>
+          <th scope="col">Temporary password</th>
         </tr>
       </thead>
       <tbody>
         {% for row in credentials %}
         <tr>
-          <td class="fw-semibold">{{ row.roll_no }}</td>
-          <td>{{ row.name }}</td>
-          <td>{{ row.email }}</td>
-          <td class="font-monospace">{{ row.password or 'Existing account (unchanged)' }}</td>
+          <td>
+            <div class="flex items-center gap-3">{{ monogram(row.name) }}<span class="text-label-lg text-foreground">{{ row.name }}</span></div>
+          </td>
+          <td class="whitespace-nowrap font-mono">{{ row.roll_no }}</td>
+          <td class="text-muted-foreground">{{ row.email }}</td>
+          <td class="whitespace-nowrap">
+            {% if row.password %}<span class="rounded-md bg-muted px-2 py-1 font-mono text-label-lg text-foreground">{{ row.password }}</span>
+            {% else %}<span class="text-muted-foreground">Existing account (unchanged)</span>{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-</div>
+</section>
 
 <script id="credentialData" type="application/json">{{ credentials|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
 <script nonce="{{ csp_nonce() }}">
   (function () {
     const rows = JSON.parse(document.getElementById('credentialData').textContent);
