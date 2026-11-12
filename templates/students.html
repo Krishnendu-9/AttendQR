@@ -1,274 +1,216 @@
-{% extends 'base.html' %}
-{% from '_pagination.html' import render_pagination %}
-{% block title %}Students | AttendQR{% endblock %}
-{% block page_title %}Students{% endblock %}
-{% block page_subtitle %}Manage student records, roll numbers, and semester assignments{% endblock %}
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, empty_state, monogram, dropdown, menu_link, menu_form, menu_separator, pagination, submit_button with context %}
+{% from 'components/forms.html' import select_control with context %}
+{% set page_title = 'Students' %}
+{% set can_manage = current_user.role in ['super_admin', 'hod'] %}
+{% set list_url = url_for('students.index', page=page.page if page.page > 1 else None, **filter_args) %}
+{% set filter_count = (1 if filters.department_id else 0) + (1 if filters.semester_id else 0) %}
+{% set show_department = departments|length > 1 %}
+
+{#- Row actions: Edit, account resets, then Delete in red. -#}
+{% macro row_actions(s) -%}
+{% call dropdown('Actions for ' ~ s.name) %}
+  {{ menu_link('View details', url_for('students.view', id=s.id), 'user-round') }}
+  {% if can_manage %}{{ menu_link('Edit', url_for('students.edit_form', id=s.id, return_to=list_url), 'pencil') }}{% endif %}
+  {{ menu_form('Reset password', url_for('students.reset_password', id=s.id), 'key-round',
+               confirm='A new temporary password is created and shown once. The student must change it at next sign-in.',
+               confirm_title='Reset password for ' ~ s.name ~ '?', confirm_label='Reset password', hidden={'return_to': list_url}) }}
+  {{ menu_form('Reset device', url_for('students.reset_device', id=s.id), 'smartphone',
+               confirm='The registered phone is released. The next phone the student marks attendance from becomes their device.',
+               confirm_title='Reset device for ' ~ s.name ~ '?', confirm_label='Reset device', hidden={'return_to': list_url}) }}
+  {% if can_manage %}
+  {{ menu_separator() }}
+  {{ menu_form('Delete', url_for('students.delete', id=s.id), 'trash-2', danger=True,
+               confirm='Their login and attendance records are deleted too. This cannot be undone.',
+               confirm_title='Delete ' ~ s.name ~ '?', confirm_label='Delete', hidden={'return_to': list_url}) }}
+  {% endif %}
+{% endcall %}
+{%- endmacro %}
+
+{#- Filter count in the Filters button; swapped out of band after each change. -#}
+{% macro filters_summary() -%}
+<span id="filters-summary" class="contents{{ ' filters-on' if filter_count }}">{% if filter_count %}<span class="rounded-full bg-secondary px-1.5 text-label-md tabular-nums text-ink">{{ filter_count }}</span>{% endif %}</span>
+{%- endmacro %}
+
+{% macro device_badge(s) -%}
+{{ badge('Registered', 'success') if s.device_id else badge('None', 'neutral') }}
+{%- endmacro %}
+
 {% block content %}
-{% set return_to = url_for('students.index', page=page.page, **filter_args) %}
-<div class="page-heading">
-  <span class="badge text-bg-info align-self-start">
-    {% if filter_args %}Showing: {{ page.total }} of {{ total_students }} students{% else %}Total: {{ total_students }} students{% endif %}
-  </span>
-</div>
+<div x-data="modal">
+  {% call page_header('Students', 'Student records, roll numbers and class assignments.') %}
+    <button type="button" class="{{ btn('outline') }}" @click="show">{{ icon('upload') }}<span>Import</span></button>
+    <a href="{{ url_for('students.new', return_to=list_url) }}" class="{{ btn('primary') }}">{{ icon('plus') }}<span>New student</span></a>
+  {% endcall %}
 
-<form method="GET" action="{{ url_for('students.index') }}" class="form-panel" id="filterForm">
-  <div class="row g-3">
-    <div class="col-lg-3 col-md-6">
-      <label class="form-label" for="searchInput">Search</label>
-      <input type="search" id="searchInput" name="q" class="form-control" value="{{ filters.q }}" placeholder="Name, roll no, or email">
-    </div>
-    <div class="col-lg-3 col-md-6">
-      <label class="form-label" for="filterDept">Department</label>
-      <select id="filterDept" name="department_id" class="form-select">
-        <option value="">All Departments</option>
-        {% for d in departments %}
-        <option value="{{ d.id }}" {{ 'selected' if filters.department_id == d.id }}>{{ d.display_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-lg-2 col-md-6">
-      <label class="form-label" for="filterSem">Semester</label>
-      <select id="filterSem" name="semester_id" class="form-select">
-        <option value="">All Semesters</option>
-        {% for s in filter_semesters %}
-        <option value="{{ s.id }}" {{ 'selected' if filters.semester_id == s.id }}>
-          {{ s.name }}{% if not filters.department_id and departments|length > 1 %} ({{ s.department.display_name }}){% endif %}
-        </option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-lg-2 col-md-3 d-flex align-items-end">
-      <button class="btn btn-primary w-100" type="submit"><i class="bi bi-search me-1"></i> Apply</button>
-    </div>
-    <div class="col-lg-2 col-md-3 d-flex align-items-end">
-      <a class="btn btn-secondary w-100" href="{{ url_for('students.index') }}"><i class="bi bi-x-circle me-1"></i> Clear</a>
-    </div>
-  </div>
-</form>
-
-<form method="POST" action="{{ url_for('students.index') }}" class="form-panel" id="studentForm">
-  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="return_to" value="{{ return_to }}">
-  <div class="row g-3 align-items-end">
-    <div class="col-md-4 col-xl">
-      <label class="form-label" for="student_name">Name</label>
-      <input class="form-control" id="student_name" name="name" placeholder="Student name" maxlength="100" required>
-    </div>
-    <div class="col-md-4 col-xl">
-      <label class="form-label" for="roll_no">Roll No</label>
-      <input class="form-control" id="roll_no" name="roll_no" placeholder="Roll number" maxlength="20" required>
-    </div>
-    <div class="col-md-4 col-xl">
-      <label class="form-label" for="email">Email</label>
-      <input class="form-control" id="email" name="email" placeholder="student@example.com" type="email" maxlength="120" required>
-    </div>
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="dept_select">Department</label>
-      <select class="form-select" name="department_id" id="dept_select" required>
-        {% if departments|length != 1 %}<option value="">Select department</option>{% endif %}
-        {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.display_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="sem_select">Semester</label>
-      <select class="form-select" name="semester_id" id="sem_select" required>
-        <option value="">Select semester</option>
-      </select>
-    </div>
-    <div class="col-xl-auto">
-      <button class="btn btn-success w-100" type="submit">
-        <i class="bi bi-plus-circle me-1"></i> Add Student
-      </button>
-    </div>
-  </div>
-</form>
-
-<div class="form-panel">
-  <div class="row g-3 align-items-end">
-    <div class="col-lg-8">
-      <h3 class="section-title mb-1"><i class="bi bi-upload me-1"></i> Bulk Upload Students</h3>
-      <p class="section-subtitle mb-3">
-        Upload CSV or XLSX with columns: name, roll_no, email, semester.
-        {% if current_user.role == 'super_admin' %}
-        Principal uploads also need department (as shown in the template) or department_id.
-        {% else %}
-        Department is automatically set to your assigned department.
-        {% endif %}
-      </p>
-      <form method="POST" action="{{ url_for('students.import_students') }}" enctype="multipart/form-data" class="row g-2">
-        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <div class="col-md">
-          <input class="form-control" type="file" name="student_file" accept=".csv,.xlsx" required>
-        </div>
-        <div class="col-md-auto">
-          <button class="btn btn-primary w-100 mb-2 mb-md-0" type="submit">
-            <i class="bi bi-cloud-arrow-up me-1"></i> Import Students
-          </button>
-        </div>
-        <div class="col-md-auto">
-          <a class="btn btn-info w-100" href="{{ url_for('students.import_template') }}">
-            <i class="bi bi-download me-1"></i> Template
-          </a>
-        </div>
-      </form>
-    </div>
-    <div class="col-lg-4">
-      <div class="alert alert-info mb-0">
-        <i class="bi bi-shield-check me-1"></i>
-        Student accounts are managed here, not from Accounts. New and reset logins get a random temporary password, shown once; students must change it at first login.
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="table-card">
-  <div class="table-responsive">
-    <table class="table table-hover align-middle" id="studentsTable">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Name</th>
-          <th>Roll No</th>
-          <th>Email</th>
-          <th>Department</th>
-          <th>Semester</th>
-          <th>Device</th>
-          <th class="text-end">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in page.items %}
-        <tr>
-          <td>{{ (page.page - 1) * page.per_page + loop.index }}</td>
-          <td class="fw-semibold">{{ s.name }}</td>
-          <td>{{ s.roll_no }}</td>
-          <td>{{ s.email }}</td>
-          <td>{{ s.department.display_name }}</td>
-          <td>{{ s.semester.name }}</td>
-          <td>
-            {% if s.device_id %}<span class="badge text-bg-success">Registered</span>{% else %}<span class="badge text-bg-secondary">None</span>{% endif %}
-          </td>
-          <td class="text-end text-nowrap">
-            <form method="POST" action="{{ url_for('students.reset_password', id=s.id) }}" class="d-inline"
-              data-confirm="Reset password for {{ s.name }}? A new temporary password will be shown once.">
-              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="return_to" value="{{ return_to }}">
-              <button class="btn btn-sm btn-info btn-icon" type="submit" data-bs-toggle="tooltip" title="Reset password">
-                <i class="bi bi-key"></i>
-              </button>
-            </form>
-            <form method="POST" action="{{ url_for('students.reset_device', id=s.id) }}" class="d-inline"
-              data-confirm="Reset registered device lock for {{ s.name }}?">
-              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="return_to" value="{{ return_to }}">
-              <button class="btn btn-sm btn-secondary btn-icon" type="submit" data-bs-toggle="tooltip" title="Reset device lock">
-                <i class="bi bi-phone"></i>
-              </button>
-            </form>
-            {% if current_user.role in ['super_admin', 'hod'] %}
-            <button class="btn btn-sm btn-warning btn-icon edit-student" type="button" data-bs-toggle="tooltip" title="Edit student"
-              data-action="{{ url_for('students.edit', id=s.id) }}"
-              data-name="{{ s.name }}" data-roll="{{ s.roll_no }}" data-email="{{ s.email }}"
-              data-department-id="{{ s.department_id }}" data-semester-id="{{ s.semester_id }}">
-              <i class="bi bi-pencil-square"></i>
-            </button>
-            <form method="POST" action="{{ url_for('students.delete', id=s.id) }}" class="d-inline"
-              data-confirm="Delete {{ s.name }}? Their attendance records will also be deleted.">
-              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="return_to" value="{{ return_to }}">
-              <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete student">
-                <i class="bi bi-trash"></i>
-              </button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-        {% if not page.items %}
-        <tr><td colspan="8" class="text-center text-muted py-4">{{ 'No students match these filters.' if filter_args else 'No students added yet.' }}</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </div>
-  {{ render_pagination(page, 'students.index', filter_args) }}
-</div>
-
-<div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <form method="POST" id="editForm" class="modal-content">
+  <dialog x-ref="dialog" class="dialog dialog-lg" aria-labelledby="import-title" @click="onBackdrop">
+    <form method="POST" action="{{ url_for('students.import_students') }}" enctype="multipart/form-data">
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="return_to" value="{{ return_to }}">
-      <div class="modal-header">
-        <h5 class="modal-title">Edit Student</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      <div class="p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="import-title" class="text-headline-md text-foreground">Import students</h2>
+            <p class="mt-1 text-body-md text-muted-foreground">Upload a CSV or XLSX file. Each new student gets a login with a temporary password, shown once after the import.</p>
+          </div>
+          <button type="button" class="{{ btn('ghost', 'sm', True) }} -mr-2 -mt-1" @click="hide" aria-label="Close">{{ icon('x') }}</button>
+        </div>
+        <div class="mt-5 rounded-xl border border-border bg-background p-4">
+          <p class="text-label-md text-foreground">Columns</p>
+          <p class="mt-1 font-mono text-body-sm text-muted-foreground">name, roll_no, email, semester{% if current_user.role == 'super_admin' %}, department{% endif %}</p>
+          <p class="mt-2 text-body-sm text-muted-foreground">
+            {% if current_user.role == 'super_admin' %}Department is the label shown in the template, or use department_id.{% else %}Students are added to your department.{% endif %}
+            Up to 2,000 rows per file.
+          </p>
+          <a href="{{ url_for('students.import_template') }}" class="{{ btn('link') }} mt-3 text-label-md">{{ icon('download') }}<span>Download the template</span></a>
+        </div>
+        <label for="student_file" class="mb-1.5 mt-5 block text-label-lg text-foreground">File<span class="ml-0.5 text-muted-foreground" aria-hidden="true">*</span></label>
+        <input class="input" type="file" id="student_file" name="student_file" accept=".csv,.xlsx" required>
       </div>
-      <div class="modal-body">
-        <div class="mb-3">
-          <label class="form-label" for="edit_name">Name</label>
-          <input class="form-control" name="name" id="edit_name" maxlength="100" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="edit_roll_no">Roll No</label>
-          <input class="form-control" name="roll_no" id="edit_roll_no" maxlength="20" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="edit_email">Email</label>
-          <input class="form-control" name="email" id="edit_email" type="email" maxlength="120" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="edit_dept">Department</label>
-          <select class="form-select" name="department_id" id="edit_dept" required>
-            {% for d in departments %}
-            <option value="{{ d.id }}">{{ d.display_name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <label class="form-label" for="edit_sem">Semester</label>
-        <select class="form-select" name="semester_id" id="edit_sem" required>
-          <option value="">Select semester</option>
-        </select>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
+      <div class="flex flex-col-reverse gap-2 border-t border-border px-6 py-4 sm:flex-row sm:justify-end">
+        <button type="button" class="{{ btn('outline') }}" @click="hide">Cancel</button>
+        {{ submit_button('Import students', 'Importing...', icon_name='upload') }}
       </div>
     </form>
-  </div>
+  </dialog>
 </div>
 
-<script nonce="{{ csp_nonce() }}">
-(function () {
-  const deptSelect = document.getElementById('dept_select');
-  const semSelect = document.getElementById('sem_select');
-  deptSelect.addEventListener('change', function () { AttendQR.loadSemesters(semSelect, deptSelect.value); });
-  if (deptSelect.value) AttendQR.loadSemesters(semSelect, deptSelect.value);
+<section class="card overflow-hidden" aria-label="Student list">
+  {#- Toolbar. Changes swap only the list below (htmx); state lives in the URL. -#}
+  <form id="students-filters" method="GET" action="{{ url_for('students.index') }}" x-data="listFilters" role="search"
+    hx-get="{{ url_for('students.index') }}" hx-trigger="submit" hx-target="#students-list" hx-select="#students-list"
+    hx-select-oob="#filters-summary,#filter-fields,#filters-clear" hx-swap="outerHTML" hx-push-url="true" hx-sync="this:replace"
+    class="flex items-center gap-2 border-b border-border p-3 md:p-4">
+    <div class="relative min-w-0 flex-1 md:max-w-sm">
+      <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">{{ icon('search') }}</span>
+      <input type="search" name="q" value="{{ filters.q }}" class="input pl-9 pr-9" placeholder="Search name, roll number or email"
+        aria-label="Search students" autocomplete="off" @input="onSearch" @keydown.enter.prevent="submit">
+      <button type="button" x-show="hasQuery" x-cloak @click="clearSearch" class="absolute inset-y-0 right-0 flex w-9 items-center justify-center rounded-r-lg text-muted-foreground hover:text-foreground" aria-label="Clear search">{{ icon('x') }}</button>
+    </div>
 
-  const editDept = document.getElementById('edit_dept');
-  const editSem = document.getElementById('edit_sem');
-  editDept.addEventListener('change', function () { AttendQR.loadSemesters(editSem, editDept.value); });
+    <div class="ml-auto flex items-center gap-2">
+      <div class="flex items-center">
+        {% call dropdown('Filters', 'funnel', variant='outline', size=None, icon_only=False, menu=False, label_cls='max-sm:sr-only',
+                         extra_html=filters_summary(), button_cls='has-[.filters-on]:border-secondary has-[.filters-on]:bg-accent has-[.filters-on]:text-ink max-sm:px-3') %}
+          <div class="w-72 p-3" data-row-ignore>
+            <div id="filter-fields" class="space-y-4">
+              {% if show_department %}
+              <div>
+                <label for="filter-department" class="mb-1.5 block text-label-md text-muted-foreground">Department</label>
+                {% call select_control('department_id', 'filter-department', placeholder='All departments', attrs={'@change': 'resetAndSubmit', 'data-resets': 'semester_id'}) %}
+                  {% for d in departments %}<option value="{{ d.id }}"{% if filters.department_id == d.id %} selected{% endif %}>{{ d.display_name }}</option>{% endfor %}
+                {% endcall %}
+              </div>
+              {% endif %}
+              <div>
+                <label for="filter-semester" class="mb-1.5 block text-label-md text-muted-foreground">Semester</label>
+                {% call select_control('semester_id', 'filter-semester', placeholder='All semesters', attrs={'@change': 'submit'}) %}
+                  {% for s in filter_semesters %}<option value="{{ s.id }}"{% if filters.semester_id == s.id %} selected{% endif %}>{{ s.name }}{% if not filters.department_id and show_department %} ({{ s.department.display_name }}){% endif %}</option>{% endfor %}
+                {% endcall %}
+              </div>
+            </div>
+          </div>
+        {% endcall %}
+        <span id="filters-clear" class="contents">
+          {% if filter_count %}
+          <a href="{{ url_for('students.index', q=filters.q or None) }}" class="{{ btn('ghost', 'sm', True) }} ml-1" aria-label="Clear filters" title="Clear filters">{{ icon('x') }}</a>
+          {% endif %}
+        </span>
+      </div>
 
-  document.querySelectorAll('.edit-student').forEach(function (button) {
-    button.addEventListener('click', function () {
-      const data = button.dataset;
-      document.getElementById('editForm').action = data.action;
-      document.getElementById('edit_name').value = data.name;
-      document.getElementById('edit_roll_no').value = data.roll;
-      document.getElementById('edit_email').value = data.email;
-      editDept.value = data.departmentId;
-      AttendQR.loadSemesters(editSem, data.departmentId, { selected: data.semesterId });
-      bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
-    });
-  });
+      <div class="hidden md:block" x-data="columnPicker" data-table="students">
+        {% call dropdown('Columns', 'columns-3', variant='outline', size=None, icon_only=False) %}
+          <p class="menu-heading">Show columns</p>
+          {% for key, label in [('roll', 'Roll no'), ('department', 'Department'), ('semester', 'Semester'), ('device', 'Device')] %}
+          <button type="button" role="menuitemcheckbox" class="menu-item" :aria-checked="isShown('{{ key }}') ? 'true' : 'false'" @click="toggle('{{ key }}')">
+            <span class="flex size-4 items-center justify-center rounded border border-input" :class="isShown('{{ key }}') ? 'border-primary bg-primary text-primary-foreground' : ''">
+              <span x-show="isShown('{{ key }}')">{{ icon('check', 'size-3') }}</span>
+            </span>
+            <span>{{ label }}</span>
+          </button>
+          {% endfor %}
+        {% endcall %}
+      </div>
 
-  // Changing the department filter resets the semester filter and reloads.
-  const filterForm = document.getElementById('filterForm');
-  document.getElementById('filterDept').addEventListener('change', function () {
-    document.getElementById('filterSem').value = '';
-    filterForm.submit();
-  });
-  document.getElementById('filterSem').addEventListener('change', function () { filterForm.submit(); });
-})();
-</script>
+      <button type="submit" class="{{ btn('outline', icon_only=True) }}" aria-label="Reload" title="Reload">{{ icon('rotate-cw', 'size-4 spin-while-loading') }}</button>
+    </div>
+  </form>
+
+  <div id="students-list" data-error-template="students-list-error" class="dim-while-loading">
+    {% if page.items %}
+    {#- Desktop and tablet: table. -#}
+    <div class="overflow-x-auto max-md:hidden">
+      <table class="data-table" data-table="students">
+        <thead>
+          <tr>
+            <th scope="col">Student</th>
+            <th scope="col" data-col="roll">Roll no</th>
+            {% if show_department %}<th scope="col" data-col="department">Department</th>{% endif %}
+            <th scope="col" data-col="semester">Semester</th>
+            <th scope="col" data-col="device">Device</th>
+            <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in page.items %}
+          <tr data-href="{{ url_for('students.view', id=s.id) }}">
+            <td>
+              <div class="flex items-center gap-3">
+                {{ monogram(s.name) }}
+                <div class="min-w-0">
+                  <a href="{{ url_for('students.view', id=s.id) }}" class="block truncate rounded text-label-lg text-foreground hover:text-primary focus-visible:shadow-focus focus-visible:outline-none">{{ s.name }}</a>
+                  <p class="truncate text-body-sm text-muted-foreground">{{ s.email }}</p>
+                </div>
+              </div>
+            </td>
+            <td data-col="roll" class="whitespace-nowrap font-mono text-body-md text-foreground">{{ s.roll_no }}</td>
+            {% if show_department %}<td data-col="department" class="whitespace-nowrap text-body-md text-muted-foreground">{{ s.department.display_name }}</td>{% endif %}
+            <td data-col="semester" class="whitespace-nowrap text-body-md text-muted-foreground">{{ s.semester.name }}</td>
+            <td data-col="device">{{ device_badge(s) }}</td>
+            <td class="col-actions">{{ row_actions(s) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {#- Phones: stacked cards. -#}
+    <ul class="divide-y divide-border md:hidden">
+      {% for s in page.items %}
+      <li class="flex flex-col gap-3 p-4">
+        <div class="flex items-start gap-3">
+          {{ monogram(s.name) }}
+          <div class="min-w-0 flex-1">
+            <a href="{{ url_for('students.view', id=s.id) }}" class="block truncate text-label-lg text-foreground">{{ s.name }}</a>
+            <p class="truncate text-body-sm text-muted-foreground">{{ s.email }}</p>
+          </div>
+          {{ row_actions(s) }}
+        </div>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 pl-11 text-body-sm text-muted-foreground">
+          <span class="font-mono text-foreground">{{ s.roll_no }}</span>
+          <span>{{ s.semester.name }}</span>
+          {% if show_department %}<span>{{ s.department.display_name }}</span>{% endif %}
+          {{ device_badge(s) }}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {{ pagination(page, 'students.index', filter_args, 'students', hx_target='#students-list') }}
+
+    {% elif filter_args %}
+      {% call empty_state('search-x', 'No students match', 'Try a different search, or clear the filters to see everyone.') %}
+        <a href="{{ url_for('students.index') }}" class="{{ btn('outline') }}">{{ icon('x') }}<span>Clear filters</span></a>
+      {% endcall %}
+    {% else %}
+      {% call empty_state('graduation-cap', 'No students yet', 'Add students one by one, or import a CSV or XLSX file.') %}
+        <a href="{{ url_for('students.new') }}" class="{{ btn('primary') }}">{{ icon('plus') }}<span>New student</span></a>
+      {% endcall %}
+    {% endif %}
+  </div>
+</section>
+
+<template id="students-list-error">
+  {% call empty_state('cloud-off', 'Could not load students', 'The server did not respond. Check the connection and try again.') %}
+    <button type="button" class="{{ btn('outline') }}" data-reload-page>{{ icon('rotate-cw') }}<span>Retry</span></button>
+  {% endcall %}
+</template>
 {% endblock %}
