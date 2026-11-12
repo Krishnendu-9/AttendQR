@@ -1,0 +1,22 @@
+{#- Centred layout for pages outside the app shell: sign in and error pages. -#}
+{% from 'components/ui.html' import icon %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>{% block title %}AttendQR{% endblock %}</title>
+{% include 'components/head.html' %}
+</head>
+<body class="min-h-dvh bg-background text-foreground antialiased">
+  <div class="flex min-h-dvh flex-col items-center justify-center px-4 py-10">
+    <a href="{{ url_for('main.dashboard') }}" class="mb-8 flex items-center gap-3 rounded-lg focus-visible:shadow-focus focus-visible:outline-none">
+      <span class="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">{{ icon('qr-code', 'size-5') }}</span>
+      <span class="text-headline-md text-foreground">AttendQR</span>
+    </a>
+    <main class="w-full max-w-md">
+      {% block content %}{% endblock %}
+    </main>
+    <p class="mt-8 text-body-sm text-muted-foreground">QR-based attendance for your institution</p>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

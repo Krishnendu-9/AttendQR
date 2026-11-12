@@ -1,50 +1,32 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <title>Login | AttendQR</title>
-{% include '_head.html' %}
-</head>
-<body class="login-page">
-  <main class="auth-card">
-    <div class="auth-mark">
-      <i class="bi bi-qr-code-scan"></i>
-    </div>
-    <div class="text-center mb-2 fw-bold">AttendQR</div>
-    <h1 class="h4 fw-bold mb-1">Login</h1>
-    <p class="text-muted mb-4">Sign in with your email to access the QR-based attendance system.</p>
+{% extends 'layouts/auth.html' %}
+{% from 'components/ui.html' import icon, callout, submit_button with context %}
+{% from 'components/forms.html' import text_input, password_input with context %}
+{% block title %}Sign in | AttendQR{% endblock %}
+{% block content %}
+<div class="card p-6 shadow-popover sm:p-8">
+  <h1 class="text-headline-lg text-foreground">Sign in</h1>
+  <p class="mt-1 text-body-md text-muted-foreground">Sign in with the email address your account was created with.</p>
 
-    {% with messages = get_flashed_messages(with_categories=True) %}
-      {% for category, message in messages %}
-      <div class="alert alert-{{ category }}" role="alert">{{ message }}</div>
-      {% endfor %}
-    {% endwith %}
-
+  {% set messages = get_flashed_messages(with_categories=True) %}
+  {% if messages or error %}
+  <div class="mt-6 space-y-3">
+    {% for category, message in messages %}
+      {% call callout(tone=category if category in ['success', 'warning', 'danger'] else 'info') %}{{ message }}{% endcall %}
+    {% endfor %}
     {% if error %}
-    <div class="alert alert-danger" role="alert">
-      <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
-    </div>
+      {% call callout(tone='danger') %}{{ error }}{% endcall %}
     {% endif %}
+  </div>
+  {% endif %}
 
-    <form method="POST" action="{{ url_for('auth.login') }}">
-      <input type="hidden" name="next" value="{{ next_url or '' }}">
-      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      <div class="mb-3">
-        <label class="form-label" for="username">Email</label>
-        <input class="form-control" id="username" name="username" type="email" placeholder="Enter email" autocomplete="username" required autofocus>
-      </div>
-      <div class="mb-4">
-        <label class="form-label" for="password">Password</label>
-        <div class="input-group password-field">
-          <input class="form-control" id="password" name="password" type="password" placeholder="Enter password" autocomplete="current-password" required>
-          <button class="btn btn-outline-secondary password-toggle" type="button" data-target="password" aria-label="Show password">
-            <i class="bi bi-eye"></i>
-          </button>
-        </div>
-      </div>
-      <button class="btn btn-primary w-100" type="submit">
-        <i class="bi bi-box-arrow-in-right me-1"></i> Login
-      </button>
-    </form>
-  </main>
-</body>
-</html>
+  <form method="POST" action="{{ url_for('auth.login') }}" class="mt-6 space-y-5">
+    <input type="hidden" name="next" value="{{ next_url or '' }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    {{ text_input('username', 'Email', type='email', required=True, placeholder='you@example.com',
+                  attrs={'autocomplete': 'username', 'autofocus': True}) }}
+    {{ password_input('password', 'Password', required=True, autocomplete='current-password', placeholder='Enter your password') }}
+    {{ submit_button('Sign in', 'Signing in...', icon_name='log-in', extra='w-full') }}
+  </form>
+</div>
+<p class="mt-6 text-center text-body-sm text-muted-foreground">Forgot your password? Ask your department office to reset it.</p>
+{% endblock %}
