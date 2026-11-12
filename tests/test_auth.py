@@ -233,8 +233,8 @@ def test_inline_scripts_carry_the_request_nonce(data, client_for):
 
 def test_pages_use_local_assets_only(data, client_for):
     html = client_for(data.principal).get('/').get_data(as_text=True)
-    assert 'cdn.jsdelivr.net' not in html and 'fonts.googleapis.com' not in html
-    assert '/static/vendor/bootstrap/bootstrap.min.css' in html
+    assert 'cdn.jsdelivr.net' not in html and 'fonts.googleapis.com' not in html and 'unpkg.com' not in html
+    assert '/static/css/app.css' in html and '/static/vendor/alpinejs/alpine-csp.min.js' in html
 
 
 # ── Secret key ───────────────────────────────────────────────
@@ -363,7 +363,8 @@ def test_styles_come_from_stylesheets_only(app, data, client_for):
     assert style_src.strip() == "style-src 'self'"
     # The CSP would silently ignore these, so keep them out of the templates.
     templates = pathlib.Path(app.template_folder)
-    offenders = [p.name for p in templates.glob('*.html') if 'style="' in p.read_text(encoding='utf-8') or '<style' in p.read_text(encoding='utf-8')]
+    offenders = [str(p.relative_to(templates)) for p in templates.rglob('*.html')
+                 if 'style="' in p.read_text(encoding='utf-8') or '<style' in p.read_text(encoding='utf-8')]
     assert offenders == []
 
 
