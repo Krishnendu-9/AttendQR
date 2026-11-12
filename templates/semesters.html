@@ -1,133 +1,81 @@
-{% extends 'base.html' %}
-{% block title %}Semesters | AttendQR{% endblock %}
-{% block page_title %}Semesters{% endblock %}
-{% block page_subtitle %}Manage semester records for each department{% endblock %}
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, empty_state, monogram, dropdown, menu_form, menu_separator, record_opener, record_dialog, client_toolbar, search_empty with context %}
+{% from 'components/forms.html' import text_input, select_input, select_control with context %}
+{% set page_title = 'Semesters' %}
+{% set show_department = departments|length > 1 %}
+{% set default_department = departments[0].id if departments|length == 1 else '' %}
+
 {% block content %}
+{% call page_header('Semesters', 'The semesters of each department. Students and subjects belong to a semester.') %}
+  {{ record_opener('New semester', 'semester-dialog', url_for('academics.semesters'), 'New semester', 'Create semester',
+                   {'department_id': default_department}, icon_name='plus', mode='create', as_button=True) }}
+{% endcall %}
 
-<div class="page-heading">
-  <span id="resultCount" class="badge text-bg-info align-self-start">Total: {{ semesters|length }} semesters</span>
-</div>
-
-<div class="form-panel">
-  <div class="row g-3">
-    <div class="col-md-8 col-lg-6">
-      <label class="form-label" for="searchInput">Search</label>
-      <input type="text" id="searchInput" class="form-control" placeholder="Search by semester or department">
+<section class="card overflow-hidden" aria-label="Semester list">
+  {% if semesters %}
+  {% call client_toolbar('semesters-filter', '#semesters-list', 'Search semester or department', 'Search semesters', filters=show_department) %}
+    <div>
+      <label for="filter-semester-department" class="mb-1.5 block text-label-md text-muted-foreground">Department</label>
+      {% call select_control('department', 'filter-semester-department', placeholder='All departments') %}
+        {% for d in departments %}<option value="{{ d.id }}">{{ d.display_name }}</option>{% endfor %}
+      {% endcall %}
     </div>
-    <div class="col-md-4 col-lg-3 d-flex align-items-end">
-      <button class="btn btn-secondary w-100" type="button" id="clearSearch">
-        <i class="bi bi-x-circle me-1"></i> Clear Search
-      </button>
-    </div>
-  </div>
-</div>
-
-<form method="POST" action="{{ url_for('academics.semesters') }}" class="form-panel">
-  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-  <div class="row g-3 align-items-end">
-    <div class="col-md-5">
-      <label class="form-label" for="semester_name">Semester Name</label>
-      <input class="form-control" id="semester_name" name="name" placeholder="Example: Semester 1" maxlength="50" required>
-    </div>
-    <div class="col-md-5">
-      <label class="form-label" for="department_id">Department</label>
-      <select class="form-select" id="department_id" name="department_id" required>
-        {% if departments|length != 1 %}<option value="">Select department</option>{% endif %}
-        {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.display_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-auto">
-      <button type="submit" class="btn btn-success">
-        <i class="bi bi-plus-circle me-1"></i> Add Semester
-      </button>
-    </div>
-  </div>
-</form>
-
-<div class="table-card">
-  <div class="table-responsive">
-    <table class="table table-hover align-middle" id="semestersTable">
-      <thead>
-        <tr><th>#</th><th>Semester</th><th>Department</th><th class="text-end">Actions</th></tr>
-      </thead>
-      <tbody>
-        {% for s in semesters %}
-        <tr class="semester-row" data-name="{{ s.name|lower }}" data-dept="{{ s.department.display_name|lower }}">
-          <td>{{ loop.index }}</td>
-          <td class="fw-semibold">{{ s.name }}</td>
-          <td>{{ s.department.display_name }}</td>
-          <td class="text-end text-nowrap">
-            <button type="button" class="btn btn-sm btn-warning btn-icon edit-semester" data-bs-toggle="tooltip" title="Edit semester"
-              data-action="{{ url_for('academics.edit_semester', id=s.id) }}"
-              data-name="{{ s.name }}" data-department-id="{{ s.department_id }}">
-              <i class="bi bi-pencil-square"></i>
-            </button>
-            <form method="POST" action="{{ url_for('academics.delete_semester', id=s.id) }}" class="d-inline"
-              data-confirm="Delete {{ s.name }} ({{ s.department.display_name }})?">
-              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="btn btn-sm btn-danger btn-icon" data-bs-toggle="tooltip" title="Delete semester">
-                <i class="bi bi-trash"></i>
-              </button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-        {% if not semesters %}
-        <tr id="noSemesters"><td colspan="4" class="text-center text-muted py-4">No semesters added yet.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<div class="modal fade" id="editModal" tabindex="-1">
-  <div class="modal-dialog">
-    <form method="POST" id="editForm" class="modal-content">
-      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      <div class="modal-header">
-        <h5 class="modal-title">Edit Semester</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-3">
-          <label class="form-label" for="edit_name">Semester Name</label>
-          <input class="form-control" name="name" id="edit_name" maxlength="50" required>
-        </div>
-        <label class="form-label" for="edit_dept">Department</label>
-        <select class="form-select" name="department_id" id="edit_dept" required>
-          {% for d in departments %}
-          <option value="{{ d.id }}">{{ d.display_name }}</option>
+  {% endcall %}
+  <div id="semesters-list">
+    <div data-search-results class="overflow-x-auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Semester</th>
+            {% if show_department %}<th scope="col">Department</th>{% endif %}
+            <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in semesters %}
+          <tr data-search="{{ (s.name ~ ' ' ~ s.department.display_name)|lower }}" data-filter-department="{{ s.department_id }}">
+            <td>
+              <div class="flex items-center gap-3">
+                <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-ink">{{ icon('calendar-range') }}</span>
+                <span class="text-label-lg text-foreground">{{ s.name }}</span>
+              </div>
+            </td>
+            {% if show_department %}<td class="text-body-md text-muted-foreground">{{ s.department.display_name }}</td>{% endif %}
+            <td class="col-actions">
+              {% call dropdown('Actions for ' ~ s.name) %}
+                {{ record_opener('Edit', 'semester-dialog', url_for('academics.edit_semester', id=s.id), 'Edit semester', 'Save changes',
+                                 {'name': s.name, 'department_id': s.department_id}, 'pencil') }}
+                {{ menu_separator() }}
+                {{ menu_form('Delete', url_for('academics.delete_semester', id=s.id), 'trash-2', danger=True,
+                             confirm='Semesters that still have students, subjects or sessions cannot be deleted.',
+                             confirm_title='Delete ' ~ s.name ~ ' (' ~ s.department.display_name ~ ')?', confirm_label='Delete') }}
+              {% endcall %}
+            </td>
+          </tr>
           {% endfor %}
-        </select>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
-      </div>
-    </form>
+        </tbody>
+      </table>
+    </div>
+    {{ search_empty() }}
+    <p class="border-t border-border px-6 py-3 text-body-sm text-muted-foreground tabular-nums" data-search-count data-noun="semesters">{{ semesters|length }} semesters</p>
   </div>
-</div>
-<script nonce="{{ csp_nonce() }}">
-(function () {
-  document.querySelectorAll('.edit-semester').forEach(function (button) {
-    button.addEventListener('click', function () {
-      document.getElementById('edit_name').value = button.dataset.name;
-      document.getElementById('edit_dept').value = button.dataset.departmentId;
-      document.getElementById('editForm').action = button.dataset.action;
-      bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
-    });
-  });
+  {% else %}
+    {% call empty_state('calendar-range', 'No semesters yet', 'Add a semester before adding its students and subjects.') %}
+      {{ record_opener('New semester', 'semester-dialog', url_for('academics.semesters'), 'New semester', 'Create semester',
+                       {'department_id': default_department}, icon_name='plus', mode='create', as_button=True) }}
+    {% endcall %}
+  {% endif %}
+</section>
 
-  const apply = AttendQR.bindTableSearch({
-    input: 'searchInput', count: 'resultCount', rows: '.semester-row',
-    fields: ['name', 'dept'], noun: 'semesters'
-  });
-  document.getElementById('clearSearch').addEventListener('click', function () {
-    document.getElementById('searchInput').value = '';
-    apply();
-  });
-})();
-</script>
+{% call record_dialog('semester-dialog', 'New semester', 'Create semester') %}
+  {{ text_input('name', 'Semester name', id='semester_name', required=True, placeholder='Semester 1',
+                attrs={'maxlength': 50, 'autocomplete': 'off'}) }}
+  {% if current_user.role == 'super_admin' %}
+    {{ select_input('department_id', 'Department', departments, id='semester_department', placeholder='Select department',
+                    required=True, value_attr='id', label_attr='display_name') }}
+  {% else %}
+    {{ text_input('department_display', 'Department', departments[0].display_name if departments else 'Not assigned',
+                  id='semester_department_display', attrs={'readonly': True}) }}
+  {% endif %}
+{% endcall %}
 {% endblock %}
