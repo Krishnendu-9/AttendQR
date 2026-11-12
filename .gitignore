@@ -34,3 +34,5 @@ Thumbs.db
 
 # For any temporary files related to submissions, if needed
 submission/*
+# Tailwind CLI binary downloaded by scripts/tailwind.py
+tools/
