@@ -1,86 +1,92 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <title>Mark Attendance | AttendQR</title>
-{% include '_head.html' %}
-</head>
-<body class="scan-page">
-  <main class="auth-card">
-    <div class="auth-mark">
-      <i class="bi bi-check2-square"></i>
-    </div>
-    <div class="text-center mb-2 fw-bold">AttendQR</div>
-    <h1 class="h4 fw-bold mb-1">{{ status_title }}</h1>
-    <p class="text-muted mb-3">{{ status_message }}</p>
+{% extends 'layouts/auth.html' %}
+{% from 'components/ui.html' import icon, btn, callout, detail_item with context %}
+{% block title %}{{ status_title }} | AttendQR{% endblock %}
+{% block content %}
+<div class="card p-6 shadow-popover sm:p-8">
+  <span class="mb-5 flex size-12 items-center justify-center rounded-full {{ 'bg-secondary text-ink' if can_mark_attendance else 'bg-muted text-muted-foreground' }}">
+    {{- icon('scan-line' if can_mark_attendance else 'qr-code', 'size-6') -}}
+  </span>
+  <h1 class="text-headline-lg text-foreground">{{ status_title }}</h1>
+  <p class="mt-1 text-body-md text-muted-foreground">{{ status_message }}</p>
 
+  {% if session_info or student %}
+  <dl class="mt-6 space-y-4 rounded-xl border border-border bg-background p-4">
     {% if session_info %}
-    <div class="alert alert-info text-start">
-      <div class="fw-semibold">{{ session_info.subject }}</div>
-      <div class="small">{{ session_info.department }} - {{ session_info.semester }}</div>
-      <div class="small">Created at: {{ session_info.created_at }}</div>
-      <div class="small">Expires at: {{ session_info.expires_at }}</div>
-    </div>
+      {% call detail_item('Class') %}
+        <span class="text-foreground">{{ session_info.subject }}</span>
+        <span class="block text-body-sm font-normal text-muted-foreground">{{ session_info.department }} &middot; {{ session_info.semester }}</span>
+      {% endcall %}
+      <div class="grid grid-cols-2 gap-4">
+        {{ detail_item('Started', session_info.created_at) }}
+        {{ detail_item('Ends', session_info.expires_at) }}
+      </div>
     {% endif %}
-
     {% if student %}
-    <div class="alert alert-secondary text-start">
-      <div class="fw-semibold">{{ student.name }}</div>
-      <div class="small">{{ student.roll_no }}</div>
-      <div class="small">{{ student.email }}</div>
-    </div>
+      {% call detail_item('Student') %}
+        <span class="text-foreground">{{ student.name }}</span>
+        <span class="block text-body-sm font-normal text-muted-foreground">{{ student.roll_no }} &middot; {{ student.email }}</span>
+      {% endcall %}
     {% endif %}
-
-    {% if can_mark_attendance %}
-    <button class="btn btn-primary w-100" id="submitBtn" type="button" data-url="{{ url_for('attendance.mark_attendance') }}">
-      <i class="bi bi-send-check me-1"></i> Mark My Attendance
-    </button>
-    {% if config.SCAN_IP_RETENTION_DAYS %}
-    <div class="form-text text-center mt-2">
-      Your IP address is saved with this attendance so staff can check it was marked from the campus network. It is deleted after {{ config.SCAN_IP_RETENTION_DAYS }} days.
-    </div>
-    {% endif %}
-    {% endif %}
-    <div id="msg" class="mt-3" aria-live="polite"></div>
-
-    {% if current_user.is_authenticated %}
-    <div class="text-center mt-2">
-      <a href="{{ url_for('main.dashboard') }}" class="small">Go to dashboard</a>
-    </div>
-    {% endif %}
-  </main>
+  </dl>
+  {% endif %}
 
   {% if can_mark_attendance %}
-  <script nonce="{{ csp_nonce() }}">
-  (function () {
-    const button = document.getElementById('submitBtn');
-    const output = document.getElementById('msg');
-
-    function show(message, success) {
-      output.innerHTML = '';
-      const alert = document.createElement('div');
-      alert.className = 'alert alert-' + (success ? 'success' : 'danger');
-      alert.textContent = message;
-      output.appendChild(alert);
-    }
-
-    button.addEventListener('click', function () {
-      button.disabled = true;
-      AttendQR.postJSON(button.dataset.url)
-        .then(function (data) {
-          show(data.message, data.success);
-          if (data.success) {
-            button.remove();
-          } else {
-            button.disabled = false;
-          }
-        })
-        .catch(function () {
-          show('Could not reach the server. Check your connection and try again.', false);
-          button.disabled = false;
-        });
-    });
-  })();
-  </script>
+  <button class="{{ btn('primary', extra='mt-6 h-12 w-full') }}" id="submitBtn" type="button" data-url="{{ url_for('attendance.mark_attendance') }}">
+    {{ icon('loader-circle', 'btn-spinner') }}<span class="btn-icon-idle">{{ icon('square-check') }}</span><span>Mark My Attendance</span>
+  </button>
+  {% if config.SCAN_IP_RETENTION_DAYS %}
+  <p class="mt-3 text-center text-body-sm text-muted-foreground">
+    Your IP address is saved with this attendance so staff can check it was marked from the campus network. It is deleted after {{ config.SCAN_IP_RETENTION_DAYS }} days.
+  </p>
   {% endif %}
-</body>
-</html>
+  {% endif %}
+  <div id="msg" class="mt-5 empty:hidden" aria-live="polite"></div>
+
+  {% if current_user.is_authenticated %}
+  <div class="mt-6 border-t border-border pt-5 text-center">
+    <a href="{{ url_for('main.dashboard') }}" class="{{ btn('link') }} text-label-md">{{ icon('arrow-left') }}<span>Go to my attendance</span></a>
+  </div>
+  {% endif %}
+</div>
+
+{% if can_mark_attendance %}
+<template id="msg-success">{% call callout(tone='success') %}<span data-msg></span>{% endcall %}</template>
+<template id="msg-error">{% call callout(tone='danger') %}<span data-msg></span>{% endcall %}</template>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if can_mark_attendance %}
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const button = document.getElementById('submitBtn');
+  const output = document.getElementById('msg');
+
+  function show(message, success) {
+    const node = document.getElementById(success ? 'msg-success' : 'msg-error').content.cloneNode(true);
+    node.querySelector('[data-msg]').textContent = message;
+    output.replaceChildren(node);
+  }
+
+  function busy(on) {
+    button.disabled = on;
+    button.classList.toggle('is-busy', on);
+  }
+
+  button.addEventListener('click', function () {
+    busy(true);
+    AttendQR.postJSON(button.dataset.url)
+      .then(function (data) {
+        show(data.message, data.success);
+        if (data.success) button.remove();
+        else busy(false);
+      })
+      .catch(function () {
+        show('Could not reach the server. Check your connection and try again.', false);
+        busy(false);
+      });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
