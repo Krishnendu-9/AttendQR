@@ -99,6 +99,15 @@ def dashboard():
     )
 
 
+@bp.route('/dev/components')
+@login_required
+def dev_components():
+    """Every interface component in light and dark, for checking the design. Only in debug mode."""
+    if not current_app.debug:
+        abort(404)
+    return render_template('dev/components.html')
+
+
 @bp.route('/student/attendance')
 @login_required
 @role_required('student')

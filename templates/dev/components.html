@@ -1,0 +1,126 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, button, submit_button, badge, attendance_badge, percent_badge, account_badge, monogram, page_header, card, detail_list, detail_item, empty_state, callout, dropdown, menu_link, menu_form, menu_separator, skeleton with context %}
+{% from 'components/forms.html' import text_input, select_input, password_input, switch_input, checkbox_input, form_section, form_actions with context %}
+{% set page_title = 'Components' %}
+{% set breadcrumbs = [('Developer', None), ('Components', None)] %}
+
+{% macro heading(text) -%}<h3 class="mb-3 mt-8 text-label-caps uppercase text-muted-foreground first:mt-0">{{ text }}</h3>{%- endmacro %}
+
+{% block content %}
+{{ page_header('Components', 'Every interface component in the light and dark themes. Only available in debug mode.') }}
+
+<div class="grid grid-cols-1 gap-6 2xl:grid-cols-2">
+  {% for theme in ['light', 'dark'] %}
+  <div class="{{ theme }} rounded-2xl border border-border bg-background p-4 text-foreground sm:p-6">
+    <p class="mb-6 text-headline-md">{{ theme|capitalize }}</p>
+
+    {{ heading('Buttons') }}
+    <div class="flex flex-wrap items-center gap-2">
+      {{ button('Primary', 'primary', 'plus') }}
+      {{ button('Outline', 'outline', 'download') }}
+      {{ button('Ghost', 'ghost') }}
+      {{ button('Delete', 'destructive', 'trash-2') }}
+      {{ button('Delete', 'destructive-outline', 'trash-2') }}
+      {{ button('Link', 'link') }}
+      {{ button('Small', 'outline', size='sm') }}
+      {{ button('Settings', 'outline', 'settings', icon_only=True) }}
+      {{ button('Disabled', 'primary', attrs={'disabled': True}) }}
+      <button type="button" class="{{ btn('primary') }} is-busy" disabled>{{ icon('loader-circle', 'btn-spinner') }}<span>Saving...</span></button>
+    </div>
+
+    {{ heading('Badges') }}
+    <div class="flex flex-wrap items-center gap-2">
+      {{ attendance_badge('present') }} {{ attendance_badge('present_staff') }} {{ attendance_badge('absent') }}
+      {{ attendance_badge('not_marked') }} {{ attendance_badge('moved_out') }}
+      {{ percent_badge(92.5, 80) }} {{ percent_badge(70, 80) }} {{ percent_badge(40, 80) }}
+      {{ badge('Informative', 'info') }} {{ badge('Outline', 'outline') }}
+    </div>
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      {{ attendance_badge('present', short=True) }} {{ attendance_badge('present_staff', short=True) }} {{ attendance_badge('absent', short=True) }} {{ attendance_badge('not_marked', short=True) }}
+      {{ account_badge(None) }} {{ account_badge({'is_active': True, 'must_change_password': True}) }} {{ account_badge({'is_active': True, 'must_change_password': False}) }}
+    </div>
+
+    {{ heading('Identity') }}
+    <div class="flex items-center gap-3">{{ monogram('Rahul Das') }} {{ monogram('Priya') }} <span class="avatar">PS</span> <kbd class="kbd">Ctrl K</kbd></div>
+
+    {{ heading('Callouts') }}
+    <div class="space-y-3">
+      {% call callout('Informative') %}Students must change the temporary password at first sign-in.{% endcall %}
+      {% call callout('Needs attention', 'warning') %}These passwords are shown only once.{% endcall %}
+      {% call callout(tone='danger') %}Roll number MCA001 already exists in this class.{% endcall %}
+      {% call callout(tone='success') %}Attendance saved.{% endcall %}
+    </div>
+
+    {{ heading('Form') }}
+    <div class="card">
+      {% call form_section('Student details', 'Name, roll number and email.') %}
+        {{ text_input('name', 'Full name', 'Rahul Das', id='name-' ~ theme, required=True, cls='sm:col-span-2') }}
+        {{ text_input('roll', 'Roll number', 'MCA001', id='roll-' ~ theme, required=True, error='Roll number MCA001 already exists in this class.') }}
+        {{ text_input('email', 'Email', id='email-' ~ theme, placeholder='student@example.com', hint='The student signs in with this email.') }}
+        {{ select_input('sem', 'Semester', [(1, 'Semester 1'), (2, 'Semester 2')], 2, id='sem-' ~ theme, placeholder='Select semester') }}
+        {{ password_input('pw', 'Password', id='pw-' ~ theme, placeholder='Enter password') }}
+      {% endcall %}
+      {% call form_section('Settings', 'Switches and checkboxes.') %}
+        <div class="space-y-4 sm:col-span-2">
+          {{ switch_input('active', 'Account active', 'Inactive accounts cannot sign in.', True, id='active-' ~ theme) }}
+          {{ switch_input('notify', 'Email reports', 'Send the weekly shortage list.', id='notify-' ~ theme) }}
+          {{ checkbox_input('agree', 'Include moved students', True, id='agree-' ~ theme, description='They appear as Moved out.') }}
+        </div>
+      {% endcall %}
+      {{ form_actions('#', 'Save changes') }}
+    </div>
+
+    {{ heading('Cards and details') }}
+    {% call card('Profile', 'Label and value pairs.', icon_name='user-round') %}
+      {% call detail_list() %}
+        {{ detail_item('Full name', 'Rahul Das') }}
+        {{ detail_item('Roll number', 'MCA001', mono=True) }}
+        {{ detail_item('Phone', None) }}
+        {% call detail_item('Status') %}{{ badge('Active', 'success') }}{% endcall %}
+      {% endcall %}
+    {% endcall %}
+
+    {{ heading('Table and menu') }}
+    <div class="card overflow-hidden">
+      <table class="data-table">
+        <thead><tr><th>Student</th><th>Status</th><th class="col-actions"><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+          {% for name, status in [('Rahul Das', 'present'), ('Priya Sen', 'absent')] %}
+          <tr>
+            <td><div class="flex items-center gap-3">{{ monogram(name) }}<div><p class="text-label-lg">{{ name }}</p><p class="text-body-sm text-muted-foreground">MCA00{{ loop.index }}</p></div></div></td>
+            <td>{{ attendance_badge(status) }}</td>
+            <td class="col-actions">
+              {% call dropdown('Actions for ' ~ name) %}
+                {{ menu_link('Edit', '#', 'pencil') }}
+                {{ menu_link('Reset password', '#', 'key-round') }}
+                {{ menu_separator() }}
+                {{ menu_link('Delete', '#', 'trash-2', danger=True) }}
+              {% endcall %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {{ heading('Empty state and loading') }}
+    <div class="card">
+      {% call empty_state('graduation-cap', 'No students yet', 'Add students one by one, or import a file.', compact=True) %}
+        {{ button('New student', 'primary', 'plus', size='sm') }}
+      {% endcall %}
+    </div>
+    <div class="card mt-4 p-6">{{ skeleton(3) }}</div>
+
+    {{ heading('Toast') }}
+    <div class="toast"><span class="mt-0.5 text-success">{{ icon('circle-check') }}</span><p class="flex-1 text-body-md">Updated Rahul Das.</p></div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="mt-6 flex flex-wrap gap-2">
+  <form method="GET" action="{{ url_for('main.dev_components') }}" data-confirm="This shows the confirmation dialog. Nothing is deleted." data-confirm-title="Delete Rahul Das?" data-confirm-label="Delete" class="contents">
+    <button type="submit" class="{{ btn('destructive-outline') }}">{{ icon('trash-2') }}<span>Try the confirmation dialog</span></button>
+  </form>
+  <button type="button" class="{{ btn('outline') }}" @click="$dispatch('palette:open')">{{ icon('search') }}<span>Open the search palette</span></button>
+</div>
+{% endblock %}
