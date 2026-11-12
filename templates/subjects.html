@@ -1,212 +1,140 @@
-{% extends 'base.html' %}
-{% block title %}Subjects | AttendQR{% endblock %}
-{% block page_title %}Subjects{% endblock %}
-{% block page_subtitle %}Manage subjects by department and semester{% endblock %}
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, empty_state, dropdown, menu_form, menu_separator, record_opener, record_dialog, client_toolbar, search_empty with context %}
+{% from 'components/forms.html' import text_input, select_input, select_control with context %}
+{% set page_title = 'Subjects' %}
+{% set can_manage = current_user.role != 'teacher' %}
+{% set principal = current_user.role == 'super_admin' %}
+{% set show_department = departments|length > 1 %}
+{% set default_department = departments[0].id if departments|length == 1 else '' %}
+
 {% block content %}
+{% call page_header('Subjects', 'Subjects of each semester, with their paper code and assigned teacher.' if can_manage else 'Subjects you can run QR sessions for.') %}
+  {% if can_manage %}
+  {{ record_opener('New subject', 'subject-dialog', url_for('academics.subjects'), 'New subject', 'Create subject',
+                   {'department_id': default_department}, icon_name='plus', mode='create', as_button=True) }}
+  {% endif %}
+{% endcall %}
 
-<div class="page-heading">
-  <span id="resultCount" class="badge text-bg-info align-self-start">Total: {{ subjects|length }} subjects</span>
-</div>
-
-<div class="form-panel">
-  <div class="row g-3">
-    <div class="col-md-8 col-lg-6">
-      <label class="form-label" for="searchInput">Search</label>
-      <input type="text" id="searchInput" class="form-control" placeholder="Search by paper code, subject, department, or semester">
+<section class="card overflow-hidden" aria-label="Subject list">
+  {% if subjects %}
+  {% call client_toolbar('subjects-filter', '#subjects-list', 'Search code, subject or teacher', 'Search subjects', filters=True) %}
+    {% if show_department %}
+    <div>
+      <label for="filter-subject-department" class="mb-1.5 block text-label-md text-muted-foreground">Department</label>
+      {{ select_control('department', 'filter-subject-department', departments, placeholder='All departments', value_attr='id', label_attr='display_name') }}
     </div>
-    <div class="col-md-4 col-lg-3 d-flex align-items-end">
-      <button class="btn btn-secondary w-100" type="button" id="clearSearch">
-        <i class="bi bi-x-circle me-1"></i> Clear Search
-      </button>
+    {% endif %}
+    <div>
+      <label for="filter-subject-semester" class="mb-1.5 block text-label-md text-muted-foreground">Semester</label>
+      {% call select_control('semester', 'filter-subject-semester', placeholder='All semesters') %}
+        {% for s in semesters %}<option value="{{ s.id }}">{{ s.name }}{% if show_department %} ({{ s.department.display_name }}){% endif %}</option>{% endfor %}
+      {% endcall %}
     </div>
-  </div>
-</div>
-
-{% if current_user.role != 'teacher' %}
-
-<form method="POST" action="{{ url_for('academics.subjects') }}" class="form-panel">
-  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-  <div class="row g-3 align-items-end">
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="paper_code">Paper Code</label>
-      <input class="form-control text-uppercase" id="paper_code" name="paper_code" placeholder="RCC-MCA C102" maxlength="50" required>
-    </div>
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="subject_name">Subject Name</label>
-      <input class="form-control" id="subject_name" name="name" placeholder="DBMS" maxlength="100" required>
-    </div>
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="dept_select">Department</label>
-      <select class="form-select" name="department_id" id="dept_select" required>
-        <option value="">Select department</option>
-        {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.display_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="sem_select">Semester</label>
-      <select class="form-select" name="semester_id" id="sem_select" required>
-        <option value="">Select semester</option>
-      </select>
-    </div>
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="teacher_select">Assigned Teacher</label>
-      <select class="form-select" name="teacher_id" id="teacher_select">
-        <option value="">Assign later</option>
-      </select>
-    </div>
-    <div class="col-md-auto">
-      <button class="btn btn-success" type="submit">
-        <i class="bi bi-plus-circle me-1"></i> Add Subject
-      </button>
-    </div>
-  </div>
-</form>
-{% endif %}
-
-<div class="table-card">
-  <div class="table-responsive">
-    <table class="table table-hover align-middle" id="subjectsTable">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Paper Code</th>
-          <th>Subject</th>
-          {% if current_user.role != 'teacher' %}<th>Assigned Teacher</th>{% endif %}
-          <th>Department</th>
-          <th>Semester</th>
-          {% if current_user.role != 'teacher' %}<th class="text-end">Actions</th>{% endif %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in subjects %}
-        <tr class="subject-row" data-name="{{ s.name|lower }}" data-code="{{ (s.paper_code or '')|lower }}" data-teacher="{{ (s.teacher.name if s.teacher else 'unassigned')|lower }}" data-dept="{{ s.department.display_name|lower }}" data-sem="{{ s.semester.name|lower }}">
-          <td>{{ loop.index }}</td>
-          <td><span class="badge text-bg-secondary">{{ s.paper_code or 'N/A' }}</span></td>
-          <td class="fw-semibold">{{ s.name }}</td>
-          {% if current_user.role != 'teacher' %}<td>{{ s.teacher.name if s.teacher else 'Not assigned' }}</td>{% endif %}
-          <td>{{ s.department.display_name }}</td>
-          <td>{{ s.semester.name }}</td>
-          {% if current_user.role != 'teacher' %}
-          <td class="text-end text-nowrap">
-            <button class="btn btn-sm btn-warning btn-icon edit-subject" type="button" data-bs-toggle="tooltip" title="Edit subject"
-              data-action="{{ url_for('academics.edit_subject', id=s.id) }}"
-              data-name="{{ s.name }}" data-paper-code="{{ s.paper_code or '' }}"
-              data-department-id="{{ s.department_id }}" data-semester-id="{{ s.semester_id }}"
-              data-teacher-id="{{ s.teacher_id or '' }}">
-              <i class="bi bi-pencil-square"></i>
-            </button>
-            <form method="POST" action="{{ url_for('academics.delete_subject', id=s.id) }}" class="d-inline"
-              data-confirm="Delete {{ subject_display_name(s) }}?">
-              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-danger btn-icon" type="submit" data-bs-toggle="tooltip" title="Delete subject">
-                <i class="bi bi-trash"></i>
-              </button>
-            </form>
-          </td>
-          {% endif %}
-        </tr>
-        {% endfor %}
-        {% if not subjects %}
-        <tr id="noSubjects"><td colspan="7" class="text-center text-muted py-4">No subjects added yet.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-{% if current_user.role != 'teacher' %}
-<div class="modal fade" id="editModal" tabindex="-1">
-  <div class="modal-dialog">
-    <form method="POST" id="editForm" class="modal-content">
-      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      <div class="modal-header">
-        <h5 class="modal-title">Edit Subject</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-3">
-          <label class="form-label" for="edit_paper_code">Paper Code</label>
-          <input class="form-control text-uppercase" name="paper_code" id="edit_paper_code" maxlength="50" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="edit_name">Subject Name</label>
-          <input class="form-control" name="name" id="edit_name" maxlength="100" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="edit_dept">Department</label>
-          <select class="form-select" name="department_id" id="edit_dept" required>
-            {% for d in departments %}
-            <option value="{{ d.id }}">{{ d.display_name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <label class="form-label" for="edit_sem">Semester</label>
-        <select class="form-select" name="semester_id" id="edit_sem" required>
-          {% for s in semesters %}
-          <option value="{{ s.id }}">{{ s.name }}</option>
+  {% endcall %}
+  <div id="subjects-list">
+    <div data-search-results class="overflow-x-auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Subject</th>
+            {% if can_manage %}<th scope="col">Teacher</th>{% endif %}
+            {% if show_department %}<th scope="col">Department</th>{% endif %}
+            <th scope="col">Semester</th>
+            {% if can_manage %}<th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in subjects %}
+          <tr data-search="{{ ((s.paper_code or '') ~ ' ' ~ s.name ~ ' ' ~ (s.teacher.name if s.teacher else 'not assigned') ~ ' ' ~ s.department.display_name ~ ' ' ~ s.semester.name)|lower }}"
+              data-filter-department="{{ s.department_id }}" data-filter-semester="{{ s.semester_id }}">
+            <td>
+              <div class="flex items-center gap-3">
+                <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-ink">{{ icon('book-open') }}</span>
+                <div class="min-w-0">
+                  <p class="truncate text-label-lg text-foreground">{{ s.name }}</p>
+                  <p class="font-mono text-body-sm text-muted-foreground">{{ s.paper_code or 'No paper code' }}</p>
+                </div>
+              </div>
+            </td>
+            {% if can_manage %}
+            <td class="whitespace-nowrap text-body-md">
+              {% if s.teacher %}<span class="text-foreground">{{ s.teacher.name }}</span>{% else %}{{ badge('Not assigned', 'neutral') }}{% endif %}
+            </td>
+            {% endif %}
+            {% if show_department %}<td class="whitespace-nowrap text-body-md text-muted-foreground">{{ s.department.display_name }}</td>{% endif %}
+            <td class="whitespace-nowrap text-body-md text-muted-foreground">{{ s.semester.name }}</td>
+            {% if can_manage %}
+            <td class="col-actions">
+              {% call dropdown('Actions for ' ~ s.name) %}
+                {{ record_opener('Edit', 'subject-dialog', url_for('academics.edit_subject', id=s.id), 'Edit subject', 'Save changes',
+                                 {'paper_code': s.paper_code or '', 'name': s.name, 'department_id': s.department_id,
+                                  'semester_id': s.semester_id, 'teacher_id': s.teacher_id or ''}, 'pencil') }}
+                {{ menu_separator() }}
+                {{ menu_form('Delete', url_for('academics.delete_subject', id=s.id), 'trash-2', danger=True,
+                             confirm='Subjects that already have QR sessions cannot be deleted.',
+                             confirm_title='Delete ' ~ subject_display_name(s) ~ '?', confirm_label='Delete') }}
+              {% endcall %}
+            </td>
+            {% endif %}
+          </tr>
           {% endfor %}
-        </select>
-        <div class="mt-3">
-          <label class="form-label" for="edit_teacher">Assigned Teacher</label>
-          <select class="form-select" name="teacher_id" id="edit_teacher">
-            <option value="">Assign later</option>
-            {% for t in teachers %}
-            <option value="{{ t.id }}">{{ t.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
-      </div>
-    </form>
+        </tbody>
+      </table>
+    </div>
+    {{ search_empty() }}
+    <p class="border-t border-border px-6 py-3 text-body-sm text-muted-foreground tabular-nums" data-search-count data-noun="subjects">{{ subjects|length }} subjects</p>
   </div>
-</div>
-{% endif %}
+  {% else %}
+    {% call empty_state('book-open', 'No subjects yet', 'Subjects are needed before a QR session can be started.' if can_manage else 'No subjects are assigned to you yet. Ask your HOD.') %}
+      {% if can_manage %}
+      {{ record_opener('New subject', 'subject-dialog', url_for('academics.subjects'), 'New subject', 'Create subject',
+                       {'department_id': default_department}, icon_name='plus', mode='create', as_button=True) }}
+      {% endif %}
+    {% endcall %}
+  {% endif %}
+</section>
 
+{% if can_manage %}
+{% call record_dialog('subject-dialog', 'New subject', 'Create subject') %}
+  {{ text_input('paper_code', 'Paper code', id='subject_paper_code', required=True, placeholder='RCC-MCA C102',
+                hint='Unique within the department.', attrs={'maxlength': 50, 'autocomplete': 'off'}, cls='uppercase-input') }}
+  {{ text_input('name', 'Subject name', id='subject_name', required=True, placeholder='Database Management Systems',
+                attrs={'maxlength': 100, 'autocomplete': 'off'}) }}
+  {% if principal %}
+    {{ select_input('department_id', 'Department', departments, id='subject_department', placeholder='Select department',
+                    required=True, value_attr='id', label_attr='display_name') }}
+  {% else %}
+    {{ text_input('department_display', 'Department', departments[0].display_name if departments else 'Not assigned',
+                  id='subject_department_display', attrs={'readonly': True}) }}
+  {% endif %}
+  {{ select_input('semester_id', 'Semester', [] if principal else semesters, id='subject_semester', placeholder='Select semester',
+                  required=True, value_attr='id', label_attr='name') }}
+  {{ select_input('teacher_id', 'Assigned teacher', [] if principal else teachers, id='subject_teacher', placeholder='Assign later',
+                  hint='The teacher can start QR sessions for this subject.', value_attr='id', label_attr='name', cls='sm:col-span-2') }}
+{% endcall %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if can_manage and principal %}
 <script nonce="{{ csp_nonce() }}">
 (function () {
-  const teacherOptions = { placeholder: 'Assign later' };
-  const deptSelect = document.getElementById('dept_select');
-  if (deptSelect) {
-    deptSelect.addEventListener('change', function () {
-      AttendQR.loadSemesters('sem_select', deptSelect.value);
-      AttendQR.loadTeachers('teacher_select', deptSelect.value, teacherOptions);
-    });
-  }
-
-  const editDept = document.getElementById('edit_dept');
-  if (editDept) {
-    editDept.addEventListener('change', function () {
-      AttendQR.loadSemesters('edit_sem', editDept.value);
-      AttendQR.loadTeachers('edit_teacher', editDept.value, teacherOptions);
-    });
-  }
-
-  document.querySelectorAll('.edit-subject').forEach(function (button) {
-    button.addEventListener('click', function () {
-      const data = button.dataset;
-      document.getElementById('edit_name').value = data.name;
-      document.getElementById('edit_paper_code').value = data.paperCode;
-      editDept.value = data.departmentId;
-      AttendQR.loadSemesters('edit_sem', data.departmentId, { selected: data.semesterId });
-      AttendQR.loadTeachers('edit_teacher', data.departmentId, Object.assign({ selected: data.teacherId }, teacherOptions));
-      document.getElementById('editForm').action = data.action;
-      bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
-    });
+  // Semesters and teachers follow the chosen department.
+  var form = document.querySelector('#subject-dialog form');
+  var department = form.elements.department_id;
+  var semester = form.elements.semester_id;
+  var teacher = form.elements.teacher_id;
+  var teacherOptions = { placeholder: 'Assign later' };
+  department.addEventListener('change', function () {
+    AttendQR.loadSemesters(semester, department.value);
+    AttendQR.loadTeachers(teacher, department.value, teacherOptions);
   });
-
-  const apply = AttendQR.bindTableSearch({
-    input: 'searchInput', count: 'resultCount', rows: '.subject-row',
-    fields: ['name', 'code', 'teacher', 'dept', 'sem'], noun: 'subjects'
-  });
-  document.getElementById('clearSearch').addEventListener('click', function () {
-    document.getElementById('searchInput').value = '';
-    apply();
+  form.addEventListener('record:filled', function (event) {
+    var values = event.detail;
+    AttendQR.loadSemesters(semester, values.department_id || '', { selected: values.semester_id });
+    AttendQR.loadTeachers(teacher, values.department_id || '', Object.assign({ selected: values.teacher_id }, teacherOptions));
   });
 })();
 </script>
+{% endif %}
 {% endblock %}

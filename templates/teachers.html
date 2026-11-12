@@ -1,167 +1,73 @@
-{% extends 'base.html' %}
-{% block title %}Teachers | AttendQR{% endblock %}
-{% block page_title %}Teachers{% endblock %}
-{% block page_subtitle %}Manage teacher records and department assignments{% endblock %}
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, empty_state, monogram, callout, client_toolbar, search_empty with context %}
+{% from 'components/forms.html' import select_control with context %}
+{% set page_title = 'Teachers' %}
+{% set show_department = departments|length > 1 %}
+
 {% block content %}
-<div class="page-heading">
-  <span id="resultCount" class="badge text-bg-info align-self-start">Total: {{ teachers|length }} teachers</span>
+{% call page_header('Teachers', 'Teacher profiles and the subjects assigned to them.') %}
+  <a href="{{ url_for('accounts.index') }}" class="{{ btn('outline') }}">{{ icon('shield-user') }}<span>Manage logins</span></a>
+{% endcall %}
+
+<div class="mb-6">
+  {% call callout() %}Teacher logins are created and edited on the Accounts page. Subjects are assigned on the Subjects page.{% endcall %}
 </div>
 
-<div class="alert alert-info">
-  <i class="bi bi-info-circle me-1"></i>
-  Teacher login accounts are created and edited from the Accounts page. This page is only for teacher profile details.
-</div>
-
-<div class="form-panel">
-  <div class="row g-3">
-    <div class="col-md-5">
-      <label class="form-label" for="searchInput">Search</label>
-      <input type="text" id="searchInput" class="form-control" placeholder="Search by name or email">
+<section class="card overflow-hidden" aria-label="Teacher list">
+  {% if teachers %}
+  {% call client_toolbar('teachers-filter', '#teachers-list', 'Search name or email', 'Search teachers', filters=show_department) %}
+    <div>
+      <label for="filter-teacher-department" class="mb-1.5 block text-label-md text-muted-foreground">Department</label>
+      {{ select_control('department', 'filter-teacher-department', departments, placeholder='All departments', value_attr='id', label_attr='display_name') }}
     </div>
-    <div class="col-md-4">
-      <label class="form-label" for="filterDept">Department</label>
-      <select id="filterDept" class="form-select">
-        <option value="">All Departments</option>
-        {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.display_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-3 d-flex align-items-end">
-      <button class="btn btn-secondary w-100" type="button" id="clearFilters">
-        <i class="bi bi-x-circle me-1"></i> Clear Filters
-      </button>
-    </div>
-  </div>
-</div>
-
-<div class="table-card">
-  <div class="table-responsive">
-    <table class="table table-hover align-middle" id="teachersTable">
-      <thead>
-        <tr><th>#</th><th>Name</th><th>Email</th><th>Assigned Subjects</th><th>Department</th></tr>
-      </thead>
-      <tbody>
-        {% for t in teachers %}
-        <tr class="teacher-row" tabindex="0" role="button" aria-expanded="false"
-            data-name="{{ t.name|lower }}"
-            data-email="{{ t.email|lower }}"
-            data-dept-id="{{ t.department_id }}"
-            data-dept="{{ t.department.display_name }}"
-            data-target="teacher-detail-{{ t.id }}">
-          <td>
-            <div class="teacher-index">
-              <span class="teacher-index-number">{{ loop.index }}</span>
-              <i class="bi bi-chevron-down teacher-row-chevron"></i>
-            </div>
-          </td>
-          <td class="fw-semibold">{{ t.name }}</td>
-          <td>{{ t.email }}</td>
-          <td>
-            <span class="badge text-bg-primary">{{ t.assigned_subjects|length }}</span>
-          </td>
-          <td>{{ t.department.display_name }}</td>
-        </tr>
-        <tr class="teacher-detail-row d-none" id="teacher-detail-{{ t.id }}">
-          <td colspan="5">
-            <div class="teacher-detail-panel">
-              <div class="teacher-detail-grid">
-                <div>
-                  <div class="teacher-detail-label">Teacher</div>
-                  <div class="teacher-detail-value">{{ t.name }}</div>
-                </div>
-                <div>
-                  <div class="teacher-detail-label">Department</div>
-                  <div class="teacher-detail-value">{{ t.department.display_name }}</div>
-                </div>
-                <div>
-                  <div class="teacher-detail-label">Email</div>
-                  <div class="teacher-detail-value">{{ t.email }}</div>
-                </div>
-                <div>
-                  <div class="teacher-detail-label">Assigned Subjects</div>
-                  <div class="teacher-detail-subjects">
-                    {% if t.assigned_subjects %}
-                      {% for subject in t.assigned_subjects|sort(attribute='name') %}
-                      <span class="teacher-subject-chip">{{ subject_display_name(subject) }}{% if subject.semester %} · {{ subject.semester.name }}{% endif %}</span>
-                      {% endfor %}
-                    {% else %}
-                      <span class="text-muted">No subjects assigned yet.</span>
-                    {% endif %}
-                  </div>
+  {% endcall %}
+  <div id="teachers-list">
+    <div data-search-results class="overflow-x-auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Teacher</th>
+            {% if show_department %}<th scope="col">Department</th>{% endif %}
+            <th scope="col">Assigned subjects</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in teachers %}
+          {% set assigned = t.assigned_subjects|sort(attribute='name') %}
+          <tr data-search="{{ (t.name ~ ' ' ~ t.email)|lower }}" data-filter-department="{{ t.department_id }}">
+            <td class="py-3">
+              <div class="flex items-center gap-3">
+                {{ monogram(t.name) }}
+                <div class="min-w-0">
+                  <p class="truncate text-label-lg text-foreground">{{ t.name }}</p>
+                  <p class="truncate text-body-sm text-muted-foreground">{{ t.email }}</p>
                 </div>
               </div>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-        {% if not teachers %}
-        <tr id="noTeachers"><td colspan="5" class="text-center text-muted py-4">No teachers added yet.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
+            </td>
+            {% if show_department %}<td class="whitespace-nowrap text-body-md text-muted-foreground">{{ t.department.display_name }}</td>{% endif %}
+            <td class="py-3">
+              {% if assigned %}
+              <div class="flex max-w-xl flex-wrap gap-1.5">
+                {% for subject in assigned %}
+                <span class="inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-body-sm text-foreground">
+                  {{ subject_display_name(subject) }}{% if subject.semester %}<span class="ml-1 text-muted-foreground">&middot; {{ subject.semester.name }}</span>{% endif %}
+                </span>
+                {% endfor %}
+              </div>
+              {% else %}{{ badge('None yet', 'neutral') }}{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ search_empty() }}
+    <p class="border-t border-border px-6 py-3 text-body-sm text-muted-foreground tabular-nums" data-search-count data-noun="teachers">{{ teachers|length }} teachers</p>
   </div>
-</div>
-
-<script nonce="{{ csp_nonce() }}">
-(function () {
-  const searchInput = document.getElementById('searchInput');
-  const filterDept = document.getElementById('filterDept');
-  const resultCount = document.getElementById('resultCount');
-
-  function filterTable() {
-    const searchTerm = searchInput.value.toLowerCase().trim();
-    const deptFilter = filterDept.value;
-    const rows = document.querySelectorAll('.teacher-row');
-    let visibleCount = 0;
-
-    rows.forEach(function (row) {
-      const detailRow = document.getElementById(row.dataset.target);
-      const matches = (row.dataset.name.includes(searchTerm) || row.dataset.email.includes(searchTerm))
-        && (!deptFilter || row.dataset.deptId === deptFilter);
-      row.style.display = matches ? '' : 'none';
-      if (matches) {
-        visibleCount += 1;
-        row.querySelector('.teacher-index-number').textContent = visibleCount;
-        if (detailRow) detailRow.style.display = '';
-      } else {
-        row.setAttribute('aria-expanded', 'false');
-        row.classList.remove('is-open');
-        if (detailRow) {
-          detailRow.classList.add('d-none');
-          detailRow.style.display = 'none';
-        }
-      }
-    });
-    resultCount.textContent = 'Showing: ' + visibleCount + ' of ' + rows.length + ' teachers';
-  }
-
-  searchInput.addEventListener('input', filterTable);
-  filterDept.addEventListener('change', filterTable);
-  document.getElementById('clearFilters').addEventListener('click', function () {
-    searchInput.value = '';
-    filterDept.value = '';
-    filterTable();
-  });
-
-  document.querySelectorAll('.teacher-row').forEach(function (row) {
-    function toggleRow() {
-      if (row.style.display === 'none') return;
-      const detailRow = document.getElementById(row.dataset.target);
-      if (!detailRow) return;
-      const isOpen = row.getAttribute('aria-expanded') === 'true';
-      row.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
-      row.classList.toggle('is-open', !isOpen);
-      detailRow.classList.toggle('d-none', isOpen);
-    }
-    row.addEventListener('click', toggleRow);
-    row.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        toggleRow();
-      }
-    });
-  });
-})();
-</script>
+  {% else %}
+    {% call empty_state('presentation', 'No teachers yet', 'Create a teacher login on the Accounts page; its profile appears here.') %}
+      <a href="{{ url_for('accounts.index') }}" class="{{ btn('primary') }}">{{ icon('shield-user') }}<span>Go to Accounts</span></a>
+    {% endcall %}
+  {% endif %}
+</section>
 {% endblock %}
