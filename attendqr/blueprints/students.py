@@ -1,5 +1,6 @@
 import csv
 import io
+import re
 from urllib.parse import urlsplit
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
@@ -29,6 +30,7 @@ from ..security import (
     is_safe_redirect_target,
 )
 from ..services.enrollment import record_class_change
+from ..services.reports import build_student_attendance_summary
 from ..services.roster import (
     ensure_student_account,
     import_students_from_rows,
@@ -48,12 +50,20 @@ def student_filters():
     }
 
 
+def safe_return_to(target):
+    """The student list (with its filters) or one student's page, else None."""
+    if not is_safe_redirect_target(target):
+        return None
+    path = urlsplit(target).path
+    list_path = url_for('students.index')
+    if path == list_path or re.fullmatch(re.escape(list_path) + r'/\d+', path):
+        return target
+    return None
+
+
 def back_to_list():
-    """Return to the list with the filters the user was looking at."""
-    target = request.form.get('return_to')
-    if is_safe_redirect_target(target) and urlsplit(target).path == url_for('students.index'):
-        return redirect(target)
-    return redirect(url_for('students.index'))
+    """Return to the list with the filters the user was looking at, or the student page the action came from."""
+    return redirect(safe_return_to(request.form.get('return_to')) or url_for('students.index'))
 
 
 def _one_time_password_notice(temporary_password):
@@ -90,6 +100,72 @@ def _student_form():
     return values, None
 
 
+def _error_field(error):
+    """The form field a validation message is about, so the full-page form can show it there."""
+    if error.startswith('Roll number '):
+        return 'roll_no'
+    if error.startswith(('Email ', 'Login account email ')) or error == email_format_rule_message():
+        return 'email'
+    if error.startswith(('Valid department and semester', 'Selected semester')):
+        return 'semester_id'
+    return None
+
+
+def _render_form(student=None, error=None, status=200):
+    """The add/edit page. After a failed save it shows what was typed, with the error on its field."""
+    submitted = request.method == 'POST'
+    source = request.form if submitted else None
+
+    def value(name, default=''):
+        return source.get(name, '') if submitted else default
+
+    department_id = parse_int_value(value('department_id', student.department_id if student else '')) if is_super_admin() else current_department_id()
+    departments = ordered_departments_query().all()
+    if department_id is None and len(departments) == 1:
+        department_id = departments[0].id
+    semesters = visible_semesters_query().filter(Semester.department_id == department_id).all() if department_id else []
+
+    default_return = url_for('students.view', id=student.id) if student else url_for('students.index')
+    return_to = safe_return_to(value('return_to', request.args.get('return_to'))) or default_return
+
+    field = _error_field(error) if error else None
+    if error and not field:
+        flash(error, "danger")
+    return render_template(
+        'students/form.html',
+        student=student,
+        values={
+            'name': value('name', student.name if student else ''),
+            'roll_no': value('roll_no', student.roll_no if student else ''),
+            'email': value('email', student.email if student else ''),
+            'department_id': department_id,
+            'semester_id': parse_int_value(value('semester_id', student.semester_id if student else '')),
+        },
+        errors={field: error} if field else {},
+        departments=departments,
+        semesters=sort_semesters(semesters),
+        return_to=return_to,
+    ), status
+
+
+def _save_failed(error, student=None):
+    """A failed save: the full-page form shows again with the input; older forms go back to the list."""
+    if request.form.get('form_page'):
+        return _render_form(student, error=error, status=400)
+    flash(error, "danger")
+    return back_to_list()
+
+
+def _find_student(id):
+    """The student if it exists and the user may see it, else None (shown as a friendly not-found page)."""
+    student = db.session.get(Student, id)
+    return student if student is not None and can_access_student(student) else None
+
+
+def _not_found():
+    return render_template('students/not_found.html'), 404
+
+
 def _duplicate_error(values, student=None):
     roll_match = Student.query.filter(
         db.func.upper(Student.roll_no) == values['roll_no'],
@@ -119,8 +195,7 @@ def index():
         values, error = _student_form()
         error = error or _duplicate_error(values)
         if error:
-            flash(error, "danger")
-            return back_to_list()
+            return _save_failed(error)
         student = Student(**values)
         db.session.add(student)
         db.session.flush()
@@ -166,6 +241,38 @@ def index():
         departments=ordered_departments_query().all(),
         filter_semesters=sort_semesters(semesters.all()),
     )
+
+
+@bp.route('/students/new')
+@login_required
+@role_required('super_admin', 'hod', 'teacher')
+def new():
+    return _render_form()
+
+
+@bp.route('/students/<int:id>')
+@login_required
+@role_required('super_admin', 'hod', 'teacher')
+def view(id):
+    student = _find_student(id)
+    if student is None:
+        return _not_found()
+    return render_template(
+        'students/view.html',
+        student=student,
+        account=Admin.query.filter_by(student_id=student.id).first(),
+        summary=build_student_attendance_summary(student),
+    )
+
+
+@bp.route('/students/<int:id>/edit')
+@login_required
+@role_required('super_admin', 'hod')
+def edit_form(id):
+    student = _find_student(id)
+    if student is None:
+        return _not_found()
+    return _render_form(student)
 
 
 @bp.route('/students/import', methods=['POST'])
@@ -246,8 +353,7 @@ def edit(id):
     values, error = _student_form()
     error = error or _duplicate_error(values, student)
     if error:
-        flash(error, "danger")
-        return back_to_list()
+        return _save_failed(error, student)
     old_class = (student.department_id, student.semester_id)
     for key, value in values.items():
         setattr(student, key, value)
@@ -258,6 +364,8 @@ def edit(id):
     db.session.commit()
     if temporary_password:
         flash(f"Created a login for {student.name}. {_one_time_password_notice(temporary_password)}", "success")
+    else:
+        flash(f"Updated {student.name}.", "success")
     return back_to_list()
 
 
@@ -270,8 +378,10 @@ def delete(id):
         abort(403)
     log_activity('student_deleted', f"Deleted student profile '{student.name}' ({student.roll_no}).", 'student', student.id, student.department_id)
     Admin.query.filter_by(student_id=student.id).delete()
+    name = student.name
     db.session.delete(student)
     db.session.commit()
+    flash(f"Deleted {name}.", "success")
     return back_to_list()
 
 
