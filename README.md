@@ -29,7 +29,7 @@ The application also manages departments, semesters, subjects, teacher profiles,
 
 ## Technology Stack
 
-Python 3.11+, Flask, Flask-SQLAlchemy, Flask-Login, Flask-Migrate (Alembic), SQLite, Bootstrap (served locally), qrcode + Pillow, openpyxl, reportlab, waitress, pytest.
+Python 3.11+, Flask, Flask-SQLAlchemy, Flask-Login, Flask-Migrate (Alembic), SQLite, Tailwind CSS (standalone CLI, no Node.js), Alpine.js and htmx (served locally), qrcode + Pillow, openpyxl, reportlab, waitress, pytest. See [Frontend](docs/PROJECT_STRUCTURE.md#frontend).
 
 ## Project Structure
 
@@ -47,7 +47,7 @@ AttendQR/
     blueprints/             Routes: auth, main, academics, students, attendance, reports, accounts, api
   migrations/               Alembic migrations (Flask-Migrate)
   templates/                Jinja2 templates
-  static/                   CSS, JavaScript, and vendored Bootstrap/fonts (no CDN needed)
+  static/                   Built CSS, JavaScript, and vendored Alpine.js, htmx and fonts (no CDN needed)
   tests/                    pytest suite
   scripts/docker_smoke.py   End-to-end check run against the Docker image in CI
   run.py                    Start the server (waitress, or the debug server)
