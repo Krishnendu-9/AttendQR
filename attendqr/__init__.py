@@ -208,15 +208,15 @@ def _register_request_hooks(app):
 # (title, message, icon) shown for each error status.
 ERROR_PAGES = {
     400: ('Request Not Accepted', 'The request could not be processed. Go back, refresh the page, and try again.',
-          'bi-exclamation-circle'),
-    403: ('Access Denied', 'Your account does not have access to this page or action.', 'bi-shield-lock'),
-    404: ('Page Not Found', 'This page or record does not exist. It may have been deleted.', 'bi-question-circle'),
+          'circle-alert'),
+    403: ('Access Denied', 'Your account does not have access to this page or action.', 'lock'),
+    404: ('Page Not Found', 'This page or record does not exist. It may have been deleted.', 'search-x'),
     405: ('Not Allowed', 'This page cannot be used that way. Go back and use the buttons on the page.',
-          'bi-slash-circle'),
+          'circle-x'),
     413: ('File Too Large', 'The upload is larger than the {limit} MB limit. Split the file and try again.',
-          'bi-file-earmark-x'),
+          'file-text'),
     500: ('Something Went Wrong', 'An unexpected error occurred and has been logged. Please try again.',
-          'bi-exclamation-triangle'),
+          'triangle-alert'),
 }
 
 
@@ -228,7 +228,7 @@ def _register_error_pages(app):
             message = description
         if wants_json_response() or request.accept_mimetypes.best == 'application/json':
             return jsonify({'success': False, 'message': message}), code
-        return render_template('error.html', code=code, title=title, message=message, icon=icon), code
+        return render_template('error.html', code=code, title=title, message=message, error_icon=icon), code
 
     def http_error(error):
         # Only our own abort(400, description=...) texts (such as the CSRF message) are shown;
@@ -262,6 +262,15 @@ def build_js_config():
     }
 
 
+def static_url(filename):
+    """url_for('static') plus the file's modification time, so a rebuilt CSS or JS file is fetched at once."""
+    try:
+        version = int(os.path.getmtime(os.path.join(current_app.static_folder, filename)))
+    except OSError:
+        return url_for('static', filename=filename)
+    return url_for('static', filename=filename, v=version)
+
+
 def _register_template_helpers(app):
     @app.context_processor
     def inject_helpers():
@@ -285,6 +294,7 @@ def _register_template_helpers(app):
             'staff_email_pattern': staff_email_html_pattern,
             'staff_domains': app.config['ALLOWED_STAFF_DOMAINS'],
             'js_config': build_js_config,
+            'static_url': static_url,
         }
 
 
