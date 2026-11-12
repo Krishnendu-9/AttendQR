@@ -1,145 +1,89 @@
-{% extends 'base.html' %}
-{% block title %}My Account | AttendQR{% endblock %}
-{% block page_title %}My Account{% endblock %}
-{% block page_subtitle %}Review your account details and manage your password{% endblock %}
-{% block content %}
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, detail_list, detail_item, empty_state, submit_button with context %}
+{% from 'components/forms.html' import password_input, password_meter with context %}
+{% set page_title = 'Account' %}
+{% set breadcrumbs = [('Account and password', None)] %}
 
-{% if error %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-  <i class="bi bi-exclamation-triangle me-1"></i> {{ error }}
-  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-</div>
-{% endif %}
+{% block content %}
+{{ page_header(profile.display_name, profile.role_label ~ ' account' ~ (' · ' ~ profile.email if profile.email else ''), badge(profile.scope_label ~ ': ' ~ profile.scope_value, 'info')) }}
 
 {% if current_user.must_change_password %}
-<div class="alert alert-warning">
-  <i class="bi bi-shield-exclamation me-1"></i>
-  This password was created or reset by another user. Set a private password to continue using AttendQR.
+<div class="mb-6">
+  {% call callout('Choose your own password to continue', 'warning', 'shield-check') %}
+    This password was created or reset by another user. Set a private password to continue using AttendQR.
+  {% endcall %}
 </div>
 {% endif %}
 
-<section class="hero-panel">
-  <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
-    <div>
-      <h2>{{ profile.display_name }}</h2>
-      <p>{{ profile.role_label }} account{% if profile.email %} · {{ profile.email }}{% endif %}</p>
-    </div>
-    <span class="badge text-bg-primary align-self-start">{{ profile.scope_label }}: {{ profile.scope_value }}</span>
-  </div>
-</section>
-
-<div class="row g-4">
-  <div class="col-xl-6">
-    <section class="form-panel h-100">
-      <h2 class="section-title mb-1"><i class="bi bi-person-badge me-1"></i> Account Overview</h2>
-      <p class="section-subtitle mb-4">Identity, role, and access scope for your login.</p>
-
-      <div class="account-summary">
-        <div class="account-summary-item">
-          <div class="account-summary-label">Display Name</div>
-          <div class="account-summary-value">{{ profile.display_name }}</div>
-        </div>
-        <div class="account-summary-item">
-          <div class="account-summary-label">Login Email</div>
-          <div class="account-summary-value">{{ profile.username }}</div>
-        </div>
-        <div class="account-summary-item">
-          <div class="account-summary-label">Role</div>
-          <div class="account-summary-value">{{ profile.role_label }}</div>
-        </div>
-        <div class="account-summary-item">
-          <div class="account-summary-label">{{ profile.scope_label }}</div>
-          <div class="account-summary-value">{{ profile.scope_value }}</div>
-        </div>
-        {% for label, value in profile.details %}
-        <div class="account-summary-item">
-          <div class="account-summary-label">{{ label }}</div>
-          <div class="account-summary-value">{{ value }}</div>
-        </div>
-        {% endfor %}
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+  {% call card('Change password', 'Use your current password to set a new private one.', icon_name='key-round') %}
+    {% if error %}
+    <div class="mb-5">{% call callout(tone='danger') %}{{ error }}{% endcall %}</div>
+    {% endif %}
+    <form method="POST" action="{{ url_for('auth.account') }}" id="accountPasswordForm" class="space-y-5">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      {{ password_input('current_password', 'Current password', required=True, autocomplete='current-password') }}
+      <div>
+        {{ password_input('new_password', 'New password', required=True, autocomplete='new-password',
+                          hint='At least ' ~ min_password_length ~ ' characters with letters and numbers, different from the current one. It must not contain your email name or roll number, or be a common password such as Welcome@123.') }}
+        {{ password_meter() }}
       </div>
-    </section>
-  </div>
-
-  <div class="col-xl-6">
-    <section class="form-panel h-100">
-      <h2 class="section-title mb-1"><i class="bi bi-shield-lock me-1"></i> Change Password</h2>
-      <p class="section-subtitle mb-4">Use your current password to set a new private password for this account.</p>
-
-      <form method="POST" action="{{ url_for('auth.account') }}" id="accountPasswordForm">
-        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-        <div class="mb-3">
-          <label for="current_password" class="form-label">Current Password</label>
-          <div class="input-group password-field">
-            <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password" required>
-            <button class="btn btn-outline-secondary password-toggle" type="button" data-target="current_password" aria-label="Show password">
-              <i class="bi bi-eye"></i>
-            </button>
-          </div>
-        </div>
-        <div class="mb-3">
-          <label for="new_password" class="form-label">New Password</label>
-          <div class="input-group password-field">
-            <input type="password" class="form-control" id="new_password" name="new_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
-            <button class="btn btn-outline-secondary password-toggle" type="button" data-target="new_password" aria-label="Show password">
-              <i class="bi bi-eye"></i>
-            </button>
-          </div>
-          <div class="form-text">Use at least {{ min_password_length }} characters with letters and numbers, different from the current password. It must not contain your email name or roll number, or be a common password such as Welcome@123.</div>
-          <div class="password-strength mt-2" aria-live="polite">
-            <div class="password-strength-track">
-              <div class="password-strength-bar" id="passwordStrengthBar"></div>
-            </div>
-            <div class="password-strength-meta">
-              <span class="password-strength-label" id="passwordStrengthLabel">Strength: not checked</span>
-              <span class="password-strength-hint" id="passwordStrengthHint"></span>
-            </div>
-          </div>
-        </div>
-        <div class="mb-4">
-          <label for="confirm_password" class="form-label">Confirm New Password</label>
-          <div class="input-group password-field">
-            <input type="password" class="form-control" id="confirm_password" name="confirm_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
-            <button class="btn btn-outline-secondary password-toggle" type="button" data-target="confirm_password" aria-label="Show password">
-              <i class="bi bi-eye"></i>
-            </button>
-          </div>
-          <div class="password-match-status" id="passwordMatchStatus" aria-live="polite">Re-enter the new password to confirm it.</div>
-        </div>
-        <button type="submit" class="btn btn-primary" id="updatePasswordButton" disabled>
-          <i class="bi bi-key me-1"></i> Update Password
+      <div>
+        {{ password_input('confirm_password', 'Confirm new password', required=True, autocomplete='new-password') }}
+        <p class="password-match-status" id="passwordMatchStatus" aria-live="polite">Re-enter the new password to confirm it.</p>
+      </div>
+      <div class="flex justify-end border-t border-border pt-5">
+        <button type="submit" class="{{ btn('primary') }}" id="updatePasswordButton" data-busy-label="Updating..." disabled>
+          {{ icon('loader-circle', 'btn-spinner') }}<span class="btn-icon-idle">{{ icon('key-round') }}</span><span data-busy-text>Update password</span>
         </button>
-      </form>
-    </section>
-  </div>
+      </div>
+    </form>
+  {% endcall %}
+
+  {% call card('Profile', 'Your identity, role and what you can access.', icon_name='user-round') %}
+    {% call detail_list() %}
+      {{ detail_item('Display name', profile.display_name) }}
+      {{ detail_item('Sign-in email', profile.username) }}
+      {{ detail_item('Role', profile.role_label) }}
+      {{ detail_item(profile.scope_label, profile.scope_value) }}
+      {% for label, value in profile.details %}{{ detail_item(label, value) }}{% endfor %}
+    {% endcall %}
+  {% endcall %}
 </div>
 
-<section class="form-panel">
-  <h2 class="section-title mb-1"><i class="bi bi-shield-check me-1"></i> Recent Security Activity</h2>
-  <p class="section-subtitle mb-3">Private account events related to your own login and password.</p>
-  {% if security_logs %}
-  <div class="activity-log-list mb-4">
-    {% for log in security_logs %}
-    <div class="activity-log-item">
-      <div class="activity-log-meta">{{ format_12h(log.created_at) }} - {{ log.actor_username }}</div>
-      <div class="activity-log-text">{{ log.description }}</div>
-    </div>
-    {% endfor %}
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="xl:col-span-2">
+    {% call card('Recent security activity', 'Sign-ins, failed attempts and password changes on your account.', flush=True) %}
+      {% if security_logs %}
+      <ol class="px-6 py-2">
+        {% for log in security_logs %}
+        <li class="relative flex gap-4 py-3">
+          {% if not loop.last %}<span class="absolute left-[7px] top-8 bottom-0 w-px bg-border" aria-hidden="true"></span>{% endif %}
+          <span class="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-secondary"><span class="size-1.5 rounded-full bg-vibrant"></span></span>
+          <div class="min-w-0">
+            <p class="text-body-md text-foreground">{{ log.description }}</p>
+            <p class="mt-0.5 text-body-sm text-muted-foreground">{{ log.actor_username }} &middot; {{ format_12h(log.created_at) }}</p>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}
+        {{ empty_state('shield-check', 'Nothing recorded yet', 'Security events on your account will appear here.', compact=True) }}
+      {% endif %}
+    {% endcall %}
   </div>
-  {% else %}
-  <div class="text-muted mb-4">No personal security activity recorded yet.</div>
-  {% endif %}
+  {% call card('Security notes', icon_name='info', cls='xl:self-start') %}
+    <ul class="space-y-3 text-body-md text-muted-foreground">
+      <li>Do not share your password with other staff or students.</li>
+      <li>Accounts created or reset by the Principal or HOD must set a private password at first sign-in.</li>
+      <li>Changing your password signs you out on every other device.</li>
+    </ul>
+  {% endcall %}
+</div>
+{% endblock %}
 
-  <h2 class="section-title mb-1"><i class="bi bi-info-circle me-1"></i> Security Notes</h2>
-  <p class="section-subtitle mb-3">A few simple guardrails for shared academic systems.</p>
-  <ul class="account-help-list">
-    <li>Do not share your password with other faculty or students.</li>
-    <li>Accounts created or reset by the Principal or HOD must set a private password at first login.</li>
-    <li>Use the same login email shown above when signing in again.</li>
-  </ul>
-</section>
-
+{% block scripts %}
 <script nonce="{{ csp_nonce() }}">
   (function () {
     const currentPassword = document.getElementById('current_password');
@@ -153,7 +97,12 @@
       hint: 'passwordStrengthHint',
       match: 'passwordMatchStatus',
       watch: [currentPassword],
-      extraValid: function () { return !!currentPassword.value && currentPassword.value !== newPassword.value; }
+      extraValid: function () { return !!currentPassword.value && currentPassword.value !== newPassword.value; },
+      extraProblem: function () {
+        if (!currentPassword.value) return 'Enter your current password above.';
+        if (currentPassword.value === newPassword.value) return 'The new password must be different from your current password.';
+        return '';
+      }
     });
   })();
 </script>
