@@ -1,0 +1,122 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, attendance_badge, percent_badge, account_badge, page_header, card, detail_list, detail_item, empty_state, action_form, relative_time with context %}
+{% set page_title = student.name %}
+{% set breadcrumbs = [('Students', url_for('students.index')), (student.name, None)] %}
+{% set can_manage = current_user.role in ['super_admin', 'hod'] %}
+{% set this_page = url_for('students.view', id=student.id) %}
+{% set target = summary.target %}
+
+{% block content %}
+{% call page_header(student.name, 'Roll no ' ~ student.roll_no ~ ' · ' ~ student.semester.name ~ ' · ' ~ student.department.display_name, account_badge(account)) %}
+  {{ action_form('Reset device', url_for('students.reset_device', id=student.id), icon_name='smartphone',
+                 confirm='The registered phone is released. The next phone the student marks attendance from becomes their device.',
+                 confirm_title='Reset device for ' ~ student.name ~ '?', hidden={'return_to': this_page}) }}
+  {{ action_form('Reset password', url_for('students.reset_password', id=student.id), icon_name='key-round',
+                 confirm='A new temporary password is created and shown once. The student must change it at next sign-in.',
+                 confirm_title='Reset password for ' ~ student.name ~ '?', hidden={'return_to': this_page}) }}
+  {% if can_manage %}
+  {{ action_form('Delete', url_for('students.delete', id=student.id), variant='destructive-outline', icon_name='trash-2', danger=True,
+                 confirm='Their login and attendance records are deleted too. This cannot be undone.',
+                 confirm_title='Delete ' ~ student.name ~ '?', hidden={'return_to': url_for('students.index')}) }}
+  <a href="{{ url_for('students.edit_form', id=student.id) }}" class="{{ btn('primary') }}">{{ icon('pencil') }}<span>Edit</span></a>
+  {% endif %}
+{% endcall %}
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+  <aside class="space-y-6 lg:col-start-3 lg:row-start-1">
+    {% call card('Overview') %}
+      <div class="flex items-end justify-between gap-4">
+        <div>
+          <p class="text-label-md text-muted-foreground">Overall attendance</p>
+          <p class="mt-1 text-headline-lg tabular-nums text-foreground">{{ summary.overall_percentage ~ '%' if summary.overall_total else '–' }}</p>
+        </div>
+        <div class="pb-1">
+          {% if not summary.overall_total %}{{ badge('No classes yet', 'neutral') }}
+          {% elif summary.overall_safe %}{{ badge('Meets ' ~ target ~ '%', 'success') }}
+          {% else %}{{ badge('Below ' ~ target ~ '%', 'danger') }}{% endif %}
+        </div>
+      </div>
+      {% if summary.overall_total %}
+      <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ summary.overall_percentage }}" aria-label="Overall attendance">
+        {#- Width steps in 5% so the bar needs no inline style (blocked by the security policy). -#}
+        {% set step = ((summary.overall_percentage / 5)|round(0, 'floor')|int) * 5 %}
+        <div class="h-full rounded-full {{ 'bg-success' if summary.overall_safe else 'bg-destructive' }} progress-{{ step }}"></div>
+      </div>
+      <p class="mt-2 text-body-sm text-muted-foreground tabular-nums">
+        {{ summary.overall_attended }} of {{ summary.overall_total }} classes attended.
+        {% if summary.overall_needed %}{{ summary.overall_needed }} more in a row to reach {{ target }}%.{% endif %}
+      </p>
+      {% endif %}
+      <dl class="mt-5 space-y-4 border-t border-border pt-5">
+        {% call detail_item('Login') %}{{ account_badge(account) }}{% endcall %}
+        {% call detail_item('Device') %}{{ badge('Registered', 'success') if student.device_id else badge('Not registered', 'neutral') }}{% endcall %}
+        {% call detail_item('Last attendance') %}{{ relative_time(summary.recent[0].timestamp if summary.recent else None, 'No attendance yet') }}{% endcall %}
+      </dl>
+    {% endcall %}
+  </aside>
+
+  <div class="space-y-6 lg:col-span-2 lg:row-start-1">
+    {% call card('Profile', icon_name='user-round') %}
+      {% call detail_list() %}
+        {{ detail_item('Full name', student.name) }}
+        {{ detail_item('Roll number', student.roll_no, mono=True) }}
+        {{ detail_item('Email', student.email) }}
+        {{ detail_item('Login email', account.username if account else None) }}
+        {{ detail_item('Department', student.department.display_name) }}
+        {{ detail_item('Semester', student.semester.name) }}
+      {% endcall %}
+    {% endcall %}
+
+    {% call card('Subject attendance', 'Classes held for the current semester, and how many more in a row reach ' ~ target ~ '%.', flush=True) %}
+      {% if summary.rows %}
+      <div class="overflow-x-auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Subject</th>
+              <th scope="col" class="text-right">Attended</th>
+              <th scope="col">Percentage</th>
+              <th scope="col" class="text-right">To reach {{ target }}%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in summary.rows %}
+            <tr>
+              <td>
+                <p class="text-label-lg text-foreground">{{ row.subject.name }}</p>
+                {% if row.subject.paper_code %}<p class="font-mono text-body-sm text-muted-foreground">{{ row.subject.paper_code }}</p>{% endif %}
+              </td>
+              <td class="text-right tabular-nums">{{ row.attended }}<span class="text-muted-foreground"> / {{ row.total }}</span></td>
+              <td>{{ percent_badge(row.percentage, target, row.total > 0) }}</td>
+              <td class="text-right tabular-nums {{ 'text-muted-foreground' if not row.needed }}">{{ row.needed or '–' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        {{ empty_state('book-open', 'No subjects yet', 'Subjects added to ' ~ student.semester.name ~ ' will appear here.', compact=True) }}
+      {% endif %}
+    {% endcall %}
+
+    {% call card('Recent attendance', 'The latest classes this student was marked present in.', flush=True) %}
+      {% if summary.recent %}
+      <ul class="divide-y divide-border">
+        {% for attendance in summary.recent %}
+        <li class="flex items-center gap-4 px-6 py-3.5">
+          <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">{{ icon('calendar-check') }}</span>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-label-lg text-foreground">{{ session_display_name(attendance.session) }}</p>
+            <p class="text-body-sm text-muted-foreground">{{ format_12h(attendance.timestamp) }}</p>
+          </div>
+          {{ attendance_badge('present_staff' if attendance.is_manual else 'present') }}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+        {{ empty_state('calendar-check', 'No attendance yet', 'Classes the student marks attendance in will appear here.', compact=True) }}
+      {% endif %}
+    {% endcall %}
+  </div>
+</div>
+{% endblock %}

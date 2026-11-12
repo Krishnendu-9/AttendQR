@@ -1,0 +1,79 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, page_header, callout with context %}
+{% from 'components/forms.html' import text_input, field, form_section, form_actions with context %}
+{% set editing = student is not none %}
+{% set page_title = 'Edit student' if editing else 'New student' %}
+{% if editing %}
+  {% set breadcrumbs = [('Students', url_for('students.index')), (student.name, url_for('students.view', id=student.id)), ('Edit', None)] %}
+{% else %}
+  {% set breadcrumbs = [('Students', url_for('students.index')), ('New student', None)] %}
+{% endif %}
+
+{% block content %}
+{{ page_header(page_title, 'Changes to ' ~ student.name ~ '. Moving a student to another class keeps them in their old class\'s reports.' if editing else 'Add one student. A login is created for them automatically.') }}
+
+<form method="POST" action="{{ url_for('students.edit', id=student.id) if editing else url_for('students.index') }}" class="card">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="return_to" value="{{ return_to }}">
+  <input type="hidden" name="form_page" value="1">
+
+  {% call form_section('Student details', 'Name, roll number and the email the student signs in with.') %}
+    {{ text_input('name', 'Full name', values.name, required=True, error=errors.name, placeholder='Rahul Das',
+                  attrs={'maxlength': 100, 'autocomplete': 'off', 'autofocus': not editing or None}, cls='sm:col-span-2') }}
+    {{ text_input('roll_no', 'Roll number', values.roll_no, required=True, error=errors.roll_no, placeholder='MCA001',
+                  hint='Unique within the class. Up to 20 characters.', attrs={'maxlength': 20, 'autocomplete': 'off'}) }}
+    {{ text_input('email', 'Email', values.email, type='email', required=True, error=errors.email, placeholder='student@example.com',
+                  hint='The student signs in with this email.', attrs={'maxlength': 120, 'autocomplete': 'off'}) }}
+  {% endcall %}
+
+  {% call form_section('Class', 'The department and semester the student attends.') %}
+    {% if current_user.role == 'super_admin' %}
+      {% call field('department_id', 'Department', required=True) %}
+        <div class="relative">
+          <select class="input" id="department_id" name="department_id" required>
+            {% if departments|length != 1 %}<option value="">Select department</option>{% endif %}
+            {% for d in departments %}<option value="{{ d.id }}"{% if values.department_id == d.id %} selected{% endif %}>{{ d.display_name }}</option>{% endfor %}
+          </select>
+          <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">{{ icon('chevron-down') }}</span>
+        </div>
+      {% endcall %}
+    {% else %}
+      {% call field('department_display', 'Department', hint='Students are added to your department.') %}
+        <input class="input" id="department_display" value="{{ departments[0].display_name if departments else 'No department assigned' }}" readonly aria-describedby="department_display-hint">
+      {% endcall %}
+    {% endif %}
+    {% call field('semester_id', 'Semester', required=True, error=errors.semester_id) %}
+      <div class="relative">
+        <select class="input" id="semester_id" name="semester_id" required{% if errors.semester_id %} aria-invalid="true" aria-describedby="semester_id-error"{% endif %}>
+          <option value="">Select semester</option>
+          {% for s in semesters %}<option value="{{ s.id }}"{% if values.semester_id == s.id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        </select>
+        <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">{{ icon('chevron-down') }}</span>
+      </div>
+    {% endcall %}
+  {% endcall %}
+
+  {% if not editing %}
+  <div class="px-6 pb-6">
+    {% call callout('A login is created automatically') %}
+      The student signs in with their email and a temporary password, shown once after you save. They must change it at first sign-in.
+    {% endcall %}
+  </div>
+  {% endif %}
+
+  {{ form_actions(return_to, 'Save changes' if editing else 'Create student', 'Saving...' if editing else 'Creating...') }}
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  // The semesters follow the chosen department.
+  var department = document.getElementById('department_id');
+  var semester = document.getElementById('semester_id');
+  if (department && semester) {
+    department.addEventListener('change', function () { AttendQR.loadSemesters(semester, department.value); });
+  }
+})();
+</script>
+{% endblock %}

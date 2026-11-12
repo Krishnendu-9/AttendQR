@@ -1,0 +1,11 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, empty_state with context %}
+{% set page_title = 'Student not found' %}
+{% set breadcrumbs = [('Students', url_for('students.index')), ('Not found', None)] %}
+{% block content %}
+<div class="card">
+  {% call empty_state('search-x', 'Student not found', 'This student may have been deleted, or belongs to a department you cannot see.') %}
+    <a href="{{ url_for('students.index') }}" class="{{ btn('outline') }}">{{ icon('arrow-left') }}<span>Back to students</span></a>
+  {% endcall %}
+</div>
+{% endblock %}
