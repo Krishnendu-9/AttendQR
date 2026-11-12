@@ -1,266 +1,376 @@
-{% extends 'base.html' %}
-{% block title %}Generate QR | AttendQR{% endblock %}
-{% block page_title %}Generate QR{% endblock %}
-{% block page_subtitle %}Create and monitor QR-based class attendance sessions{% endblock %}
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, session_badge, page_header, card, callout, empty_state, dropdown, menu_link, menu_form, menu_separator, action_form, submit_button with context %}
+{% from 'components/forms.html' import field, text_input, select_input, select_control with context %}
+{% set can_force_delete = user_role() in ['super_admin', 'hod'] %}
+{% if view_session %}
+  {% set page_title = session_display_name(view_session) %}
+  {% set breadcrumbs = [('Generate QR', url_for('attendance.generate_qr')), (page_title, None)] %}
+{% else %}
+  {% set page_title = 'Generate QR' %}
+{% endif %}
 
-{% macro session_status(cs) %}
-  {% set current_time = now() %}
-  {% if cs.expires_at > current_time and cs.is_active %}
-  <span class="badge text-bg-success"><i class="bi bi-check-circle me-1"></i>Active</span>
-  {% elif cs.expires_at > current_time %}
-  <span class="badge text-bg-warning text-dark"><i class="bi bi-pause-circle me-1"></i>Deactivated</span>
-  {% else %}
-  <span class="badge text-bg-secondary"><i class="bi bi-x-circle me-1"></i>Expired</span>
+{#- Deactivate / reactivate / delete for one session. as_menu: items for a row's menu; otherwise page buttons. -#}
+{% macro session_actions(cs, as_menu=False, next_url=None, present=0) -%}
+  {% set hidden = {'next': next_url} if next_url else {} %}
+  {% set open = cs.expires_at > now() %}
+  {% if open and cs.is_active %}
+    {% set args = ('Deactivate', url_for('attendance.deactivate_session', id=cs.id)) %}
+    {% set text = 'Students can no longer scan its QR code. You can reactivate it before it ends.' %}
+  {% elif open %}
+    {% set args = ('Reactivate', url_for('attendance.reactivate_session', id=cs.id)) %}
+    {% set text = 'Students can scan its QR code again until it ends.' %}
   {% endif %}
-{% endmacro %}
-
-{% macro session_actions(cs, compact=False, next_url=None, present=0) %}
-  {% set btn = 'btn btn-sm btn-icon' if compact else 'btn' %}
-  {% if cs.expires_at > now() %}
-    {% if cs.is_active %}
-    <form method="POST" action="{{ url_for('attendance.deactivate_session', id=cs.id) }}" class="d-inline"
-      data-confirm="Deactivate this session? Students will no longer be able to scan the QR.">
-      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-      <button class="{{ btn }} btn-warning" type="submit" {% if compact %}data-bs-toggle="tooltip" title="Deactivate session"{% endif %}>
-        <i class="bi bi-power{{ '' if compact else ' me-1' }}"></i>{% if not compact %} Deactivate{% endif %}
-      </button>
-    </form>
-    {% else %}
-    <form method="POST" action="{{ url_for('attendance.reactivate_session', id=cs.id) }}" class="d-inline"
-      data-confirm="Reactivate this session?">
-      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-      <button class="{{ btn }} btn-success" type="submit" {% if compact %}data-bs-toggle="tooltip" title="Reactivate session"{% endif %}>
-        <i class="bi bi-play-fill{{ '' if compact else ' me-1' }}"></i>{% if not compact %} Reactivate{% endif %}
-      </button>
-    </form>
+  {% if as_menu %}
+    {% if open %}{{ menu_form(args[0], args[1], 'circle-x' if cs.is_active else 'circle-check', confirm=text, confirm_title=args[0] ~ ' this session?', hidden=hidden) }}{% endif %}
+    {% if not present or can_force_delete %}{{ menu_separator() if open }}{% endif %}
+    {% if not present %}
+      {{ menu_form('Delete', url_for('attendance.delete_session', id=cs.id), 'trash-2', danger=True, hidden=hidden,
+                   confirm='Nobody has marked attendance in it, so nothing else is lost.',
+                   confirm_title='Delete ' ~ session_display_name(cs) ~ '?', confirm_label='Delete') }}
+    {% elif can_force_delete %}
+      <button type="button" role="menuitem" class="menu-item menu-item-danger delete-session" data-action="{{ url_for('attendance.delete_session', id=cs.id) }}"
+        data-session="{{ session_display_name(cs) }}" data-present="{{ present }}" data-next="{{ next_url or '' }}">{{ icon('trash-2') }}<span>Delete</span></button>
+    {% endif %}
+  {% else %}
+    {% if open %}{{ action_form(args[0], args[1], icon_name='circle-x' if cs.is_active else 'circle-check', confirm=text, confirm_title=args[0] ~ ' this session?', hidden=hidden) }}{% endif %}
+    {% if not present %}
+      {{ action_form('Delete', url_for('attendance.delete_session', id=cs.id), variant='destructive-outline', icon_name='trash-2', danger=True, hidden=hidden,
+                     confirm='Nobody has marked attendance in it, so nothing else is lost.',
+                     confirm_title='Delete ' ~ session_display_name(cs) ~ '?', confirm_label='Delete') }}
+    {% elif can_force_delete %}
+      <button type="button" class="{{ btn('destructive-outline') }} delete-session" data-action="{{ url_for('attendance.delete_session', id=cs.id) }}"
+        data-session="{{ session_display_name(cs) }}" data-present="{{ present }}" data-next="{{ next_url or '' }}">{{ icon('trash-2') }}<span>Delete</span></button>
     {% endif %}
   {% endif %}
-  {% if not present %}
-  <form method="POST" action="{{ url_for('attendance.delete_session', id=cs.id) }}" class="d-inline"
-    data-confirm="Delete this session for {{ session_display_name(cs) }}? Nobody has marked attendance in it.">
-    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-    <button class="{{ btn }} btn-danger" type="submit" {% if compact %}data-bs-toggle="tooltip" title="Delete session"{% endif %}>
-      <i class="bi bi-trash{{ '' if compact else ' me-1' }}"></i>{% if not compact %} Delete Session{% endif %}
-    </button>
-  </form>
-  {% elif user_role() in ['super_admin', 'hod'] %}
-  {# It has attendance: deleting erases those records, so ask for a reason (teachers cannot). #}
-  <button class="{{ btn }} btn-danger delete-session" type="button"
-    data-action="{{ url_for('attendance.delete_session', id=cs.id) }}"
-    data-session="{{ session_display_name(cs) }}" data-present="{{ present }}" data-next="{{ next_url or '' }}"
-    {% if compact %}data-bs-toggle="tooltip" title="Delete session"{% endif %}>
-    <i class="bi bi-trash{{ '' if compact else ' me-1' }}"></i>{% if not compact %} Delete Session{% endif %}
-  </button>
-  {% endif %}
-{% endmacro %}
+{%- endmacro %}
 
 {% block content %}
-
 {% if view_session %}
+{# ── One session: live QR and who is present ─────────────────── #}
 {% set this_page = url_for('attendance.generate_qr', session_id=view_session.id) %}
-<div class="card mb-3">
-  <div class="card-body text-center p-3 position-relative">
-    <div class="auth-mark qr-session-mark position-absolute top-0 start-0 m-3">
-      <i class="bi bi-qr-code"></i>
-    </div>
-    <h2 class="h5 fw-bold mb-1 px-5">{{ session_display_name(view_session) }}</h2>
-    <div class="text-muted mb-2 small">
-      <div>Valid for {{ duration }} minutes</div>
-      <div>Created at: {{ format_12h(view_session.created_at) }}</div>
-      <div>Expires at: {{ format_12h(view_session.expires_at) }}</div>
-      <div class="mt-1">{{ session_status(view_session) }}</div>
-    </div>
+{% call page_header(session_display_name(view_session),
+                    view_session.subject.department.display_name ~ ' · ' ~ view_session.subject.semester.name ~ ' · Valid for ' ~ duration ~ ' minutes',
+                    session_badge(view_session)) %}
+  {{ session_actions(view_session, next_url=this_page, present=attendance_records|length) }}
+  <a href="{{ url_for('attendance.generate_qr') }}" class="{{ btn('primary') }}">{{ icon('plus') }}<span>New session</span></a>
+{% endcall %}
 
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-5">
+  <section class="card lg:col-span-2 lg:self-start" aria-label="QR code">
+    <div id="qrStage" class="qr-stage flex flex-col items-center p-6 text-center">
+      {% if live %}
+      <div class="rounded-2xl border border-border bg-card p-3">
+        <img id="qrCodeImage" src="{{ qr_image }}" class="qr-image block aspect-square w-full max-w-80" alt="Attendance QR code">
+      </div>
+      <p id="scanUrlText" class="mt-4 max-w-full break-all font-mono text-body-sm text-muted-foreground">{{ scan_url }}</p>
+      <p class="qr-hint mt-2 text-body-sm text-muted-foreground">The code changes every {{ refresh_seconds }} seconds, so screenshots stop working almost at once.</p>
+      {% endif %}
+      <div id="qrEnded" class="w-full"{% if live %} hidden{% endif %}>
+        {{ empty_state('qr-code', 'Scanning has ended', 'This session is no longer accepting scans.', compact=True) }}
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-4 border-t border-border px-6 py-4">
+      <div><p class="text-label-md text-muted-foreground">Started</p><p class="mt-1 text-label-lg">{{ format_12h(view_session.created_at) }}</p></div>
+      <div><p class="text-label-md text-muted-foreground">Ends</p><p class="mt-1 text-label-lg">{{ format_12h(view_session.expires_at) }}</p></div>
+    </div>
     {% if live %}
-    <img id="qrCodeImage" src="{{ qr_image }}" class="qr-preview mb-3" alt="Attendance QR code">
-    <div id="scanUrlText" class="qr-scan-url text-muted text-break mb-2">{{ scan_url }}</div>
-    <div class="small text-muted mb-3">The code refreshes every {{ refresh_seconds }} seconds; screenshots stop working shortly after.</div>
+    <div class="border-t border-border px-6 py-3">
+      <button type="button" id="qrFullscreen" class="{{ btn('outline', extra='w-full') }}">{{ icon('monitor') }}<span>Show full screen</span></button>
+    </div>
     {% endif %}
-    <div id="qrEnded" class="alert alert-secondary qr-ended-notice mx-auto mb-3 {{ 'd-none' if live }}">
-      This session is no longer accepting scans.
-    </div>
+  </section>
 
-    <div class="d-flex flex-wrap justify-content-center gap-2">
-      <a href="{{ url_for('attendance.generate_qr') }}" class="btn btn-primary">
-        <i class="bi bi-plus-circle me-1"></i> New QR
-      </a>
-      <a href="#qr-attendance" class="btn btn-info">
-        <i class="bi bi-eye me-1"></i> View Attendance
-      </a>
-      {{ session_actions(view_session, next_url=this_page, present=attendance_records|length) }}
-    </div>
-  </div>
-</div>
+  <section class="card overflow-hidden lg:col-span-3" id="qr-attendance" data-present="{{ attendance_records|length }}" aria-label="Attendance">
+    <header class="flex flex-wrap items-start justify-between gap-3 px-6 pt-6">
+      <div>
+        <h2 class="text-headline-sm text-foreground">Attendance</h2>
+        <p class="mt-0.5 text-body-sm text-muted-foreground">Updates by itself while the session is live.</p>
+      </div>
+      <p class="text-right"><span class="text-headline-lg tabular-nums text-foreground">{{ attendance_records|length }}</span><span class="block text-body-sm text-muted-foreground">present</span></p>
+    </header>
 
-<div class="table-card mb-4" id="qr-attendance" data-present="{{ attendance_records|length }}">
-  <div class="card-header">
-    <h2 class="section-title"><i class="bi bi-clipboard-check me-1"></i> Attendance</h2>
-    <p class="section-subtitle">
-      {{ attendance_records|length }} present for this session ·
-      {{ view_session.subject.department.display_name }} - {{ view_session.subject.semester.name }}
-    </p>
     {% set new_devices = attendance_records|selectattr('new_device')|list|length %}
     {% if new_devices %}
-    <div class="alert alert-warning small mt-2 mb-0">
-      <i class="bi bi-phone me-1"></i>
-      {{ new_devices }} {{ 'scan' if new_devices == 1 else 'scans' }} in this session registered a new device
-      (the student's first scan, or the first since a device reset). Several at once, especially from one
-      address, can mean one phone or computer is marking for others; check those students are in the room.
+    <div class="px-6 pt-4">
+      {% call callout('New devices', 'warning', 'smartphone') %}
+        {{ new_devices }} {{ 'scan' if new_devices == 1 else 'scans' }} in this session registered a new device
+        (the student's first scan, or the first since a device reset). Several at once, especially from one
+        address, can mean one phone or computer is marking for others; check those students are in the room.
+      {% endcall %}
     </div>
     {% endif %}
-  </div>
 
-  <form method="POST" action="{{ url_for('attendance.mark_present', id=view_session.id) }}" class="px-3 pt-3">
-    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-    <div class="row g-2 align-items-end">
-      <div class="col-md-5">
-        <label class="form-label" for="manual_student">Mark a student present manually</label>
-        <select class="form-select" id="manual_student" name="student_id" required {{ 'disabled' if not absent_students }}>
+    <form method="POST" action="{{ url_for('attendance.mark_present', id=view_session.id) }}" class="border-b border-border px-6 py-5">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <p class="text-label-lg text-foreground">Mark a student present</p>
+      <p class="mt-0.5 text-body-sm text-muted-foreground">For a student who was in class but could not scan. Shown as P* in reports and recorded with your name and reason.</p>
+      <div class="mt-4 grid gap-3 sm:grid-cols-[3fr_2fr_auto] sm:items-start">
+        <div>
+          <label for="manual_student" class="sr-only">Student</label>
           {% if absent_students %}
-          <option value="">Select student ({{ absent_students|length }} not marked)</option>
-          {% for student in absent_students %}
-          <option value="{{ student.id }}">{{ student.roll_no }} - {{ student.name }}</option>
-          {% endfor %}
+            {% call select_control('student_id', 'manual_student', placeholder='Select student (' ~ absent_students|length ~ ' left)', required=True) %}
+              {% for student in absent_students %}<option value="{{ student.id }}">{{ student.roll_no }} - {{ student.name }}</option>{% endfor %}
+            {% endcall %}
           {% else %}
-          <option value="">Everyone in this class is marked present</option>
+            {{ select_control('student_id', 'manual_student', placeholder='Everyone in this class is marked present', attrs={'disabled': True}) }}
           {% endif %}
-        </select>
-      </div>
-      <div class="col-md-5">
-        <label class="form-label" for="manual_note">Reason</label>
-        <input class="form-control" id="manual_note" name="note" maxlength="200" required
-          placeholder="e.g. Phone battery died, verified in class" {{ 'disabled' if not absent_students }}>
-      </div>
-      <div class="col-md-2">
-        <button class="btn btn-success w-100" type="submit" {{ 'disabled' if not absent_students }}>
-          <i class="bi bi-person-check me-1"></i> Mark
+        </div>
+        <div>
+          <label for="manual_note" class="sr-only">Reason</label>
+          <input class="input" id="manual_note" name="note" maxlength="200" required placeholder="Reason, e.g. phone battery died"{% if not absent_students %} disabled{% endif %}>
+        </div>
+        <button class="{{ btn('primary') }}" type="submit" data-busy-label="Marking..."{% if not absent_students %} disabled{% endif %}>
+          {{ icon('loader-circle', 'btn-spinner') }}<span class="btn-icon-idle">{{ icon('user-plus') }}</span><span data-busy-text>Mark present</span>
         </button>
       </div>
-    </div>
-    <div class="form-text">Manual entries are labelled in reports (P*) and recorded in the activity log with your name and reason.</div>
-  </form>
+    </form>
 
-  {% if attendance_records %}
-  <div class="table-responsive mt-2">
-    <table class="table table-hover align-middle">
+    {% if attendance_records %}
+    <div class="overflow-x-auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Student</th>
+            <th scope="col">Marked at</th>
+            <th scope="col">How</th>
+            <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for attendance in attendance_records %}
+          <tr>
+            <td class="py-3">
+              <p class="text-label-lg text-foreground">{{ attendance.student.name }}</p>
+              <p class="text-body-sm text-muted-foreground"><span class="font-mono">{{ attendance.student.roll_no }}</span> &middot; {{ attendance.student.email }}</p>
+            </td>
+            <td class="whitespace-nowrap text-body-md tabular-nums text-muted-foreground">{{ format_12h(attendance.timestamp) }}</td>
+            <td class="py-3">
+              {% if attendance.is_manual %}
+                {{ badge('Marked by staff', 'info') }}
+                <p class="mt-1 max-w-64 text-body-sm text-muted-foreground">{{ attendance.marked_by.username if attendance.marked_by else 'Deleted account' }}{% if attendance.note %}: {{ attendance.note }}{% endif %}</p>
+              {% else %}
+                <div class="flex flex-wrap gap-1.5">
+                  {{ badge('QR scan', 'outline') }}
+                  {% if attendance.new_device %}{{ badge('New device', 'warning', "This scan registered the phone as the student's device") }}{% endif %}
+                </div>
+                {% if attendance.scan_ip %}<p class="mt-1 font-mono text-body-sm text-muted-foreground" title="Address the scan came from">{{ attendance.scan_ip }}</p>{% endif %}
+              {% endif %}
+            </td>
+            <td class="col-actions">
+              <button type="button" class="{{ btn('ghost', 'sm', True) }} remove-attendance hover:text-destructive" aria-label="Remove {{ attendance.student.name }}" title="Remove attendance"
+                data-action="{{ url_for('attendance.remove_attendance', id=view_session.id, attendance_id=attendance.id) }}"
+                data-student="{{ attendance.student.roll_no }} - {{ attendance.student.name }}">{{ icon('trash-2') }}</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if config.SCAN_IP_RETENTION_DAYS %}
+    <p class="border-t border-border px-6 py-3 text-body-sm text-muted-foreground">
+      Scan IP addresses help spot a scan from a different network than the rest of the class. Only staff who can open this session see them, and they are deleted {{ config.SCAN_IP_RETENTION_DAYS }} days after the scan.
+    </p>
+    {% endif %}
+    {% else %}
+      {{ empty_state('users', 'Nobody marked yet', 'Students appear here as soon as they scan the QR code.', compact=True) }}
+    {% endif %}
+  </section>
+</div>
+
+<dialog id="removeAttendanceModal" class="dialog" aria-labelledby="remove-attendance-title">
+  <form method="POST" id="removeAttendanceForm">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <div class="flex gap-4 p-6">
+      <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-destructive-soft text-destructive">{{ icon('triangle-alert', 'size-5') }}</span>
+      <div class="min-w-0 flex-1">
+        <h2 id="remove-attendance-title" class="text-headline-sm text-foreground">Remove attendance?</h2>
+        <p class="mt-1.5 text-body-md text-muted-foreground"><span class="text-label-lg text-foreground" id="removeAttendanceStudent"></span> will count as absent for this session.</p>
+        <label class="mb-1.5 mt-4 block text-label-lg text-foreground" for="remove_note">Reason<span class="ml-0.5 text-muted-foreground" aria-hidden="true">*</span></label>
+        <input class="input" id="remove_note" name="note" maxlength="200" required placeholder="e.g. Marked by mistake, student was not in class">
+      </div>
+    </div>
+    <div class="flex flex-col-reverse gap-2 border-t border-border px-6 py-4 sm:flex-row sm:justify-end">
+      <button type="button" class="{{ btn('outline') }}" data-dialog-close>Cancel</button>
+      <button type="submit" class="{{ btn('destructive') }}" data-busy-label="Removing...">{{ icon('loader-circle', 'btn-spinner') }}<span data-busy-text>Remove</span></button>
+    </div>
+  </form>
+</dialog>
+
+{% else %}
+{# ── Start a session, and recent sessions ─────────────────────── #}
+{{ page_header('Generate QR', 'Start a class session and show its QR code to the room.') }}
+
+{% call card('New session', 'Students scan the code with their own phone to mark attendance.', icon_name='qr-code') %}
+<form method="POST" action="{{ url_for('attendance.generate_qr') }}">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+    {{ select_input('class_mode', 'Class type', [('regular', 'Regular class'), ('special', 'Special class')], id='class_mode',
+                    hint='Special classes (workshops, aptitude) need no subject.') }}
+    {{ select_input('department_id', 'Department', departments, id='dept_select', placeholder='Select department', required=True,
+                    value_attr='id', label_attr='display_name') }}
+    {{ select_input('semester_id', 'Semester', id='sem_select', placeholder='Select semester', required=True) }}
+    <div id="subjectField">
+      {{ select_input('subject_id', 'Subject', id='sub_select', placeholder='Select subject', required=True) }}
+    </div>
+    <div id="specialTitleField" hidden>
+      {{ text_input('special_title', 'Special class details', id='special_title', placeholder='Aptitude class or Spoken English workshop',
+                    attrs={'maxlength': 200}) }}
+    </div>
+    {% if current_teacher %}
+      {{ text_input('current_teacher_name', 'Teacher', current_teacher.name, id='current_teacher_name', attrs={'disabled': True}) }}
+    {% else %}
+    <div id="teacherField">
+      {{ select_input('teacher_id', 'Teacher', id='teacher_select', placeholder='Select teacher', required=True) }}
+    </div>
+    {% endif %}
+    {{ text_input('duration', 'Duration in minutes', '30', id='duration', type='number', required=True, hint='Between 1 and 180.',
+                  attrs={'min': 1, 'max': 180}) }}
+  </div>
+  <div class="mt-6 flex justify-end border-t border-border pt-5">
+    {{ submit_button('Start session', 'Starting...', icon_name='qr-code') }}
+  </div>
+</form>
+{% endcall %}
+
+<section class="card mt-6 overflow-hidden" aria-label="Recent sessions">
+  <header class="px-6 pb-4 pt-6">
+    <h2 class="text-headline-sm text-foreground">Recent sessions</h2>
+    <p class="mt-0.5 text-body-sm text-muted-foreground">The latest QR sessions you can see. Open one to show its code or correct attendance.</p>
+  </header>
+  {% if recent_sessions %}
+  <div class="overflow-x-auto border-t border-border">
+    <table class="data-table">
       <thead>
         <tr>
-          <th>#</th>
-          <th>Roll No</th>
-          <th>Name</th>
-          <th>Email</th>
-          <th>Marked At</th>
-          <th>How</th>
-          <th class="text-end">Actions</th>
+          <th scope="col">Session</th>
+          <th scope="col">Teacher</th>
+          <th scope="col">Started</th>
+          <th scope="col" class="text-right">Present</th>
+          <th scope="col">Status</th>
+          <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody>
-        {% for attendance in attendance_records %}
-        <tr>
-          <td>{{ loop.index }}</td>
-          <td class="fw-semibold">{{ attendance.student.roll_no }}</td>
-          <td>{{ attendance.student.name }}</td>
-          <td>{{ attendance.student.email }}</td>
-          <td>{{ format_12h(attendance.timestamp) }}</td>
-          <td>
-            {% if attendance.is_manual %}
-            <span class="badge text-bg-info">Manual</span>
-            <div class="small text-muted">
-              {{ attendance.marked_by.username if attendance.marked_by else 'Deleted account' }}{% if attendance.note %}: {{ attendance.note }}{% endif %}
+        {% for cs in recent_sessions %}
+        {% set present = session_counts.get(cs.id, 0) %}
+        <tr data-href="{{ url_for('attendance.generate_qr', session_id=cs.id) }}">
+          <td class="py-3">
+            <div class="flex items-center gap-3">
+              <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-ink">{{ icon('qr-code') }}</span>
+              <div class="min-w-0">
+                <a href="{{ url_for('attendance.generate_qr', session_id=cs.id) }}" class="block truncate rounded text-label-lg text-foreground hover:text-primary focus-visible:shadow-focus focus-visible:outline-none">{{ session_display_name(cs) }}</a>
+                <p class="flex items-center gap-1.5 text-body-sm text-muted-foreground">{{ cs.subject.department.display_name }} &middot; {{ cs.subject.semester.name }}{% if cs.special_title %} {{ badge('Special', 'info') }}{% endif %}</p>
+              </div>
             </div>
-            {% else %}
-            <span class="badge text-bg-light border">QR scan</span>
-            {% if attendance.new_device %}
-            <span class="badge text-bg-warning" title="This scan registered the phone as the student's device">New device</span>
-            {% endif %}
-            {% if attendance.scan_ip %}
-            <div class="small text-muted font-monospace" title="Address the scan came from">{{ attendance.scan_ip }}</div>
-            {% endif %}
-            {% endif %}
           </td>
-          <td class="text-end">
-            <button type="button" class="btn btn-sm btn-outline-danger btn-icon remove-attendance" data-bs-toggle="tooltip" title="Remove attendance"
-              data-action="{{ url_for('attendance.remove_attendance', id=view_session.id, attendance_id=attendance.id) }}"
-              data-student="{{ attendance.student.roll_no }} - {{ attendance.student.name }}">
-              <i class="bi bi-person-x"></i>
-            </button>
+          <td class="whitespace-nowrap text-body-md text-muted-foreground">{{ cs.teacher.name if cs.teacher else 'Not assigned' }}</td>
+          <td class="whitespace-nowrap text-body-md tabular-nums text-muted-foreground">{{ format_12h(cs.created_at) }}</td>
+          <td class="text-right tabular-nums text-label-lg">{{ present }}</td>
+          <td>{{ session_badge(cs) }}</td>
+          <td class="col-actions">
+            {% call dropdown('Actions for ' ~ session_display_name(cs)) %}
+              {{ menu_link('Open session', url_for('attendance.generate_qr', session_id=cs.id), 'qr-code') }}
+              {{ session_actions(cs, as_menu=True, present=present) }}
+            {% endcall %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% if config.SCAN_IP_RETENTION_DAYS %}
-  <div class="form-text px-3 pb-3">
-    Scan IP addresses help spot a scan from a different network than the rest of the class. Only staff who can open this session see them, and they are deleted {{ config.SCAN_IP_RETENTION_DAYS }} days after the scan.
-  </div>
-  {% endif %}
   {% else %}
-  <div class="p-4 text-center text-muted">No attendance has been marked for this session yet.</div>
+    {{ empty_state('history', 'No sessions yet', 'Sessions you start appear here.', compact=True) }}
   {% endif %}
-</div>
+</section>
+{% endif %}
 
-<div class="modal fade" id="removeAttendanceModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <form method="POST" id="removeAttendanceForm" class="modal-content">
-      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      <div class="modal-header">
-        <h5 class="modal-title">Remove Attendance</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+{% if can_force_delete %}
+<dialog id="deleteSessionModal" class="dialog" aria-labelledby="delete-session-title">
+  <form method="POST" id="deleteSessionForm">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" id="delete_session_next">
+    <div class="flex gap-4 p-6">
+      <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-destructive-soft text-destructive">{{ icon('triangle-alert', 'size-5') }}</span>
+      <div class="min-w-0 flex-1">
+        <h2 id="delete-session-title" class="text-headline-sm text-foreground">Delete <span id="deleteSessionName"></span>?</h2>
+        <p class="mt-1.5 text-body-md text-muted-foreground">
+          Its <span class="text-label-lg text-foreground" id="deleteSessionPresent"></span> attendance record(s) will be erased and cannot be recovered.
+          To stop scanning only, deactivate it instead.
+        </p>
+        <label class="mb-1.5 mt-4 block text-label-lg text-foreground" for="delete_session_note">Reason<span class="ml-0.5 text-muted-foreground" aria-hidden="true">*</span></label>
+        <input class="input" id="delete_session_note" name="note" maxlength="200" required placeholder="e.g. Created for the wrong class">
       </div>
-      <div class="modal-body">
-        <p class="mb-3">Remove <strong id="removeAttendanceStudent"></strong> from this session? They will count as absent.</p>
-        <label class="form-label" for="remove_note">Reason</label>
-        <input class="form-control" id="remove_note" name="note" maxlength="200" required placeholder="e.g. Marked by mistake, student was not in class">
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-danger">Remove</button>
-      </div>
-    </form>
-  </div>
-</div>
+    </div>
+    <div class="flex flex-col-reverse gap-2 border-t border-border px-6 py-4 sm:flex-row sm:justify-end">
+      <button type="button" class="{{ btn('outline') }}" data-dialog-close>Cancel</button>
+      <button type="submit" class="{{ btn('destructive') }}" data-busy-label="Deleting...">{{ icon('loader-circle', 'btn-spinner') }}<span data-busy-text>Delete session</span></button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}
 
+{% block scripts %}
 <script nonce="{{ csp_nonce() }}">
-  // Delegated, so it also works for rows added when the attendance list refreshes itself.
+  // Dialogs that ask for a reason. Delegated, so they also work for rows added by the live refresh.
   document.addEventListener('click', function (event) {
-    const button = event.target.closest('.remove-attendance');
-    if (!button) return;
-    document.getElementById('removeAttendanceForm').action = button.dataset.action;
-    document.getElementById('removeAttendanceStudent').textContent = button.dataset.student;
-    document.getElementById('remove_note').value = '';
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('removeAttendanceModal')).show();
+    const remove = event.target.closest('.remove-attendance');
+    if (remove) {
+      document.getElementById('removeAttendanceForm').action = remove.dataset.action;
+      document.getElementById('removeAttendanceStudent').textContent = remove.dataset.student;
+      document.getElementById('remove_note').value = '';
+      document.getElementById('removeAttendanceModal').showModal();
+      return;
+    }
+    const del = event.target.closest('.delete-session');
+    if (del) {
+      document.getElementById('deleteSessionForm').action = del.dataset.action;
+      document.getElementById('deleteSessionName').textContent = del.dataset.session;
+      document.getElementById('deleteSessionPresent').textContent = del.dataset.present;
+      document.getElementById('delete_session_next').value = del.dataset.next;
+      document.getElementById('delete_session_note').value = '';
+      document.getElementById('deleteSessionModal').showModal();
+    }
   });
 </script>
 
-{% if live %}
+{% if view_session and live %}
 <script nonce="{{ csp_nonce() }}">
   document.addEventListener('DOMContentLoaded', function () {
     const sessionId = {{ view_session.id|tojson }};
     const qrImg = document.getElementById('qrCodeImage');
     const scanUrlText = document.getElementById('scanUrlText');
     const ended = document.getElementById('qrEnded');
+    const stage = document.getElementById('qrStage');
+    const fullscreen = document.getElementById('qrFullscreen');
     let timer = null;
 
     function stop() {
       clearInterval(timer);
-      qrImg.remove();
+      qrImg.closest('div').remove();
       scanUrlText.remove();
-      ended.classList.remove('d-none');
+      stage.querySelectorAll('.qr-hint').forEach(function (el) { el.remove(); });
+      if (fullscreen) fullscreen.closest('div').remove();
+      if (document.fullscreenElement) document.exitFullscreen();
+      ended.hidden = false;
+    }
+
+    // Show the code large on a projector; Esc leaves full screen.
+    if (fullscreen && stage.requestFullscreen) {
+      fullscreen.addEventListener('click', function () { stage.requestFullscreen(); });
+    } else if (fullscreen) {
+      fullscreen.closest('div').remove();
     }
 
     function attendanceSection() {
       return document.getElementById('qr-attendance');
     }
 
-    // Never replace the list under someone typing a reason or using the remove dialog.
+    // Never replace the list under someone typing a reason or using a dialog.
     function staffIsEditing() {
       const active = document.activeElement;
       const editingForm = active && attendanceSection().contains(active) && active.matches('input, select, textarea');
-      return Boolean(editingForm || document.querySelector('#removeAttendanceModal.show, #deleteSessionModal.show'));
+      return Boolean(editingForm || document.querySelector('#removeAttendanceModal[open], #deleteSessionModal[open], #confirm-dialog[open]'));
     }
 
     let reloadingAttendance = false;
@@ -275,16 +385,7 @@
         .then(function (html) {
           const fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('qr-attendance');
           if (!fresh || staffIsEditing()) return;
-          const current = attendanceSection();
-          current.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
-            const tooltip = bootstrap.Tooltip.getInstance(el);
-            if (tooltip) tooltip.dispose();
-          });
-          const replacement = document.importNode(fresh, true);
-          current.replaceWith(replacement);
-          replacement.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
-            new bootstrap.Tooltip(el);
-          });
+          attendanceSection().replaceWith(document.importNode(fresh, true));
         })
         .catch(function () { /* try again on the next refresh */ })
         .then(function () { reloadingAttendance = false; });
@@ -307,124 +408,7 @@
 </script>
 {% endif %}
 
-{% else %}
-
-<form method="POST" class="form-panel" action="{{ url_for('attendance.generate_qr') }}">
-  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-  <div class="row g-3">
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="class_mode">Class Type</label>
-      <select class="form-select" name="class_mode" id="class_mode">
-        <option value="regular">Regular Class</option>
-        <option value="special">Special Class</option>
-      </select>
-    </div>
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="dept_select">Department</label>
-      <select class="form-select" name="department_id" id="dept_select" required>
-        <option value="">Select department</option>
-        {% for d in departments %}
-        <option value="{{ d.id }}">{{ d.display_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="sem_select">Semester</label>
-      <select class="form-select" name="semester_id" id="sem_select" required>
-        <option value="">Select semester</option>
-      </select>
-    </div>
-    <div class="col-md-6 col-xl" id="subjectField">
-      <label class="form-label" for="sub_select">Subject</label>
-      <select class="form-select" name="subject_id" id="sub_select" required>
-        <option value="">Select subject</option>
-      </select>
-    </div>
-    <div class="col-md-6 col-xl d-none" id="specialTitleField">
-      <label class="form-label" for="special_title">Special Class Details</label>
-      <input class="form-control" name="special_title" id="special_title" maxlength="200"
-        placeholder="Example: Aptitude Class / Spoken English Workshop">
-    </div>
-    {% if current_teacher %}
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="current_teacher_name">Teacher</label>
-      <input class="form-control" id="current_teacher_name" value="{{ current_teacher.name }}" disabled>
-    </div>
-    {% else %}
-    <div class="col-md-6 col-xl" id="teacherField">
-      <label class="form-label" for="teacher_select">Teacher</label>
-      <select class="form-select" name="teacher_id" id="teacher_select" required>
-        <option value="">Select teacher</option>
-      </select>
-    </div>
-    {% endif %}
-    <div class="col-md-6 col-xl">
-      <label class="form-label" for="duration">Duration</label>
-      <input class="form-control" id="duration" name="duration" type="number" min="1" max="180" placeholder="Minutes"
-        value="30" required>
-    </div>
-    <div class="col-md-6 col-xl-auto d-flex align-items-end">
-      <button class="btn btn-primary w-100" type="submit">
-        <i class="bi bi-qr-code me-1"></i> Generate
-      </button>
-    </div>
-  </div>
-</form>
-
-<div class="table-card">
-  <div class="card-header">
-    <h2 class="section-title"><i class="bi bi-clock-history me-1"></i> Recent QR Sessions</h2>
-    <p class="section-subtitle">Latest generated class sessions and their current status</p>
-  </div>
-  {% if recent_sessions %}
-  <div class="table-responsive">
-    <table class="table table-hover align-middle">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Subject</th>
-          <th>Department</th>
-          <th>Semester</th>
-          <th>Teacher</th>
-          <th>Created</th>
-          <th>Present</th>
-          <th>Status</th>
-          <th class="text-end">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for cs in recent_sessions %}
-        <tr>
-          <td>{{ loop.index }}</td>
-          <td class="fw-semibold">
-            {{ session_display_name(cs) }}
-            {% if cs.special_title %}
-            <span class="badge text-bg-info ms-2">Special</span>
-            {% endif %}
-          </td>
-          <td>{{ cs.subject.department.display_name }}</td>
-          <td>{{ cs.subject.semester.name }}</td>
-          <td>{{ cs.teacher.name if cs.teacher else 'N/A' }}</td>
-          <td>{{ format_12h(cs.created_at) }}</td>
-          <td>{{ session_counts.get(cs.id, 0) }}</td>
-          <td>{{ session_status(cs) }}</td>
-          <td class="text-end text-nowrap">
-            <a href="{{ url_for('attendance.generate_qr', session_id=cs.id) }}" class="btn btn-sm btn-info btn-icon"
-              data-bs-toggle="tooltip" title="View QR">
-              <i class="bi bi-qr-code"></i>
-            </a>
-            {{ session_actions(cs, compact=True, present=session_counts.get(cs.id, 0)) }}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <div class="p-4 text-center text-muted">No QR sessions generated yet.</div>
-  {% endif %}
-</div>
-
+{% if not view_session %}
 <script nonce="{{ csp_nonce() }}">
   (function () {
     const classMode = document.getElementById('class_mode');
@@ -459,8 +443,8 @@
 
     function toggleClassMode() {
       const isSpecial = classMode.value === 'special';
-      document.getElementById('subjectField').classList.toggle('d-none', isSpecial);
-      document.getElementById('specialTitleField').classList.toggle('d-none', !isSpecial);
+      document.getElementById('subjectField').hidden = isSpecial;
+      document.getElementById('specialTitleField').hidden = !isSpecial;
       subjectSelect.required = !isSpecial;
       specialTitle.required = isSpecial;
       if (isSpecial) subjectSelect.value = '';
@@ -480,47 +464,6 @@
     classMode.addEventListener('change', toggleClassMode);
     toggleClassMode();
   })();
-</script>
-{% endif %}
-
-{% if user_role() in ['super_admin', 'hod'] %}
-<div class="modal fade" id="deleteSessionModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <form method="POST" id="deleteSessionForm" class="modal-content">
-      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="next" id="delete_session_next">
-      <div class="modal-header">
-        <h5 class="modal-title">Delete Session</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p class="mb-3">
-          Delete <strong id="deleteSessionName"></strong>? Its <strong id="deleteSessionPresent"></strong>
-          attendance record(s) will be erased and cannot be recovered. To stop scanning only, deactivate it instead.
-        </p>
-        <label class="form-label" for="delete_session_note">Reason</label>
-        <input class="form-control" id="delete_session_note" name="note" maxlength="200" required
-          placeholder="e.g. Created for the wrong class">
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-danger">Delete Session</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<script nonce="{{ csp_nonce() }}">
-  document.addEventListener('click', function (event) {
-    const button = event.target.closest('.delete-session');
-    if (!button) return;
-    document.getElementById('deleteSessionForm').action = button.dataset.action;
-    document.getElementById('deleteSessionName').textContent = button.dataset.session;
-    document.getElementById('deleteSessionPresent').textContent = button.dataset.present;
-    document.getElementById('delete_session_next').value = button.dataset.next;
-    document.getElementById('delete_session_note').value = '';
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteSessionModal')).show();
-  });
 </script>
 {% endif %}
 {% endblock %}
