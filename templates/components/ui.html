@@ -1,0 +1,315 @@
+{#- Shared interface macros. Import with context, e.g.
+    {% from 'components/ui.html' import icon, badge, page_header with context %}
+    Classes come from the design tokens in assets/tailwind.css; never hard-code colours here. -#}
+
+{#- Lucide icon (see scripts/lucide_icons.py). Decorative unless a label is given. -#}
+{% macro icon(name, cls='size-4', label=None) -%}
+<svg class="{{ cls }}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" {% if label %}role="img" aria-label="{{ label }}"{% else %}aria-hidden="true"{% endif %} focusable="false">{% include 'components/icons/' ~ name ~ '.svg' %}</svg>
+{%- endmacro %}
+
+{#- Button classes, for when the element needs custom attributes: <a class="{{ btn('outline') }}">. -#}
+{% macro btn(variant='primary', size=None, icon_only=False, extra='') -%}
+btn btn-{{ variant }}{% if size %} btn-{{ size }}{% endif %}{% if icon_only %} btn-icon{% endif %}{% if extra %} {{ extra }}{% endif %}
+{%- endmacro %}
+
+{#- A button or link-button. variant: primary, outline, ghost, destructive, destructive-outline, link. -#}
+{% macro button(label, variant='primary', icon_name=None, href=None, type='button', size=None, attrs={}, icon_only=False, extra='') -%}
+{% set classes = btn(variant, size, icon_only, extra) %}
+{% if href %}
+<a href="{{ href }}" class="{{ classes }}" {{ attrs|xmlattr }}{% if icon_only %} aria-label="{{ label }}" title="{{ label }}"{% endif %}>
+  {%- if icon_name %}{{ icon(icon_name) }}{% endif %}{% if not icon_only %}<span>{{ label }}</span>{% endif -%}
+</a>
+{% else %}
+<button type="{{ type }}" class="{{ classes }}" {{ attrs|xmlattr }}{% if icon_only %} aria-label="{{ label }}" title="{{ label }}"{% endif %}>
+  {%- if icon_name %}{{ icon(icon_name) }}{% endif %}{% if not icon_only %}<span>{{ label }}</span>{% endif -%}
+</button>
+{% endif %}
+{%- endmacro %}
+
+{#- Submit button that shows a spinner and busy_label while the form posts (static/js/ui.js). -#}
+{% macro submit_button(label, busy_label='Saving...', variant='primary', icon_name=None, extra='', attrs={}) -%}
+<button type="submit" class="{{ btn(variant, extra=extra) }}" data-busy-label="{{ busy_label }}" {{ attrs|xmlattr }}>
+  {{ icon('loader-circle', 'btn-spinner') }}
+  {%- if icon_name %}<span class="btn-icon-idle">{{ icon(icon_name) }}</span>{% endif %}
+  <span data-busy-text>{{ label }}</span>
+</button>
+{%- endmacro %}
+
+{#- Round badge without a dot. tone: success, warning, danger, info, neutral, outline. -#}
+{% macro badge(text, tone='neutral', title=None) -%}
+<span class="badge badge-{{ tone }}"{% if title %} title="{{ title }}"{% endif %}>{{ text }}</span>
+{%- endmacro %}
+
+{#- The one place an attendance status becomes a badge, so every screen agrees.
+    present: QR scan; present_staff: marked by staff (P*); absent; not_marked: no class for them
+    (held after they moved); moved_out: left this class. -#}
+{% macro attendance_badge(status, short=False) -%}
+{% set styles = {
+  'present': ('P', 'Present', 'success', None),
+  'present_staff': ('P*', 'Present (marked by staff)', 'success', 'Marked present by staff'),
+  'absent': ('A', 'Absent', 'danger', None),
+  'not_marked': ('–', 'Not marked', 'neutral', 'Held after the student moved to another class; not counted'),
+  'moved_out': ('Moved out', 'Moved out', 'neutral', None),
+} %}
+{% set s = styles.get(status, styles['not_marked']) %}
+{{ badge(s[0] if short else s[1], s[2], s[3]) }}
+{%- endmacro %}
+
+{#- Percentage against the attendance target: green meets it, amber is within 15 points, red is short. -#}
+{% macro percent_badge(percentage, target, has_classes=True) -%}
+{% if not has_classes %}{{ badge('No classes', 'neutral') }}
+{% elif percentage >= target %}{{ badge(percentage ~ '%', 'success') }}
+{% elif percentage >= target - 15 %}{{ badge(percentage ~ '%', 'warning') }}
+{% else %}{{ badge(percentage ~ '%', 'danger') }}{% endif %}
+{%- endmacro %}
+
+{#- QR session state: Active (scanning open), Deactivated (stopped early, can be reopened), Expired. -#}
+{% macro session_badge(cs) -%}
+{% set current_time = now() %}
+{% if cs.expires_at > current_time and cs.is_active %}{{ badge('Active', 'success') }}
+{% elif cs.expires_at > current_time %}{{ badge('Deactivated', 'warning') }}
+{% else %}{{ badge('Expired', 'neutral') }}{% endif %}
+{%- endmacro %}
+
+{#- Login account state for a student or staff account. -#}
+{% macro account_badge(account) -%}
+{% if not account %}{{ badge('No login', 'neutral') }}
+{% elif not account.is_active %}{{ badge('Inactive', 'neutral') }}
+{% elif account.must_change_password %}{{ badge('Password change pending', 'warning') }}
+{% else %}{{ badge('Active', 'success') }}{% endif %}
+{%- endmacro %}
+
+{#- Initials tile for the first column of a list. -#}
+{% macro monogram(name, cls='') -%}
+{% set words = (name or '?').split() %}
+<span class="monogram {{ cls }}" aria-hidden="true">{{ (words[0][:1] ~ (words[1][:1] if words|length > 1 else ''))|upper }}</span>
+{%- endmacro %}
+
+{#- Page title, one-line description and actions (caller), Edit or New last. -#}
+{% macro page_header(title, description=None, badge_html=None) -%}
+<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between md:mb-8">
+  <div class="min-w-0">
+    <div class="flex flex-wrap items-center gap-3">
+      <h1 class="text-display-sm text-foreground md:text-display">{{ title }}</h1>
+      {% if badge_html %}{{ badge_html }}{% endif %}
+    </div>
+    {% if description %}<p class="mt-1 text-body-md text-muted-foreground">{{ description }}</p>{% endif %}
+  </div>
+  {% if caller %}
+  <div class="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">{{ caller() }}</div>
+  {% endif %}
+</div>
+{%- endmacro %}
+
+{#- Card with an optional titled header. flush: no body padding (tables). -#}
+{% macro card(title=None, description=None, flush=False, cls='', icon_name=None) -%}
+<section class="card {{ 'overflow-hidden' if flush }} {{ cls }}">
+  {% if title %}
+  <header class="flex items-start gap-3 px-6 pt-6{{ ' pb-4 border-b border-border' if flush else '' }}">
+    {% if icon_name %}<span class="mt-0.5 text-muted-foreground">{{ icon(icon_name, 'size-5') }}</span>{% endif %}
+    <div class="min-w-0">
+      <h2 class="text-headline-sm text-foreground">{{ title }}</h2>
+      {% if description %}<p class="mt-0.5 text-body-sm text-muted-foreground">{{ description }}</p>{% endif %}
+    </div>
+  </header>
+  {% endif %}
+  <div class="{{ '' if flush else ('p-6 pt-4' if title else 'p-6') }}">{{ caller() }}</div>
+</section>
+{%- endmacro %}
+
+{#- Label and value pairs. Use detail_item() inside. -#}
+{% macro detail_list(columns=2) -%}
+<dl class="grid grid-cols-1 gap-x-6 gap-y-5 {{ 'sm:grid-cols-2' if columns == 2 else '' }}">{{ caller() }}</dl>
+{%- endmacro %}
+
+{% macro detail_item(label, value=None, mono=False) -%}
+<div class="min-w-0">
+  <dt class="text-label-md text-muted-foreground">{{ label }}</dt>
+  <dd class="mt-1 break-words text-label-lg {{ 'font-mono' if mono }}">
+    {%- if caller %}{{ caller() }}{% elif value is not none and value != '' %}<span class="text-foreground">{{ value }}</span>{% else %}<span class="font-normal text-muted-foreground">Not set</span>{% endif -%}
+  </dd>
+</div>
+{%- endmacro %}
+
+{#- Empty state: icon, title, one line and an action (caller). -#}
+{% macro empty_state(icon_name, title, text, compact=False) -%}
+<div class="flex flex-col items-center px-6 text-center {{ 'py-8' if compact else 'py-16' }}">
+  <span class="mb-4 flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">{{ icon(icon_name, 'size-5') }}</span>
+  <h3 class="text-headline-sm text-foreground">{{ title }}</h3>
+  <p class="mt-1 max-w-sm text-body-md text-muted-foreground">{{ text }}</p>
+  {% if caller %}<div class="mt-5 flex flex-wrap justify-center gap-2">{{ caller() }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{#- Inline notice inside a page (not a toast). tone: info, warning, danger, success. -#}
+{% macro callout(title=None, tone='info', icon_name=None) -%}
+{% set tones = {
+  'info': ('bg-accent border-secondary text-ink', 'info'),
+  'warning': ('bg-warning-soft border-warning/30 text-warning', 'triangle-alert'),
+  'danger': ('bg-destructive-soft border-destructive/30 text-destructive', 'circle-alert'),
+  'success': ('bg-success-soft border-success/30 text-success', 'circle-check'),
+} %}
+{% set t = tones.get(tone, tones['info']) %}
+<div class="flex gap-3 rounded-xl border p-4 {{ t[0] }}" role="{{ 'alert' if tone == 'danger' else 'note' }}">
+  <span class="mt-0.5 shrink-0">{{ icon(icon_name or t[1]) }}</span>
+  <div class="min-w-0 text-body-md">
+    {% if title %}<p class="text-label-lg">{{ title }}</p>{% endif %}
+    <div class="{{ 'mt-0.5' if title }} text-foreground/80">{{ caller() }}</div>
+  </div>
+</div>
+{%- endmacro %}
+
+{#- Dropdown menu. The caller renders menu_link / menu_button / menu_separator items. -#}
+{#- menu=False: a popover holding form controls (arrow keys stay with the controls).
+    label_cls hides the text label at some widths; extra_html follows the label (a count, for example). -#}
+{% macro dropdown(label='Actions', icon_name='ellipsis', variant='ghost', size='sm', align='end', icon_only=True, button_cls='', menu=True, label_cls='', extra_html='') -%}
+<div x-data="dropdown" data-align="{{ align }}" data-menu="{{ 'true' if menu else 'false' }}" class="relative inline-flex" @keydown="onKeydown" @click.outside="close(false)" data-row-ignore>
+  <button type="button" x-ref="button" class="{{ btn(variant, size, icon_only, button_cls) }}" @click="toggle"
+    aria-haspopup="{{ 'menu' if menu else 'dialog' }}" :aria-expanded="open ? 'true' : 'false'"{% if icon_only %} aria-label="{{ label }}" title="{{ label }}"{% endif %}>
+    {{ icon(icon_name) }}{% if not icon_only %}<span class="{{ label_cls }}">{{ label }}</span>{{ extra_html }}{{ icon('chevron-down', 'size-4 opacity-60 ' ~ label_cls) }}{% endif %}
+  </button>
+  <div x-ref="panel" x-show="open" x-cloak{% if menu %} role="menu" @click="onPanelClick"{% else %} role="dialog" aria-label="{{ label }}"{% endif %} class="menu fixed animate-pop-in">{{ caller() }}</div>
+</div>
+{%- endmacro %}
+
+{% macro menu_link(label, href, icon_name=None, danger=False) -%}
+<a href="{{ href }}" role="menuitem" class="menu-item{{ ' menu-item-danger' if danger }}">{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ label }}</span></a>
+{%- endmacro %}
+
+{#- A POST action inside a menu: its own form with CSRF token and optional confirmation. -#}
+{% macro menu_form(label, action, icon_name=None, danger=False, confirm=None, confirm_title=None, confirm_label=None, hidden={}) -%}
+<form method="POST" action="{{ action }}"
+  {%- if confirm %} data-confirm="{{ confirm }}" data-confirm-title="{{ confirm_title or label }}" data-confirm-label="{{ confirm_label or label }}" data-confirm-tone="{{ 'danger' if danger else 'info' }}"{% endif %}>
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  {% for key, value in hidden.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+  <button type="submit" role="menuitem" class="menu-item{{ ' menu-item-danger' if danger }}">{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ label }}</span></button>
+</form>
+{%- endmacro %}
+
+{#- A menu item (or, with as_button, a page button) that opens an add/edit dialog (static/js/ui.js). -#}
+{% macro record_opener(label, dialog, action, title, submit_label, values={}, icon_name=None, mode='edit', as_button=False, variant='primary') -%}
+<button type="button" {% if as_button %}class="{{ btn(variant) }}"{% else %}role="menuitem" class="menu-item"{% endif %}
+  data-record-dialog="{{ dialog }}" data-action="{{ action }}" data-title="{{ title }}" data-submit="{{ submit_label }}" data-mode="{{ mode }}"
+  data-values='{{ values|tojson }}'>{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ label }}</span></button>
+{%- endmacro %}
+
+{#- Add/edit dialog. The caller renders the fields; record_opener() sets the title, action and values. -#}
+{% macro record_dialog(id, title, submit_label='Save', busy_label='Saving...') -%}
+<dialog id="{{ id }}" class="dialog dialog-lg" aria-labelledby="{{ id }}-title">
+  <form method="POST" action="">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <div class="flex items-start justify-between gap-4 px-6 pt-6">
+      <h2 id="{{ id }}-title" class="text-headline-md text-foreground" data-record-title>{{ title }}</h2>
+      <button type="button" class="{{ btn('ghost', 'sm', True) }} -mr-2 -mt-1" data-dialog-close aria-label="Close">{{ icon('x') }}</button>
+    </div>
+    <div class="grid gap-5 px-6 py-5 sm:grid-cols-2">{{ caller() }}</div>
+    <div class="flex flex-col-reverse gap-2 border-t border-border px-6 py-4 sm:flex-row sm:justify-end">
+      <button type="button" class="{{ btn('outline') }}" data-dialog-close>Cancel</button>
+      <button type="submit" class="{{ btn('primary') }}" data-busy-label="{{ busy_label }}">{{ icon('loader-circle', 'btn-spinner') }}<span data-busy-text data-record-submit>{{ submit_label }}</span></button>
+    </div>
+  </form>
+</dialog>
+{%- endmacro %}
+
+{#- Toolbar for a list loaded in full: instant search plus optional filters (caller renders <select>s).
+    Pair with x-data="clientFilter" items (see static/js/ui.js). -#}
+{% macro client_toolbar(id, target, placeholder, search_label, filters=False) -%}
+<form id="{{ id }}" x-data="clientFilter" data-target="{{ target }}" role="search" @submit.prevent="apply"
+  class="flex items-center gap-2 border-b border-border p-3 md:p-4">
+  <div class="relative min-w-0 flex-1 md:max-w-sm">
+    <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">{{ icon('search') }}</span>
+    <input type="search" name="q" class="input pl-9 pr-9" placeholder="{{ placeholder }}" aria-label="{{ search_label }}" autocomplete="off" @input="apply">
+    <button type="button" x-show="hasQuery" x-cloak @click="clearSearch" class="absolute inset-y-0 right-0 flex w-9 items-center justify-center rounded-r-lg text-muted-foreground hover:text-foreground" aria-label="Clear search">{{ icon('x') }}</button>
+  </div>
+  {% if filters %}
+  {#- Rendered here: inside the dropdown's call block, caller() would mean the dropdown's own caller. -#}
+  {% set filter_fields = caller() %}
+  <div class="ml-auto flex items-center">
+    {% call dropdown('Filters', 'funnel', variant='outline', size=None, icon_only=False, menu=False, label_cls='max-sm:sr-only',
+                     extra_html='<span data-filter-count hidden class="rounded-full bg-secondary px-1.5 text-label-md tabular-nums text-ink"></span>'|safe,
+                     button_cls='[&.filters-active]:border-secondary [&.filters-active]:bg-accent [&.filters-active]:text-ink max-sm:px-3') %}
+      <div class="w-72 space-y-4 p-3" @change="apply">{{ filter_fields }}
+        <button type="button" class="{{ btn('ghost', 'sm') }} w-full" @click="clearAll">Clear filters</button>
+      </div>
+    {% endcall %}
+  </div>
+  {% endif %}
+</form>
+{%- endmacro %}
+
+{#- "No matches" state shown by clientFilter when a search hides every item. -#}
+{% macro search_empty() -%}
+<div data-search-empty hidden>
+  {{ empty_state('search-x', 'No matches', 'Try a different search, or clear the filters.') }}
+</div>
+{%- endmacro %}
+
+{% macro menu_separator() -%}<div class="menu-separator" role="separator"></div>{%- endmacro %}
+
+{#- A POST action as a button (outside menus), e.g. Delete on a view page. -#}
+{% macro action_form(label, action, variant='outline', icon_name=None, confirm=None, confirm_title=None, confirm_label=None, danger=False, hidden={}, size=None) -%}
+<form method="POST" action="{{ action }}" class="contents"
+  {%- if confirm %} data-confirm="{{ confirm }}" data-confirm-title="{{ confirm_title or label }}" data-confirm-label="{{ confirm_label or label }}" data-confirm-tone="{{ 'danger' if danger else 'info' }}"{% endif %}>
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  {% for key, value in hidden.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+  <button type="submit" class="{{ btn(variant, size) }}">{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ label }}</span></button>
+</form>
+{%- endmacro %}
+
+{#- Pagination footer: "1-50 of 134" and numbered pages, current page on soft blue.
+    Links are real (paging works without JavaScript); hx_target makes them swap only the list. -#}
+{% macro pagination(page, endpoint, args, noun='records', hx_target=None) -%}
+{% if page and page.total %}
+{% set first = (page.page - 1) * page.per_page + 1 %}
+{% set last = [page.page * page.per_page, page.total]|min %}
+<div class="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-6">
+  <p class="text-body-sm text-muted-foreground tabular-nums">{{ first }}&ndash;{{ last }} of {{ page.total }} {{ noun }}</p>
+  {% if page.pages > 1 %}
+  <nav aria-label="Pages" class="flex items-center gap-1"{% if hx_target %} hx-boost="true" hx-target="{{ hx_target }}" hx-select="{{ hx_target }}" hx-swap="outerHTML show:window:top" hx-push-url="true"{% endif %}>
+    {% set link = 'inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-label-md tabular-nums transition-colors' %}
+    {% if page.has_prev %}
+    <a class="{{ link }} text-muted-foreground hover:bg-muted hover:text-foreground" href="{{ url_for(endpoint, page=page.prev_num, **args) }}" aria-label="Previous page">{{ icon('chevron-left') }}</a>
+    {% else %}
+    <span class="{{ link }} text-placeholder" aria-hidden="true">{{ icon('chevron-left') }}</span>
+    {% endif %}
+    {% for number in page.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
+      {% if number == page.page %}
+      <span class="{{ link }} bg-accent text-ink" aria-current="page">{{ number }}</span>
+      {% elif number %}
+      <a class="{{ link }} text-muted-foreground hover:bg-muted hover:text-foreground" href="{{ url_for(endpoint, page=number, **args) }}">{{ number }}</a>
+      {% else %}
+      <span class="{{ link }} text-placeholder">&hellip;</span>
+      {% endif %}
+    {% endfor %}
+    {% if page.has_next %}
+    <a class="{{ link }} text-muted-foreground hover:bg-muted hover:text-foreground" href="{{ url_for(endpoint, page=page.next_num, **args) }}" aria-label="Next page">{{ icon('chevron-right') }}</a>
+    {% else %}
+    <span class="{{ link }} text-placeholder" aria-hidden="true">{{ icon('chevron-right') }}</span>
+    {% endif %}
+  </nav>
+  {% endif %}
+</div>
+{% endif %}
+{%- endmacro %}
+
+{#- "12 Nov 2026, 10:30 AM" with a muted "3 days ago". -#}
+{% macro relative_time(value, empty='Not set') -%}
+{% if value %}
+{% set delta = now() - value %}
+{% set minutes = (delta.total_seconds() // 60)|int %}
+<span class="text-foreground">{{ format_12h(value) }}</span>
+<span class="block text-body-sm font-normal text-muted-foreground">
+  {%- if minutes < 1 %}Just now
+  {%- elif minutes < 60 %}{{ minutes }} minute{{ 's' if minutes != 1 }} ago
+  {%- elif minutes < 1440 %}{{ minutes // 60 }} hour{{ 's' if minutes // 60 != 1 }} ago
+  {%- else %}{{ delta.days }} day{{ 's' if delta.days != 1 }} ago{% endif -%}
+</span>
+{% else %}<span class="font-normal text-muted-foreground">{{ empty }}</span>{% endif %}
+{%- endmacro %}
+
+{#- Skeleton lines while something loads after the page. -#}
+{% macro skeleton(lines=3) -%}
+<div class="space-y-3" aria-hidden="true">
+  {% for i in range(lines) %}<div class="skeleton h-4 {{ ['w-full', 'w-5/6', 'w-2/3'][loop.index0 % 3] }}"></div>{% endfor %}
+</div>
+{%- endmacro %}
