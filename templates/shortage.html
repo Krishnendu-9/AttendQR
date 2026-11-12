@@ -1,148 +1,93 @@
-{% extends 'base.html' %}
-{% block title %}Shortage List | AttendQR{% endblock %}
-{% block page_title %}Shortage List{% endblock %}
-{% block page_subtitle %}Students below the attendance requirement, overall or in any subject{% endblock %}
-{% block content %}
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, attendance_badge, page_header, empty_state, monogram with context %}
+{% from 'components/forms.html' import field %}
+{% from 'components/report_filters.html' import report_filters, report_filters_script with context %}
+{% set page_title = 'Shortage list' %}
 
-{% if filters.error %}
-<div class="alert alert-danger" role="alert">
-  <i class="bi bi-exclamation-triangle me-2"></i><strong>Invalid date range:</strong> {{ filters.error }}
-</div>
-{% endif %}
-
-<form method="GET" action="{{ url_for('reports.shortage') }}" class="form-panel" id="shortageForm">
-  <div class="row g-3">
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="dept_select">Department</label>
-      <select class="form-select" name="department_id" id="dept_select" required>
-        <option value="">Select department</option>
-        {% for d in departments %}
-        <option value="{{ d.id }}" {{ 'selected' if filters.department_id == d.id }}>{{ d.display_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="sem_select">Semester</label>
-      <select class="form-select" name="semester_id" id="sem_select" required>
-        <option value="">Select semester</option>
-        {% for s in semesters %}
-        <option value="{{ s.id }}" {{ 'selected' if filters.semester_id == s.id }}>{{ s.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="subject_select">Subject</label>
-      <select class="form-select" name="subject_id" id="subject_select">
-        <option value="">All subjects</option>
-        {% for sub in subjects %}
-        <option value="{{ sub.id }}" {{ 'selected' if filters.subject_id == sub.id }}>{{ subject_display_name(sub) }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="threshold">Required %</label>
-      <input type="number" class="form-control" id="threshold" name="threshold" min="1" max="99" value="{{ threshold }}">
-    </div>
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="date_from">From Date</label>
-      <input type="date" class="form-control" id="date_from" name="date_from" value="{{ filters.date_from }}" max="{{ today }}">
-    </div>
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="date_to">To Date</label>
-      <input type="date" class="form-control" id="date_to" name="date_to" value="{{ filters.date_to }}" max="{{ today }}">
-    </div>
-    <div class="col-md-6 col-xl-3 d-flex align-items-end">
-      <button class="btn btn-primary w-100" type="submit">
-        <i class="bi bi-search me-1"></i> Find Shortages
-      </button>
-    </div>
+{% macro stat(label, value, icon_name) -%}
+<div class="card flex items-start justify-between gap-4 p-5">
+  <div class="min-w-0">
+    <p class="text-label-md text-muted-foreground">{{ label }}</p>
+    <p class="mt-2 text-headline-lg tabular-nums text-foreground">{{ value }}</p>
   </div>
-</form>
+  <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-ink">{{ icon(icon_name, 'size-5') }}</span>
+</div>
+{%- endmacro %}
+
+{% block content %}
+{% call page_header('Shortage list', 'Students below the attendance requirement, overall or in any subject.') %}
+  {% if report %}
+  <a href="{{ url_for('reports.index', **report_args) }}" class="{{ btn('outline') }}">{{ icon('chart-column') }}<span>Attendance report</span></a>
+  {% if report.rows %}
+  <a href="{{ url_for('reports.shortage_export', **shortage_args) }}" class="{{ btn('primary') }}">{{ icon('file-spreadsheet') }}<span>Export Excel</span></a>
+  {% endif %}
+  {% endif %}
+{% endcall %}
+
+{% call report_filters(url_for('reports.shortage'), 'shortageForm', 'Find Shortages') %}
+  {% call field('threshold', 'Required %', hint='Between 1 and 99.') %}
+    <input type="number" class="input" id="threshold" name="threshold" min="1" max="99" value="{{ threshold }}" aria-describedby="threshold-hint">
+  {% endcall %}
+{% endcall %}
 
 {% if report %}
-<section class="stat-grid report-stats">
-  <div class="stat-card">
-    <div class="stat-icon"><i class="bi bi-people"></i></div>
-    <div class="stat-label">Class Size</div>
-    <div class="stat-value">{{ report.class_size }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon danger"><i class="bi bi-exclamation-triangle"></i></div>
-    <div class="stat-label">Below {{ threshold }}%</div>
-    <div class="stat-value">{{ report.rows|length }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon accent"><i class="bi bi-calendar-check"></i></div>
-    <div class="stat-label">Classes Held</div>
-    <div class="stat-value">{{ report.classes_held }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon warning"><i class="bi bi-book"></i></div>
-    <div class="stat-label">Subjects</div>
-    <div class="stat-value">{{ report.subjects|length }}</div>
-  </div>
+<section aria-label="Totals" class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+  {{ stat('Class size', report.class_size, 'graduation-cap') }}
+  {{ stat('Below ' ~ threshold ~ '%', report.rows|length, 'triangle-alert') }}
+  {{ stat('Classes held', report.classes_held, 'calendar-check') }}
+  {{ stat('Subjects', report.subjects|length, 'book-open') }}
 </section>
 
-<div class="d-flex flex-wrap gap-2 mb-3">
-  <a href="{{ url_for('reports.index', **report_args) }}" class="btn btn-secondary">
-    <i class="bi bi-arrow-left me-1"></i> Attendance Report
-  </a>
-  {% if report.rows %}
-  <a href="{{ url_for('reports.shortage_export', **shortage_args) }}" class="btn btn-success">
-    <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
-  </a>
-  {% endif %}
-</div>
-
-{% if not report.classes_held %}
-<div class="alert alert-info"><i class="bi bi-info-circle me-1"></i> No classes have been held for this selection yet.</div>
-{% elif not report.rows %}
-<div class="alert alert-success"><i class="bi bi-check-circle me-1"></i> Every student in {{ dept.display_name }} - {{ sem.name }} meets {{ threshold }}% for this selection.</div>
-{% else %}
-<div class="table-card">
-  <div class="card-header">
-    <h2 class="section-title">{{ dept.display_name }} - {{ sem.name }}</h2>
-    <p class="section-subtitle">
-      Lowest attendance first. "Needed" is how many consecutive classes the student must attend to reach {{ threshold }}%.
+<section class="card mt-6 overflow-hidden" aria-label="Students below the requirement">
+  {% if not report.classes_held %}
+    {{ empty_state('calendar-check', 'No classes held yet', 'No classes have been held for this selection yet.') }}
+  {% elif not report.rows %}
+    {{ empty_state('badge-check', 'Nobody is short', 'Every student in ' ~ dept.display_name ~ ' - ' ~ sem.name ~ ' meets ' ~ threshold ~ '% for this selection.') }}
+  {% else %}
+  <header class="px-6 pb-4 pt-6">
+    <h2 class="text-headline-sm text-foreground">{{ dept.display_name }} - {{ sem.name }}</h2>
+    <p class="mt-0.5 text-body-sm text-muted-foreground">
+      Lowest attendance first. Needed is how many classes in a row the student must attend to reach {{ threshold }}%.
       Void sessions and special classes are not counted.
     </p>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle">
+  </header>
+  <div class="overflow-x-auto border-t border-border">
+    <table class="data-table">
       <thead>
         <tr>
-          <th>#</th>
-          <th>Roll No</th>
-          <th>Name</th>
-          <th class="text-center">Overall</th>
-          <th class="text-center">Needed</th>
+          <th scope="col" class="col-sticky-left">Student</th>
+          <th scope="col">Overall</th>
+          <th scope="col" class="text-right">Needed</th>
           {% for subject in report.subjects %}
-          <th class="text-center session-column">{{ subject_display_name(subject) }}</th>
+          <th scope="col" class="min-w-32">{{ subject_display_name(subject) }}</th>
           {% endfor %}
         </tr>
       </thead>
       <tbody>
         {% for row in report.rows %}
         <tr>
-          <td>{{ loop.index }}</td>
-          <td class="fw-semibold">{{ row.student.roll_no }}</td>
-          <td>
-            {{ row.student.name }}
-            {% if row.left_at %}<span class="badge text-bg-secondary" title="Moved to another class on {{ format_12h(row.left_at) }}; only sessions before that count">Moved out</span>{% endif %}
-            <div class="small text-muted">{{ row.student.email }}</div>
+          <td class="col-sticky-left py-3">
+            <div class="flex items-center gap-3">
+              {{ monogram(row.student.name) }}
+              <div class="min-w-0">
+                <p class="flex flex-wrap items-center gap-1.5 text-label-lg text-foreground">{{ row.student.name }}
+                  {% if row.left_at %}<span title="Moved to another class on {{ format_12h(row.left_at) }}; only sessions before that count">{{ attendance_badge('moved_out') }}</span>{% endif %}</p>
+                <p class="whitespace-nowrap text-body-sm text-muted-foreground"><span class="font-mono">{{ row.student.roll_no }}</span> &middot; {{ row.student.email }}</p>
+              </div>
+            </div>
           </td>
-          <td class="text-center">
-            <span class="badge {{ 'text-bg-danger' if row.short else 'text-bg-success' }}">{{ row.percentage }}%</span>
-            <div class="small text-muted">{{ row.attended }}/{{ row.total }}</div>
+          <td class="py-3">
+            {{ badge(row.percentage ~ '%', 'danger' if row.short else 'success') }}
+            <p class="mt-1 text-body-sm tabular-nums text-muted-foreground">{{ row.attended }}/{{ row.total }}</p>
           </td>
-          <td class="text-center fw-semibold">{{ row.needed or '—' }}</td>
+          <td class="text-right text-label-lg tabular-nums">{{ row.needed or '–' }}</td>
           {% for cell in row.cells %}
-          <td class="text-center">
+          <td class="py-3">
             {% if cell.total %}
-            <span class="badge {{ 'text-bg-danger' if cell.short else 'text-bg-light border' }}">{{ cell.percentage }}%</span>
-            <div class="small text-muted">{{ cell.attended }}/{{ cell.total }}{% if cell.short %} · needs {{ cell.needed }}{% endif %}</div>
+            {{ badge(cell.percentage ~ '%', 'danger' if cell.short else 'outline') }}
+            <p class="mt-1 whitespace-nowrap text-body-sm tabular-nums text-muted-foreground">{{ cell.attended }}/{{ cell.total }}{% if cell.short %} &middot; needs {{ cell.needed }}{% endif %}</p>
             {% else %}
-            <span class="text-muted" title="No classes held while the student was in this class">&ndash;</span>
+            <span class="text-muted-foreground" title="No classes held while the student was in this class">&ndash;</span>
             {% endif %}
           </td>
           {% endfor %}
@@ -151,22 +96,15 @@
       </tbody>
     </table>
   </div>
+  {% endif %}
+</section>
+{% elif not filters.department_id or not filters.semester_id %}
+<div class="card mt-6">
+  {{ empty_state('triangle-alert', 'Choose a class', 'Select a department and semester above to find students below the requirement.') }}
 </div>
 {% endif %}
-{% endif %}
+{% endblock %}
 
-<script nonce="{{ csp_nonce() }}">
-(function () {
-  const deptSelect = document.getElementById('dept_select');
-  const semSelect = document.getElementById('sem_select');
-  const subjectSelect = document.getElementById('subject_select');
-  deptSelect.addEventListener('change', function () {
-    AttendQR.loadSemesters(semSelect, deptSelect.value);
-    AttendQR.fillSelect(subjectSelect, [], { placeholder: 'All subjects' });
-  });
-  semSelect.addEventListener('change', function () {
-    AttendQR.loadSubjects(subjectSelect, semSelect.value, { placeholder: 'All subjects' });
-  });
-})();
-</script>
+{% block scripts %}
+{{ report_filters_script('shortageForm') }}
 {% endblock %}

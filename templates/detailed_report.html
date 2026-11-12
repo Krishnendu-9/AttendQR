@@ -1,77 +1,75 @@
-{% extends 'base.html' %}
-{% block title %}Detailed Report | AttendQR{% endblock %}
-{% block page_title %}Detailed Report{% endblock %}
-{% block page_subtitle %}Student-wise attendance matrix for selected class sessions{% endblock %}
-{% block content %}
-<div class="page-heading">
-  <span class="text-muted">
-    {{ dept.display_name }} - {{ sem.name }}
-    {% if filters.date_from or filters.date_to %} · {{ filters.date_from or '…' }} to {{ filters.date_to or 'today' }}{% endif %}
-  </span>
-  <a href="{{ url_for('reports.index', department_id=dept.id, semester_id=sem.id, **filter_args) }}" class="btn btn-secondary">
-    <i class="bi bi-arrow-left me-1"></i> Back
-  </a>
-</div>
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, attendance_badge, percent_badge, page_header, empty_state, dropdown, menu_link with context %}
+{% set page_title = 'Detailed report' %}
+{% set report_url = url_for('reports.index', department_id=dept.id, semester_id=sem.id, **filter_args) %}
+{% set breadcrumbs = [('Attendance report', report_url), ('Detailed report', None)] %}
+{% set dates = (' · ' ~ (filters.date_from or 'start') ~ ' to ' ~ (filters.date_to or 'today')) if filters.date_from or filters.date_to else '' %}
 
-<div class="table-card">
-  <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle">
+{% block content %}
+{% call page_header('Detailed report', dept.display_name ~ ' - ' ~ sem.name ~ dates) %}
+  <a href="{{ report_url }}" class="{{ btn('outline') }}">{{ icon('arrow-left') }}<span>Back to report</span></a>
+  {% call dropdown('Export', 'download', variant='outline', size=None, icon_only=False) %}
+    {{ menu_link('Excel (.xlsx)', url_for('reports.export', department_id=dept.id, semester_id=sem.id, fmt='excel', **filter_args), 'file-spreadsheet') }}
+    {{ menu_link('PDF', url_for('reports.export', department_id=dept.id, semester_id=sem.id, fmt='pdf', **filter_args), 'file-text') }}
+  {% endcall %}
+  <a href="{{ url_for('reports.shortage', department_id=dept.id, semester_id=sem.id, **filter_args) }}" class="{{ btn('primary') }}">{{ icon('triangle-alert') }}<span>Shortage list</span></a>
+{% endcall %}
+
+<section class="card overflow-hidden" aria-label="Attendance by student and session">
+  {% if attendance_data %}
+  <div class="overflow-x-auto">
+    <table class="data-table is-compact">
       <thead>
         <tr>
-          <th class="align-middle">Roll No</th>
-          <th class="align-middle">Name</th>
+          <th scope="col" class="col-sticky-left">Student</th>
           {% for session in sessions %}
-          <th class="text-center session-column">
-            <span class="d-block">{{ session_display_name(session) }}</span>
-            {% if is_hidden_special_subject(session.subject) %}<span class="badge text-bg-info">Special · not counted</span>{% endif %}
-            <span class="text-muted small">{{ session.created_at.strftime('%d/%m/%y') }}</span>
+          <th scope="col" class="min-w-28 text-center normal-case tracking-normal">
+            <span class="block text-label-md text-foreground">{{ session_display_name(session) }}</span>
+            {% if is_hidden_special_subject(session.subject) %}<span class="mt-1 inline-block">{{ badge('Special · not counted', 'info') }}</span>{% endif %}
+            <span class="mt-0.5 block font-normal tabular-nums">{{ session.created_at.strftime('%d/%m/%y') }}</span>
           </th>
           {% endfor %}
-          <th class="align-middle text-center">Total</th>
-          <th class="align-middle text-center">%</th>
+          <th scope="col" class="text-center">Total</th>
+          <th scope="col" class="text-center">%</th>
         </tr>
       </thead>
       <tbody>
         {% for row in attendance_data %}
         <tr>
-          <td>{{ row.student.roll_no }}</td>
-          <td class="fw-semibold">
-            {{ row.student.name }}
-            {% if row.left_at %}<span class="badge text-bg-secondary" title="Moved to another class on {{ format_12h(row.left_at) }}">Moved out</span>{% endif %}
+          <td class="col-sticky-left">
+            <div class="flex items-center gap-2 whitespace-nowrap">
+              <span class="font-mono text-body-sm text-muted-foreground">{{ row.student.roll_no }}</span>
+              <span class="text-label-lg text-foreground">{{ row.student.name }}</span>
+              {% if row.left_at %}<span title="Moved to another class on {{ format_12h(row.left_at) }}">{{ attendance_badge('moved_out') }}</span>{% endif %}
+            </div>
           </td>
           {% for session in sessions %}
+          {% set mark = row.attendance[session.id] %}
           <td class="text-center">
-            {% if row.attendance[session.id] == 'not_in_class' %}
-            <span class="text-muted" title="Held after the student moved to another class; not counted">&ndash;</span>
-            {% elif row.attendance[session.id] == 'manual' %}
-            <span class="badge text-bg-info" title="Entered manually by staff">P*</span>
-            {% elif row.attendance[session.id] %}
-            <span class="badge text-bg-success">P</span>
-            {% else %}
-            <span class="badge text-bg-danger">A</span>
-            {% endif %}
+            {%- if mark == 'not_in_class' %}{{ attendance_badge('not_marked', short=True) }}
+            {%- elif mark == 'manual' %}{{ attendance_badge('present_staff', short=True) }}
+            {%- elif mark %}{{ attendance_badge('present', short=True) }}
+            {%- else %}{{ attendance_badge('absent', short=True) }}{% endif -%}
           </td>
           {% endfor %}
-          <td class="text-center"><strong>{{ row.total }}/{{ row.counted }}</strong></td>
-          <td class="text-center">
-            {# Green meets the attendance target, amber is within 15 points of it, red is a shortage. #}
-            <span class="badge {% if row.percentage >= attendance_target %}text-bg-success{% elif row.percentage >= attendance_target - 15 %}text-bg-warning{% else %}text-bg-danger{% endif %}">
-              {{ row.percentage }}%
-            </span>
-          </td>
+          <td class="text-center text-label-lg tabular-nums">{{ row.total }}/{{ row.counted }}</td>
+          <td class="text-center">{{ percent_badge(row.percentage, attendance_target) }}</td>
         </tr>
         {% endfor %}
-        {% if not attendance_data %}
-        <tr><td colspan="{{ sessions|length + 4 }}" class="text-center text-muted py-4">No attendance data available.</td></tr>
-        {% endif %}
       </tbody>
     </table>
   </div>
+  {% else %}
+    {{ empty_state('list-checks', 'No attendance data', 'No students or sessions match this selection.') }}
+  {% endif %}
+</section>
+
+<div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-body-sm text-muted-foreground">
+  <span>Target: {{ attendance_target }}%.</span>
+  <span class="flex items-center gap-1.5">{{ attendance_badge('present', short=True) }} QR scan</span>
+  <span class="flex items-center gap-1.5">{{ attendance_badge('present_staff', short=True) }} entered manually by staff</span>
+  <span class="flex items-center gap-1.5">{{ attendance_badge('absent', short=True) }} absent</span>
+  <span class="flex items-center gap-1.5">{{ attendance_badge('not_marked', short=True) }} held after a student moved to another class (not counted for them)</span>
 </div>
-<p class="small text-muted mt-2">
-  Target: {{ attendance_target }}%. P = QR scan, P* = entered manually by staff,
-  &ndash; = held after a student moved to another class (not counted for them).
-  Sessions deactivated before anyone marked attendance, and special classes, are not counted in Total and %.
-  <a href="{{ url_for('reports.shortage', department_id=dept.id, semester_id=sem.id, **filter_args) }}">View shortage list</a>
-</p>
+<p class="mt-2 text-body-sm text-muted-foreground">Sessions deactivated before anyone marked attendance, and special classes, are not counted in Total and %.</p>
 {% endblock %}
