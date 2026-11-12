@@ -1,0 +1,98 @@
+{#- Class and date filters shared by the attendance report and the shortage list.
+    Import with context: {% from 'components/report_filters.html' import report_filters, report_filters_script with context %}
+    The caller may add fields (the shortage threshold); the submit button follows them. -#}
+{% from 'components/ui.html' import icon, callout, submit_button %}
+{% from 'components/forms.html' import field, select_control %}
+
+{% macro report_filters(action, form_id, submit_label, submit_icon='search') -%}
+{% set extra = caller() if caller else '' %}
+<form method="GET" action="{{ action }}" id="{{ form_id }}" class="card p-6" novalidate>
+  {% if filters.error %}
+  <div class="mb-5">{% call callout('Invalid date range', 'danger') %}{{ filters.error }}{% endcall %}</div>
+  {% endif %}
+  <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+    {% call field('dept_select', 'Department', required=True) %}
+      {{ select_control('department_id', 'dept_select', departments, selected=filters.department_id, placeholder='Select department',
+                        required=True, value_attr='id', label_attr='display_name') }}
+    {% endcall %}
+    {% call field('sem_select', 'Semester', required=True) %}
+      {{ select_control('semester_id', 'sem_select', semesters, selected=filters.semester_id, placeholder='Select semester',
+                        required=True, value_attr='id', label_attr='name') }}
+    {% endcall %}
+    {% call field('subject_select', 'Subject') %}
+      {% call select_control('subject_id', 'subject_select', placeholder='All subjects') %}
+        {% for sub in subjects %}<option value="{{ sub.id }}"{% if filters.subject_id == sub.id %} selected{% endif %}>{{ subject_display_name(sub) }}</option>{% endfor %}
+      {% endcall %}
+    {% endcall %}
+    {{ extra }}
+    <div>
+      <label for="date_from" class="mb-1.5 block text-label-lg text-foreground">From date</label>
+      <input type="date" class="input" id="date_from" name="date_from" value="{{ filters.date_from or '' }}" max="{{ today }}" aria-describedby="date_from_err">
+      <p class="mt-1.5 text-body-sm text-destructive empty:hidden" id="date_from_err"></p>
+    </div>
+    <div>
+      <label for="date_to" class="mb-1.5 block text-label-lg text-foreground">To date</label>
+      <input type="date" class="input" id="date_to" name="date_to" value="{{ filters.date_to or '' }}" max="{{ today }}" aria-describedby="date_to_err">
+      <p class="mt-1.5 text-body-sm text-destructive empty:hidden" id="date_to_err"></p>
+    </div>
+    <div class="flex items-start sm:col-span-2 sm:items-end sm:justify-end {{ 'xl:col-span-2' if extra else 'xl:col-span-3' }} xl:self-end">
+      {{ submit_button(submit_label, 'Loading...', icon_name=submit_icon, extra='w-full sm:w-auto') }}
+    </div>
+  </div>
+</form>
+{%- endmacro %}
+
+{#- Dependent dropdowns and date checks that mirror the server-side validation. -#}
+{% macro report_filters_script(form_id) -%}
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  const form = document.getElementById({{ form_id|tojson }});
+  const deptSelect = document.getElementById('dept_select');
+  const semSelect = document.getElementById('sem_select');
+  const subjectSelect = document.getElementById('subject_select');
+  deptSelect.addEventListener('change', function () {
+    AttendQR.loadSemesters(semSelect, deptSelect.value);
+    AttendQR.fillSelect(subjectSelect, [], { placeholder: 'All subjects' });
+  });
+  semSelect.addEventListener('change', function () {
+    AttendQR.loadSubjects(subjectSelect, semSelect.value, { placeholder: 'All subjects' });
+  });
+
+  const today = {{ today|tojson }};
+  const fromInput = document.getElementById('date_from');
+  const toInput = document.getElementById('date_to');
+
+  function setError(input, message) {
+    document.getElementById(input.id + '_err').textContent = message;
+    if (message) input.setAttribute('aria-invalid', 'true');
+    else input.removeAttribute('aria-invalid');
+  }
+
+  function validateDates() {
+    let fromError = '';
+    let toError = '';
+    if (fromInput.value && fromInput.value > today) fromError = 'From date cannot be in the future.';
+    if (toInput.value && toInput.value > today) toError = 'To date cannot be in the future.';
+    if (!fromError && fromInput.value && toInput.value && fromInput.value > toInput.value) fromError = 'From date cannot be later than To date.';
+    setError(fromInput, fromError);
+    setError(toInput, toError);
+    return !fromError && !toError;
+  }
+
+  fromInput.addEventListener('change', function () {
+    validateDates();
+    if (toInput.value && toInput.value < fromInput.value) toInput.value = fromInput.value;
+  });
+  toInput.addEventListener('change', validateDates);
+  form.addEventListener('submit', function (event) {
+    // Department and semester are required; the browser's own check is off so dates get our messages.
+    if (!form.checkValidity()) {
+      event.preventDefault();
+      form.reportValidity();
+      return;
+    }
+    if (!validateDates()) event.preventDefault();
+  });
+})();
+</script>
+{%- endmacro %}

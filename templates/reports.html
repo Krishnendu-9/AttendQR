@@ -1,123 +1,58 @@
-{% extends 'base.html' %}
-{% from '_pagination.html' import render_pagination %}
-{% block title %}Attendance Report | AttendQR{% endblock %}
-{% block page_title %}Attendance Report{% endblock %}
-{% block page_subtitle %}Filter, analyze, and export attendance records{% endblock %}
-{% block content %}
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, empty_state, dropdown, menu_link, pagination, skeleton with context %}
+{% from 'components/report_filters.html' import report_filters, report_filters_script with context %}
+{% set page_title = 'Attendance report' %}
 
-{% if filters.error %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-  <i class="bi bi-exclamation-triangle me-2"></i><strong>Invalid date range:</strong> {{ filters.error }}
-  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-</div>
-{% endif %}
-
-<form method="GET" action="{{ url_for('reports.index') }}" class="form-panel" id="reportForm">
-  <div class="row g-3">
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="dept_select">Department</label>
-      <select class="form-select" name="department_id" id="dept_select" required>
-        <option value="">Select department</option>
-        {% for d in departments %}
-        <option value="{{ d.id }}" {{ 'selected' if filters.department_id == d.id }}>{{ d.display_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="sem_select">Semester</label>
-      <select class="form-select" name="semester_id" id="sem_select" required>
-        <option value="">Select semester</option>
-        {% for s in semesters %}
-        <option value="{{ s.id }}" {{ 'selected' if filters.semester_id == s.id }}>{{ s.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="subject_select">Subject</label>
-      <select class="form-select" name="subject_id" id="subject_select">
-        <option value="">All subjects</option>
-        {% for sub in subjects %}
-        <option value="{{ sub.id }}" {{ 'selected' if filters.subject_id == sub.id }}>{{ subject_display_name(sub) }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="date_from">From Date</label>
-      <input type="date" class="form-control" id="date_from" name="date_from" value="{{ filters.date_from }}" max="{{ today }}">
-      <div class="invalid-feedback" id="date_from_err"></div>
-    </div>
-    <div class="col-md-6 col-xl-3">
-      <label class="form-label" for="date_to">To Date</label>
-      <input type="date" class="form-control" id="date_to" name="date_to" value="{{ filters.date_to }}" max="{{ today }}">
-      <div class="invalid-feedback" id="date_to_err"></div>
-    </div>
-    <div class="col-md-6 col-xl-3 d-flex align-items-end">
-      <button class="btn btn-primary w-100" type="submit">
-        <i class="bi bi-search me-1"></i> Generate Report
-      </button>
-    </div>
+{% macro stat(label, value, icon_name) -%}
+<div class="card flex items-start justify-between gap-4 p-5">
+  <div class="min-w-0">
+    <p class="text-label-md text-muted-foreground">{{ label }}</p>
+    <p class="mt-2 text-headline-lg tabular-nums text-foreground">{{ value }}</p>
   </div>
-</form>
+  <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-ink">{{ icon(icon_name, 'size-5') }}</span>
+</div>
+{%- endmacro %}
+
+{% block content %}
+{% call page_header('Attendance report', 'Sessions, totals and exports for one class.') %}
+  {% if stats %}
+  {% call dropdown('Export', 'download', variant='outline', size=None, icon_only=False) %}
+    {{ menu_link('Excel (.xlsx)', url_for('reports.export', department_id=filters.department_id, semester_id=filters.semester_id, fmt='excel', **filter_args), 'file-spreadsheet') }}
+    {{ menu_link('PDF', url_for('reports.export', department_id=filters.department_id, semester_id=filters.semester_id, fmt='pdf', **filter_args), 'file-text') }}
+  {% endcall %}
+  <a href="{{ url_for('reports.shortage', department_id=filters.department_id, semester_id=filters.semester_id, **filter_args) }}" class="{{ btn('outline') }}">{{ icon('triangle-alert') }}<span>Shortage list</span></a>
+  <a href="{{ url_for('reports.detailed', department_id=filters.department_id, semester_id=filters.semester_id, **filter_args) }}" class="{{ btn('primary') }}">{{ icon('list-checks') }}<span>Detailed view</span></a>
+  {% endif %}
+{% endcall %}
+
+{{ report_filters(url_for('reports.index'), 'reportForm', 'Show report') }}
 
 {% if stats %}
-<section class="stat-grid report-stats">
-  <div class="stat-card">
-    <div class="stat-icon"><i class="bi bi-people"></i></div>
-    <div class="stat-label">Total Students</div>
-    <div class="stat-value">{{ stats.total_students }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon accent"><i class="bi bi-calendar-check"></i></div>
-    <div class="stat-label">Classes Held</div>
-    <div class="stat-value">{{ stats.total_sessions }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon warning"><i class="bi bi-check2-square"></i></div>
-    <div class="stat-label">Attendance</div>
-    <div class="stat-value">{{ stats.total_attendance }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon danger"><i class="bi bi-percent"></i></div>
-    <div class="stat-label">Average</div>
-    <div class="stat-value">{{ stats.avg_attendance }}%</div>
-  </div>
+<section aria-label="Totals" class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+  {{ stat('Students', stats.total_students, 'graduation-cap') }}
+  {{ stat('Classes held', stats.total_sessions, 'calendar-check') }}
+  {{ stat('Attendance marked', stats.total_attendance, 'square-check') }}
+  {{ stat('Average', stats.avg_attendance ~ '%', 'percent') }}
 </section>
 
-<div class="d-flex flex-wrap gap-2 mb-3">
-  <a href="{{ url_for('reports.detailed', department_id=filters.department_id, semester_id=filters.semester_id, **filter_args) }}" class="btn btn-info">
-    <i class="bi bi-table me-1"></i> Detailed View
-  </a>
-  <a href="{{ url_for('reports.export', department_id=filters.department_id, semester_id=filters.semester_id, fmt='excel', **filter_args) }}" class="btn btn-success">
-    <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
-  </a>
-  <a href="{{ url_for('reports.export', department_id=filters.department_id, semester_id=filters.semester_id, fmt='pdf', **filter_args) }}" class="btn btn-danger">
-    <i class="bi bi-file-earmark-pdf me-1"></i> Export PDF
-  </a>
-  <a href="{{ url_for('reports.shortage', department_id=filters.department_id, semester_id=filters.semester_id, **filter_args) }}" class="btn btn-warning">
-    <i class="bi bi-exclamation-triangle me-1"></i> Shortage List
-  </a>
-</div>
-
-{% if page and page.items %}
-<div class="table-card">
-  <div class="card-header">
-    <h2 class="section-title">Class Sessions</h2>
-    <p class="section-subtitle">
-      Attendance sessions matching the selected criteria. Sessions deactivated before anyone marked attendance are
-      shown as <span class="badge text-bg-light border">Void</span> and are not counted as classes held.
+<section class="card mt-6 overflow-hidden" aria-label="Class sessions">
+  <header class="px-6 pb-4 pt-6">
+    <h2 class="text-headline-sm text-foreground">Class sessions</h2>
+    <p class="mt-0.5 text-body-sm text-muted-foreground">
+      Sessions deactivated before anyone marked attendance are shown as Void and are not counted as classes held.
     </p>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle">
+  </header>
+  {% if page and page.items %}
+  <div class="overflow-x-auto border-t border-border">
+    <table class="data-table">
       <thead>
         <tr>
-          <th>#</th>
-          <th>Subject</th>
-          <th>Teacher</th>
-          <th>Date &amp; Time</th>
-          <th>Status</th>
-          <th>Present</th>
-          <th class="text-end">Actions</th>
+          <th scope="col">Session</th>
+          <th scope="col">Teacher</th>
+          <th scope="col">Date and time</th>
+          <th scope="col">Status</th>
+          <th scope="col" class="text-right">Present</th>
+          <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody>
@@ -125,189 +60,129 @@
         {% for session in page.items %}
         {% set present = counts.get(session.id, 0) %}
         <tr>
-          <td>{{ (page.page - 1) * page.per_page + loop.index }}</td>
-          <td class="fw-semibold">
-            {{ session_display_name(session) }}
-            {% if session.special_title %}
-            <span class="badge text-bg-info ms-2">Special</span>
-            {% endif %}
+          <td class="py-3">
+            <div class="flex items-center gap-3">
+              <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-ink">{{ icon('calendar-check') }}</span>
+              <div class="min-w-0">
+                <p class="truncate text-label-lg text-foreground">{{ session_display_name(session) }}</p>
+                {% if session.special_title %}<p class="mt-0.5">{{ badge('Special', 'info') }}</p>{% endif %}
+              </div>
+            </div>
           </td>
-          <td>{{ session.teacher.name if session.teacher else 'N/A' }}</td>
-          <td>{{ format_12h(session.created_at) }}</td>
+          <td class="whitespace-nowrap text-body-md text-muted-foreground">{{ session.teacher.name if session.teacher else 'Not assigned' }}</td>
+          <td class="whitespace-nowrap text-body-md tabular-nums text-muted-foreground">{{ format_12h(session.created_at) }}</td>
           <td>
-            {% if not session.is_active and not present %}
-            <span class="badge text-bg-light border">Void</span>
-            {% elif session.is_active and session.expires_at > current_time %}
-            <span class="badge text-bg-success">Active</span>
-            {% elif session.expires_at > current_time %}
-            <span class="badge text-bg-warning text-dark">Deactivated</span>
-            {% else %}
-            <span class="badge text-bg-secondary">Expired</span>
-            {% endif %}
+            {% if not session.is_active and not present %}{{ badge('Void', 'outline', 'Deactivated before anyone marked attendance; not counted') }}
+            {% elif session.is_active and session.expires_at > current_time %}{{ badge('Active', 'success') }}
+            {% elif session.expires_at > current_time %}{{ badge('Deactivated', 'warning') }}
+            {% else %}{{ badge('Expired', 'neutral') }}{% endif %}
           </td>
-          <td><span class="badge text-bg-primary">{{ present }} Students</span></td>
-          <td class="text-end text-nowrap">
-            <button class="btn btn-sm btn-info btn-icon view-attendance" type="button" data-session-id="{{ session.id }}" data-bs-toggle="tooltip" title="View details">
-              <i class="bi bi-eye"></i>
-            </button>
+          <td class="text-right text-label-lg tabular-nums">{{ present }}</td>
+          <td class="col-actions">
+            <button class="{{ btn('ghost', 'sm', True) }} view-attendance" type="button" data-session-id="{{ session.id }}"
+              aria-label="Who attended {{ session_display_name(session) }}" title="Who attended">{{ icon('users') }}</button>
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {{ render_pagination(page, 'reports.index', page_args) }}
+  {{ pagination(page, 'reports.index', page_args, 'sessions') }}
+  {% else %}
+    {{ empty_state('search-x', 'No sessions found', 'No sessions match this class, subject and date range.', compact=True) }}
+  {% endif %}
+</section>
+{% elif not filters.department_id or not filters.semester_id %}
+<div class="card mt-6">
+  {{ empty_state('chart-column', 'Choose a class', 'Select a department and semester above to see its sessions and attendance.') }}
 </div>
-{% else %}
-<div class="alert alert-info">
-  <i class="bi bi-info-circle me-1"></i> No sessions found for the selected criteria.
-</div>
-{% endif %}
 {% endif %}
 
-<div class="modal fade" id="attendanceModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Session Attendance Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <div id="sessionInfo" class="mb-3">
-          <div class="row g-3">
-            <div class="col-md-6">
-              <p><strong>Subject:</strong> <span id="modalSubject"></span></p>
-              <p><strong>Department:</strong> <span id="modalDept"></span></p>
-              <p><strong>Semester:</strong> <span id="modalSem"></span></p>
-            </div>
-            <div class="col-md-6">
-              <p><strong>Teacher:</strong> <span id="modalTeacher"></span></p>
-              <p><strong>Date:</strong> <span id="modalDate"></span></p>
-              <p><strong>Total Present:</strong> <span id="modalTotal" class="badge text-bg-success"></span></p>
-            </div>
-          </div>
-        </div>
-        <hr>
-        <h6 class="fw-bold">Students Present</h6>
-        <div class="table-responsive">
-          <table class="table table-sm table-hover">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Roll No</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Marked At</th>
-                <th>How</th>
-              </tr>
-            </thead>
-            <tbody id="attendanceList"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
+<dialog id="attendanceModal" class="dialog dialog-lg" aria-labelledby="attendance-title">
+  <div class="flex items-start justify-between gap-4 px-6 pt-6">
+    <div class="min-w-0">
+      <h2 id="attendance-title" class="text-headline-md text-foreground"><span id="modalSubject">Session</span></h2>
+      <p class="mt-1 text-body-sm text-muted-foreground"><span id="modalDept"></span> &middot; <span id="modalSem"></span> &middot; <span id="modalTeacher"></span> &middot; <span id="modalDate"></span></p>
     </div>
+    <button type="button" class="{{ btn('ghost', 'sm', True) }} -mr-2 -mt-1" data-dialog-close aria-label="Close">{{ icon('x') }}</button>
   </div>
-</div>
+  <div class="px-6 py-4">
+    <p class="text-label-lg text-foreground"><span id="modalTotal" class="tabular-nums">0</span> present</p>
+  </div>
+  <div class="max-h-[55vh] overflow-y-auto border-t border-border">
+    <div id="attendanceLoading" class="p-6">{{ skeleton(4) }}</div>
+    <ul id="attendanceList" class="divide-y divide-border"></ul>
+  </div>
+  <div class="flex justify-end border-t border-border px-6 py-4">
+    <button type="button" class="{{ btn('outline') }}" data-dialog-close>Close</button>
+  </div>
+</dialog>
+<template id="attendanceRow">
+  <li class="flex items-center justify-between gap-4 px-6 py-3">
+    <div class="min-w-0">
+      <p class="text-label-lg text-foreground" data-name></p>
+      <p class="text-body-sm text-muted-foreground"><span class="font-mono" data-roll></span> &middot; <span data-email></span> &middot; <span class="tabular-nums" data-time></span></p>
+    </div>
+    <span class="badge" data-how></span>
+  </li>
+</template>
+<template id="attendanceEmpty">
+  <li>{{ empty_state('users', 'Nobody marked', 'No students marked attendance in this session.', compact=True) }}</li>
+</template>
+{% endblock %}
 
+{% block scripts %}
+{{ report_filters_script('reportForm') }}
 <script nonce="{{ csp_nonce() }}">
 (function () {
-  const deptSelect = document.getElementById('dept_select');
-  const semSelect = document.getElementById('sem_select');
-  const subjectSelect = document.getElementById('subject_select');
+  const dialog = document.getElementById('attendanceModal');
+  const list = document.getElementById('attendanceList');
+  const loading = document.getElementById('attendanceLoading');
 
-  deptSelect.addEventListener('change', function () {
-    AttendQR.loadSemesters(semSelect, deptSelect.value);
-    AttendQR.fillSelect(subjectSelect, [], { placeholder: 'All subjects' });
-  });
-  semSelect.addEventListener('change', function () {
-    AttendQR.loadSubjects(subjectSelect, semSelect.value, { placeholder: 'All subjects' });
-  });
+  function set(id, value) { document.getElementById(id).textContent = value; }
 
   function viewAttendance(sessionId) {
+    list.replaceChildren();
+    loading.hidden = false;
+    ['modalDept', 'modalSem', 'modalTeacher', 'modalDate'].forEach(function (id) { set(id, ''); });
+    set('modalSubject', 'Loading...');
+    set('modalTotal', '0');
+    dialog.showModal();
     AttendQR.getJSON(AttendQR.url('sessionAttendance', sessionId))
       .then(function (data) {
-        document.getElementById('modalSubject').textContent = data.session.subject;
-        document.getElementById('modalDept').textContent = data.session.department;
-        document.getElementById('modalSem').textContent = data.session.semester;
-        document.getElementById('modalTeacher').textContent = data.session.teacher;
-        document.getElementById('modalDate').textContent = data.session.created_at;
-        document.getElementById('modalTotal').textContent = data.total + ' Students';
-
-        const tbody = document.getElementById('attendanceList');
-        tbody.innerHTML = '';
-        if (data.attendances.length === 0) {
-          const row = tbody.insertRow();
-          const cell = row.insertCell();
-          cell.colSpan = 6;
-          cell.className = 'text-center text-muted py-4';
-          cell.textContent = 'No students marked attendance';
+        set('modalSubject', data.session.subject);
+        set('modalDept', data.session.department);
+        set('modalSem', data.session.semester);
+        set('modalTeacher', data.session.teacher);
+        set('modalDate', data.session.created_at);
+        set('modalTotal', data.total);
+        loading.hidden = true;
+        if (!data.attendances.length) {
+          list.appendChild(document.getElementById('attendanceEmpty').content.cloneNode(true));
+          return;
         }
-        data.attendances.forEach(function (att, index) {
-          const row = tbody.insertRow();
-          [index + 1, att.student_roll, att.student_name, att.student_email, att.timestamp].forEach(function (value) {
-            row.insertCell().textContent = value;
-          });
-          const how = row.insertCell();
-          const badge = document.createElement('span');
-          badge.className = 'badge ' + (att.source === 'manual' ? 'text-bg-info' : 'text-bg-light border');
-          badge.textContent = att.source === 'manual' ? 'Manual' : 'Scan';
-          if (att.source === 'manual') badge.title = (att.marked_by ? att.marked_by + ': ' : '') + (att.note || '');
-          how.appendChild(badge);
+        data.attendances.forEach(function (att) {
+          const row = document.getElementById('attendanceRow').content.cloneNode(true);
+          row.querySelector('[data-name]').textContent = att.student_name;
+          row.querySelector('[data-roll]').textContent = att.student_roll;
+          row.querySelector('[data-email]').textContent = att.student_email;
+          row.querySelector('[data-time]').textContent = att.timestamp;
+          const how = row.querySelector('[data-how]');
+          const manual = att.source === 'manual';
+          how.classList.add(manual ? 'badge-info' : 'badge-outline');
+          how.textContent = manual ? 'Marked by staff' : 'QR scan';
+          if (manual) how.title = (att.marked_by ? att.marked_by + ': ' : '') + (att.note || '');
+          list.appendChild(row);
         });
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('attendanceModal')).show();
       })
       .catch(function () {
-        alert('Error loading attendance details');
+        dialog.close();
+        AttendQRUI.toast('Could not load who attended this session. Try again.', 'danger');
       });
   }
 
   document.querySelectorAll('.view-attendance').forEach(function (button) {
     button.addEventListener('click', function () { viewAttendance(button.dataset.sessionId); });
-  });
-
-  // Date checks mirror the server-side validation.
-  const today = {{ today|tojson }};
-  const fromInput = document.getElementById('date_from');
-  const toInput = document.getElementById('date_to');
-
-  function validateDates() {
-    const fromErr = document.getElementById('date_from_err');
-    const toErr = document.getElementById('date_to_err');
-    let valid = true;
-    fromInput.classList.remove('is-invalid');
-    toInput.classList.remove('is-invalid');
-    fromErr.textContent = '';
-    toErr.textContent = '';
-
-    if (fromInput.value && fromInput.value > today) {
-      fromInput.classList.add('is-invalid');
-      fromErr.textContent = 'From Date cannot be a future date.';
-      valid = false;
-    }
-    if (toInput.value && toInput.value > today) {
-      toInput.classList.add('is-invalid');
-      toErr.textContent = 'To Date cannot be a future date.';
-      valid = false;
-    }
-    if (fromInput.value && toInput.value && fromInput.value > toInput.value) {
-      fromInput.classList.add('is-invalid');
-      toInput.classList.add('is-invalid');
-      fromErr.textContent = 'From Date cannot be later than To Date.';
-      valid = false;
-    }
-    return valid;
-  }
-
-  fromInput.addEventListener('change', function () {
-    validateDates();
-    if (toInput.value && toInput.value < fromInput.value) toInput.value = fromInput.value;
-  });
-  toInput.addEventListener('change', validateDates);
-  document.getElementById('reportForm').addEventListener('submit', function (event) {
-    if (!validateDates()) event.preventDefault();
   });
 })();
 </script>
