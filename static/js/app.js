@@ -1,4 +1,5 @@
-/* Shared client-side helpers for AttendQR pages. */
+/* Shared helpers for AttendQR pages: JSON requests, dependent dropdowns and the password meter.
+ * Interface behaviour (menus, dialogs, confirmations, toasts) is in ui.js. */
 (function () {
   'use strict';
 
@@ -164,7 +165,8 @@
 
   /*
    * Wire a strength meter and confirm-match indicator to a password form.
-   * opts: password, confirm, submit, bar, label, hint, match (elements or ids), extraValid() -> bool
+   * opts: password, confirm, submit, bar, label, hint, match (elements or ids), extraValid() -> bool,
+   * extraProblem() -> text explaining why extraValid() fails (shown under the confirm field), or ''
    */
   function bindPasswordMeter(opts) {
     var password = resolve(opts.password);
@@ -187,8 +189,12 @@
       if (label) label.textContent = 'Strength: ' + strength.label;
       if (hint) hint.textContent = strength.hint;
 
+      var problem = opts.extraProblem ? opts.extraProblem() : '';
       if (match) {
-        if (!confirm.value) {
+        if (problem && password.value) {
+          match.className = 'password-match-status is-mismatch';
+          match.textContent = problem;
+        } else if (!confirm.value) {
           match.className = 'password-match-status';
           match.textContent = 'Re-enter the password to confirm it.';
         } else if (matches) {
@@ -211,76 +217,6 @@
     update();
   }
 
-  /* Client-side table search for small lists. rows: selector; fields: data-* attribute names. */
-  function bindTableSearch(opts) {
-    var input = resolve(opts.input);
-    var count = resolve(opts.count);
-    // Cell renumbered for visible rows; pass null when the table has no index column.
-    var indexSelector = opts.indexSelector === undefined ? 'td:first-child' : opts.indexSelector;
-    if (!input) return;
-    function apply() {
-      var term = input.value.toLowerCase().trim();
-      var rows = document.querySelectorAll(opts.rows);
-      var visible = 0;
-      rows.forEach(function (row) {
-        var matches = !term || opts.fields.some(function (field) {
-          return (row.getAttribute('data-' + field) || '').indexOf(term) !== -1;
-        });
-        row.style.display = matches ? '' : 'none';
-        if (opts.onToggle) opts.onToggle(row, matches);
-        if (matches) {
-          visible += 1;
-          var index = indexSelector ? row.querySelector(indexSelector) : null;
-          if (index) index.textContent = visible;
-        }
-      });
-      if (count) count.textContent = 'Showing: ' + visible + ' of ' + rows.length + ' ' + (opts.noun || 'items');
-      if (opts.noMatch) {
-        var noMatch = resolve(opts.noMatch);
-        if (noMatch) noMatch.classList.toggle('d-none', visible !== 0 || !rows.length);
-      }
-    }
-    input.addEventListener('input', apply);
-    return apply;
-  }
-
-  // ── Page-wide behaviour ─────────────────────────────────────
-  // Confirmation prompts: <form data-confirm="..."> (text is HTML-escaped by the template).
-  document.addEventListener('submit', function (event) {
-    var message = event.target.getAttribute && event.target.getAttribute('data-confirm');
-    if (message && !window.confirm(message)) event.preventDefault();
-  }, true);
-
-  document.addEventListener('DOMContentLoaded', function () {
-    var sidebar = document.getElementById('sidebar');
-    var toggle = document.querySelector('.toggle-sidebar');
-    if (sidebar && toggle) {
-      toggle.addEventListener('click', function () { sidebar.classList.toggle('active'); });
-      document.addEventListener('click', function (event) {
-        if (window.innerWidth <= 768 && !sidebar.contains(event.target) && !toggle.contains(event.target)) {
-          sidebar.classList.remove('active');
-        }
-      });
-    }
-
-    if (window.bootstrap) {
-      document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
-        new window.bootstrap.Tooltip(el);
-      });
-    }
-
-    document.querySelectorAll('.password-toggle').forEach(function (button) {
-      button.addEventListener('click', function () {
-        var input = document.getElementById(button.dataset.target);
-        var icon = button.querySelector('i');
-        var isHidden = input.type === 'password';
-        input.type = isHidden ? 'text' : 'password';
-        icon.className = isHidden ? 'bi bi-eye-slash' : 'bi bi-eye';
-        button.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
-      });
-    });
-  });
-
   window.AttendQR = {
     config: config,
     url: url,
@@ -293,7 +229,6 @@
     loadDepartmentSubjects: loadDepartmentSubjects,
     loadTeachers: loadTeachers,
     evaluatePassword: evaluatePassword,
-    bindPasswordMeter: bindPasswordMeter,
-    bindTableSearch: bindTableSearch
+    bindPasswordMeter: bindPasswordMeter
   };
 })();
