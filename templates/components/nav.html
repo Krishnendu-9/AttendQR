@@ -1,0 +1,55 @@
+{#- Navigation, kept in one place: the sidebar and the Ctrl K palette both read it.
+    Import with context: {% from 'components/nav.html' import nav_groups, palette_actions with context %}
+    An item is listed only for roles that may open it; the server still checks every request.
+    `match`: parts of endpoint names that mark the item as the current page. -#}
+{% set role = user_role() %}
+{% set endpoint = request.endpoint or '' %}
+{% set staff = role in ['super_admin', 'hod', 'teacher'] %}
+{% set managers = role in ['super_admin', 'hod'] %}
+
+{% set nav_spec = [
+  {'id': 'overview', 'label': 'Overview', 'items': [
+    {'label': 'Dashboard', 'icon': 'layout-dashboard', 'endpoint': 'main.dashboard', 'show': staff, 'match': ['main.dashboard'], 'keywords': 'home overview'},
+    {'label': 'My attendance', 'icon': 'calendar-check', 'endpoint': 'main.student_attendance', 'show': role == 'student', 'match': ['main.'], 'keywords': 'home percentage'},
+  ]},
+  {'id': 'attendance', 'label': 'Attendance', 'items': [
+    {'label': 'Generate QR', 'icon': 'qr-code', 'endpoint': 'attendance.generate_qr', 'show': staff, 'match': ['attendance.'], 'keywords': 'session class scan'},
+    {'label': 'Attendance report', 'icon': 'chart-column', 'endpoint': 'reports.index', 'show': staff, 'match': ['reports.index', 'reports.detailed', 'reports.export'], 'keywords': 'export excel pdf'},
+    {'label': 'Shortage list', 'icon': 'triangle-alert', 'endpoint': 'reports.shortage', 'show': staff, 'match': ['reports.shortage'], 'keywords': 'below target defaulters'},
+  ]},
+  {'id': 'people', 'label': 'People', 'items': [
+    {'label': 'Students', 'icon': 'graduation-cap', 'endpoint': 'students.index', 'show': staff, 'match': ['students.'], 'keywords': 'roll'},
+    {'label': 'Teachers', 'icon': 'presentation', 'endpoint': 'academics.teachers', 'show': managers, 'match': ['teacher'], 'keywords': 'staff faculty'},
+    {'label': 'Accounts', 'icon': 'shield-user', 'endpoint': 'accounts.index', 'show': managers, 'match': ['accounts.'], 'keywords': 'users logins hod principal'},
+  ]},
+  {'id': 'academics', 'label': 'Academics', 'items': [
+    {'label': 'Departments', 'icon': 'building-2', 'endpoint': 'academics.departments', 'show': managers, 'match': ['department'], 'keywords': 'branch course'},
+    {'label': 'Semesters', 'icon': 'calendar-range', 'endpoint': 'academics.semesters', 'show': managers, 'match': ['semester'], 'keywords': 'class'},
+    {'label': 'Subjects', 'icon': 'book-open', 'endpoint': 'academics.subjects', 'show': staff, 'match': ['subject'], 'keywords': 'paper code'},
+  ]},
+] %}
+
+{% set nav = namespace(groups=[]) %}
+{% for group in nav_spec %}
+  {% set g = namespace(items=[], current=False) %}
+  {% for item in group['items'] if item['show'] %}
+    {% set hit = namespace(value=False) %}
+    {% for part in item['match'] %}{% if part in endpoint %}{% set hit.value = True %}{% endif %}{% endfor %}
+    {% set g.items = g.items + [dict(item, href=url_for(item['endpoint']), current=hit.value)] %}
+    {% if hit.value %}{% set g.current = True %}{% endif %}
+  {% endfor %}
+  {% if g.items %}{% set nav.groups = nav.groups + [dict(group, items=g.items, current=g.current)] %}{% endif %}
+{% endfor %}
+{% set nav_groups = nav.groups %}
+
+{#- Common actions offered in the palette. -#}
+{% set palette_spec = [
+  {'label': 'New student', 'icon': 'user-plus', 'endpoint': 'students.new', 'show': staff, 'keywords': 'add create student'},
+  {'label': 'Start a QR session', 'icon': 'scan-line', 'endpoint': 'attendance.generate_qr', 'show': staff, 'keywords': 'generate new session class'},
+  {'label': 'Account and password', 'icon': 'settings', 'endpoint': 'auth.account', 'show': role is not none, 'keywords': 'profile change password security'},
+] %}
+{% set actions = namespace(items=[]) %}
+{% for item in palette_spec if item['show'] %}
+  {% set actions.items = actions.items + [dict(item, href=url_for(item['endpoint']))] %}
+{% endfor %}
+{% set palette_actions = actions.items %}
