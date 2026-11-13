@@ -35,6 +35,7 @@ from .security import (
     validate_csrf_request,
     wants_json_response,
 )
+from .services import two_factor
 from .services.network import describe_scan_networks, parse_scan_networks
 from .services.retention import purge_expired_scan_ips, register_scan_ip_purge
 from .utils import format_12h, to_local, utc_now
@@ -46,6 +47,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # opened before the password change is not lost: its 30-second token would
 # otherwise expire while the student picks a new password.
 PASSWORD_CHANGE_ALLOWED = {'auth.account', 'auth.logout', 'static', 'attendance.scan'}
+# Endpoints staff who must set up two-step sign-in may still reach.
+TWO_STEP_SETUP_ALLOWED = {'auth.two_step_setup', 'auth.account', 'auth.logout', 'static'}
 
 # An entry of ALLOWED_STAFF_DOMAINS, after config.py adds the leading "@".
 STAFF_DOMAIN_PATTERN = re.compile(r'^@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$')
@@ -92,7 +95,9 @@ def create_app(overrides=None):
         app.register_blueprint(blueprint)
 
     from . import observability
+    from .services import audit
     observability.init_app(app)
+    audit.init_app(app)
     _register_request_hooks(app)
     _register_error_pages(app)
     register_scan_ip_purge(app)
@@ -128,6 +133,9 @@ def _check_settings(app):
         ZoneInfo(cfg['TIMEZONE'])
     except (ZoneInfoNotFoundError, ValueError):
         problems.append(f"TIMEZONE {cfg['TIMEZONE']!r} is not a known time zone; use a name such as Asia/Kolkata.")
+    if not 0 < cfg['CONDONATION_PERCENT'] <= cfg['ELIGIBILITY_PERCENT'] <= 100:
+        problems.append(f"Need 0 < CONDONATION_PERCENT ({cfg['CONDONATION_PERCENT']}) <= ELIGIBILITY_PERCENT "
+                        f"({cfg['ELIGIBILITY_PERCENT']}) <= 100.")
     idle = cfg['SESSION_IDLE_MINUTES']
     if idle and idle < 5:
         problems.append(f"SESSION_IDLE_MINUTES must be 0 (never sign out) or at least 5 (got {idle}).")
@@ -207,6 +215,12 @@ def _register_request_hooks(app):
             next_url = request.full_path.rstrip('?') if request.method == 'GET' else None
             flash("Please set a new private password before continuing.", "warning")
             return redirect(url_for('auth.account', next=next_url))
+
+        if two_factor.is_required(current_user) and not two_factor.is_enabled(current_user)                 and request.endpoint not in TWO_STEP_SETUP_ALLOWED:
+            if wants_json_response():
+                return jsonify({'success': False, 'message': 'Set up two-step sign-in before continuing.'}), 403
+            flash("Your role needs two-step sign-in. Set it up with an authenticator app to continue.", "warning")
+            return redirect(url_for('auth.two_step_setup'))
         return None
 
     app.after_request(apply_security_headers)
@@ -357,6 +371,23 @@ def _register_cli(app):
         width = max(len(username) for _, username, _ in summary.logins)
         for role, username, hint in summary.logins:
             click.echo(f"  {role:<10} {username:<{width}}  {hint}")
+
+    @app.cli.command('verify-audit')
+    @click.option('--seal', is_flag=True, help='Seal entries written outside a request first (e.g. by scripts).')
+    def verify_audit_command(seal):
+        """Check the activity log's hash chain; exits with status 1 if it was tampered with."""
+        from .services.audit import seal_pending, verify_chain
+        if seal:
+            click.echo(f"Sealed {seal_pending()} pending entr(ies).")
+        check = verify_chain()
+        click.echo(f"Checked {check.entries} sealed entries; {check.unsealed} not sealed yet.")
+        click.echo(f"Head: entry {check.head_seq}, hash {check.head_hash or '-'}")
+        if check.ok:
+            click.echo("The activity log is intact. Keep the head line above with your backups to detect truncation.")
+            return
+        for problem in check.problems:
+            click.echo(f"  {problem}", err=True)
+        raise SystemExit(1)
 
     @app.cli.command('purge-scan-ips')
     def purge_scan_ips_command():
