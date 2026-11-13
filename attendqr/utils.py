@@ -1,22 +1,68 @@
-"""Small, dependency-free helpers shared across the application."""
+"""Small helpers shared across the application.
+
+Time: every timestamp is stored as a naive UTC datetime (SQLite keeps no time zone,
+and naive values compare the same way on every database). Only display and
+calendar dates use the college's time zone, the TIMEZONE setting.
+"""
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, time
+from functools import lru_cache
+from typing import overload
+from zoneinfo import ZoneInfo
 
-# India Standard Time has been UTC+05:30 all year since 1945 (no daylight saving),
-# so a fixed offset is exact and needs no time zone database.
-IST = timezone(timedelta(hours=5, minutes=30), 'IST')
+from flask import current_app, has_app_context
+
+DEFAULT_TIMEZONE = 'Asia/Kolkata'
 
 
-def ist_now():
-    """Current IST time as a naive datetime, matching how timestamps are stored."""
-    return datetime.now(IST).replace(tzinfo=None)
+def utc_now():
+    """Current time as a naive UTC datetime, the form every timestamp is stored in."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+@lru_cache(maxsize=8)
+def _zone(name):
+    return ZoneInfo(name)
+
+
+def local_zone():
+    """The college's time zone (TIMEZONE setting)."""
+    name = current_app.config.get('TIMEZONE') if has_app_context() else None
+    return _zone(name or DEFAULT_TIMEZONE)
+
+
+@overload
+def to_local(dt: datetime) -> datetime: ...
+@overload
+def to_local(dt: None) -> None: ...
+def to_local(dt):
+    """A stored (naive UTC) datetime as naive local time, for display."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=UTC).astimezone(local_zone()).replace(tzinfo=None)
+
+
+def local_to_utc(dt):
+    """A naive local datetime as naive UTC, for storing or comparing with stored values."""
+    return dt.replace(tzinfo=local_zone()).astimezone(UTC).replace(tzinfo=None)
+
+
+def local_now():
+    """Current local time (naive), for dates and times shown to people."""
+    return to_local(utc_now())
+
+
+def local_day_start_utc(day):
+    """The UTC moment the local calendar `day` begins, for filtering stored timestamps by date."""
+    return local_to_utc(datetime.combine(day, time.min))
 
 
 def format_12h(dt, include_date=True):
+    """A stored timestamp in local time, e.g. "12-11-2026 10:30 AM"."""
     if not dt:
         return ''
     fmt = '%d-%m-%Y %I:%M %p' if include_date else '%I:%M %p'
-    return dt.strftime(fmt)
+    return to_local(dt).strftime(fmt)
 
 
 def normalize_text(value):
@@ -83,6 +129,14 @@ def infer_department_branch(course_name):
     ignored = {'of', 'and', 'in', 'the', 'for'}
     acronym = ''.join(word[0] for word in words if word.lower() not in ignored).upper()
     return acronym[:12] if acronym else ''
+
+
+def parse_iso_date(value):
+    """A date from a form field in YYYY-MM-DD form, or None."""
+    try:
+        return datetime.strptime((value or '').strip(), '%Y-%m-%d').date()
+    except ValueError:
+        return None
 
 
 def parse_date_range(date_from, date_to, today):

@@ -21,6 +21,7 @@ qrcode==8.2
 reportlab==5.0.1
 SQLAlchemy==2.1.4
 typing_extensions==4.16.0
+tzdata==2026.5
 waitress==3.0.2
 Werkzeug==3.1.9
 gunicorn==23.0.0; sys_platform != "win32"

@@ -11,6 +11,8 @@ openpyxl>=3.1.0,<4.0.0
 reportlab>=4.0.0,<6.0.0
 Pillow>=10.0.0,<14.0.0
 itsdangerous>=2.2.0,<3.0.0
+# Time zone database for zoneinfo; Windows and slim containers have none of their own.
+tzdata>=2024.1
 
 # Production WSGI servers: waitress works everywhere (used by run.py); gunicorn is Linux/macOS only.
 waitress>=3.0.0,<4.0.0
