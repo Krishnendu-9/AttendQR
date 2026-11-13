@@ -1,7 +1,8 @@
 """Attendance statistics, report filters, and Excel/PDF export."""
 import io
+from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from xml.sax.saxutils import escape
 
 import openpyxl
@@ -12,8 +13,9 @@ from sqlalchemy.orm import joinedload
 from ..access import SPECIAL_CLASS_SUBJECT_NAME, own_teacher_filter, user_role
 from ..extensions import db
 from ..models import Attendance, ClassSession, Subject
-from ..utils import ist_now, normalize_paper_code, parse_date_range
+from ..utils import local_day_start_utc, local_now, normalize_paper_code, parse_date_range, to_local
 from .enrollment import class_roster, in_class_at
+from .leave import ON_LEAVE, ON_LEAVE_MARK, LeaveWindows
 
 # Matrix mark for a session held after the student moved to another class.
 NOT_IN_CLASS = 'not_in_class'
@@ -82,17 +84,25 @@ def build_student_attendance_summary(student):
     ).order_by(Subject.paper_code, Subject.name).all()
     subject_ids = [subject.id for subject in subjects]
 
-    totals = dict(
-        db.session.query(ClassSession.subject_id, func.count(ClassSession.id))
-        .filter(ClassSession.subject_id.in_(subject_ids), countable_session_clause())
-        .group_by(ClassSession.subject_id)
-    ) if subject_ids else {}
-    attended_counts = dict(
-        db.session.query(ClassSession.subject_id, func.count(Attendance.id))
-        .join(Attendance, Attendance.session_id == ClassSession.id)
+    sessions = db.session.query(ClassSession.id, ClassSession.subject_id, ClassSession.created_at).filter(
+        ClassSession.subject_id.in_(subject_ids), countable_session_clause(),
+    ).all() if subject_ids else []
+    attended_ids = {
+        session_id for (session_id,) in db.session.query(Attendance.session_id)
+        .join(ClassSession, ClassSession.id == Attendance.session_id)
         .filter(Attendance.student_id == student.id, ClassSession.subject_id.in_(subject_ids))
-        .group_by(ClassSession.subject_id)
-    ) if subject_ids else {}
+    } if subject_ids else set()
+
+    leave = LeaveWindows([student.id])
+    totals, attended_counts = {}, {}
+    excused = 0
+    for session_id, subject_id, created_at in sessions:
+        if leave.excused(student.id, created_at):
+            excused += 1  # on approved leave: counts neither way
+            continue
+        totals[subject_id] = totals.get(subject_id, 0) + 1
+        if session_id in attended_ids:
+            attended_counts[subject_id] = attended_counts.get(subject_id, 0) + 1
 
     rows = []
     overall_attended = overall_total = 0
@@ -129,6 +139,7 @@ def build_student_attendance_summary(student):
         'overall_percentage': overall_percentage,
         'overall_needed': classes_needed_for_target(overall_attended, overall_total, target),
         'overall_safe': overall_percentage >= target if overall_total else True,
+        'excused': excused,
     }
 
 
@@ -159,7 +170,7 @@ class ReportFilters:
 
 def parse_report_filters(args, department_id=None, semester_id=None):
     parsed_from, parsed_to, date_from, date_to, error = parse_date_range(
-        args.get('date_from'), args.get('date_to'), ist_now().date()
+        args.get('date_from'), args.get('date_to'), local_now().date()
     )
     return ReportFilters(
         department_id=department_id if department_id is not None else args.get('department_id', type=int),
@@ -183,10 +194,10 @@ def report_sessions_query(filters, countable_only=False):
     if filters.subject_id:
         query = query.filter(Subject.id == filters.subject_id)
     if filters.parsed_from:
-        query = query.filter(ClassSession.created_at >= datetime.combine(filters.parsed_from, datetime.min.time()))
+        # The dates are the college's calendar days; stored times are UTC.
+        query = query.filter(ClassSession.created_at >= local_day_start_utc(filters.parsed_from))
     if filters.parsed_to:
-        end = datetime.combine(filters.parsed_to, datetime.min.time()) + timedelta(days=1)
-        query = query.filter(ClassSession.created_at < end)
+        query = query.filter(ClassSession.created_at < local_day_start_utc(filters.parsed_to + timedelta(days=1)))
     if countable_only:
         query = query.filter(countable_session_clause())
     return query
@@ -216,16 +227,21 @@ def build_attendance_matrix(filters):
         ).filter(Attendance.session_id.in_(session_ids_select(session_query)))
     } if sessions else {}
 
+    members = class_roster(filters.department_id, filters.semester_id)
+    leave = LeaveWindows(student.id for student, _ in members) if sessions else LeaveWindows(())
     rows = []
-    for student, left_at in class_roster(filters.department_id, filters.semester_id):
+    for student, left_at in members:
         marks = {}
         for s in sessions:
             mark = attended.get((student.id, s.id))
             if not mark and not in_class_at(left_at, s.created_at):
                 # Held after the student moved to another class: neither present nor absent.
                 mark = NOT_IN_CLASS
+            elif leave.excused(student.id, s.created_at):
+                mark = ON_LEAVE  # approved leave: counts neither way
             marks[s.id] = mark
-        counted_ids = [s.id for s in sessions if not is_special_session(s) and marks[s.id] != NOT_IN_CLASS]
+        counted_ids = [s.id for s in sessions
+                       if not is_special_session(s) and marks[s.id] not in (NOT_IN_CLASS, ON_LEAVE)]
         if left_at is not None and all(mark == NOT_IN_CLASS for mark in marks.values()):
             continue  # Moved out before any of these sessions.
         present = sum(1 for session_id in counted_ids if marks[session_id])
@@ -280,6 +296,8 @@ MOVED_LEGEND = f"{NOT_IN_CLASS_MARK} = held after the student moved to another c
 def attendance_mark(source):
     if source == NOT_IN_CLASS:
         return NOT_IN_CLASS_MARK
+    if source == ON_LEAVE:
+        return ON_LEAVE_MARK
     if not source:
         return 'A'
     return 'P*' if source == Attendance.SOURCE_MANUAL else 'P'
@@ -290,7 +308,7 @@ def export_name(row):
     left_at = row.get('left_at')
     if left_at is None:
         return row['student'].name
-    return f"{row['student'].name} (moved out {left_at:%d-%m-%Y})"
+    return f"{row['student'].name} (moved out {to_local(left_at):%d-%m-%Y})"
 
 
 def build_export_rows(sessions, rows):
@@ -308,7 +326,7 @@ def build_export_rows(sessions, rows):
 
 def render_excel(headers, data, notes=(), title="Attendance Report"):
     workbook = openpyxl.Workbook()
-    sheet = workbook.active
+    sheet = workbook.active or workbook.create_sheet()
     sheet.title = title
     header_font = openpyxl.styles.Font(color="FFFFFF", bold=True)
     header_fill = openpyxl.styles.PatternFill(start_color="366092", end_color="366092", fill_type="solid")
@@ -476,28 +494,45 @@ def build_shortage_report(filters, threshold):
     }
 
     members = class_roster(filters.department_id, filters.semester_id)
-    # Start times, to count only the sessions a former member was in the class for.
-    session_times = db.session.query(ClassSession.subject_id, ClassSession.created_at).filter(
+    leave = LeaveWindows(student.id for student, _ in members)
+    # Per-session detail, only needed for former members (count the sessions they were in the
+    # class for) and students with approved leave (leave out the sessions it covers).
+    needs_detail = leave or any(left_at for _, left_at in members)
+    session_rows = db.session.query(ClassSession.id, ClassSession.subject_id, ClassSession.created_at).filter(
         ClassSession.id.in_(session_ids)
-    ).all() if any(left_at for _, left_at in members) else []
+    ).all() if needs_detail else []
+    attended_sessions = defaultdict(set)
+    if leave:
+        for student_id, session_id in db.session.query(Attendance.student_id, Attendance.session_id).filter(
+            Attendance.session_id.in_(session_ids),
+            Attendance.student_id.in_([student.id for student, _ in members if leave.has_leave(student.id)]),
+        ):
+            attended_sessions[student_id].add(session_id)
 
-    def totals_for(left_at):
-        if left_at is None:
-            return subject_totals
-        totals = {}
-        for subject_id, created_at in session_times:
-            if in_class_at(left_at, created_at):
-                totals[subject_id] = totals.get(subject_id, 0) + 1
-        return totals
+    def counts_for(student, left_at):
+        """({subject_id: classes held}, {subject_id: attended}) that count for this student."""
+        if left_at is None and not leave.has_leave(student.id):
+            return subject_totals, None
+        totals, present = {}, {}
+        for session_id, subject_id, created_at in session_rows:
+            if not in_class_at(left_at, created_at) or leave.excused(student.id, created_at):
+                continue
+            totals[subject_id] = totals.get(subject_id, 0) + 1
+            if session_id in attended_sessions.get(student.id, ()):
+                present[subject_id] = present.get(subject_id, 0) + 1
+        return totals, (present if leave.has_leave(student.id) else None)
 
     rows = []
     for student, left_at in members:
-        totals = totals_for(left_at)
+        totals, own_present = counts_for(student, left_at)
         cells = []
         overall_attended = overall_total = 0
         for subject in subjects:
             total = totals.get(subject.id, 0)
-            present = attended.get((student.id, subject.id), 0)
+            if own_present is not None:
+                present = own_present.get(subject.id, 0)
+            else:
+                present = attended.get((student.id, subject.id), 0)
             if not total:
                 # Every session of this subject was held after the student moved out.
                 cells.append({'subject': subject, 'attended': present, 'total': 0, 'percentage': None,

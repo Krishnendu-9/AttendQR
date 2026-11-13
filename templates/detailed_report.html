@@ -26,7 +26,7 @@
           <th scope="col" class="min-w-28 text-center normal-case tracking-normal">
             <span class="block text-label-md text-foreground">{{ session_display_name(session) }}</span>
             {% if is_hidden_special_subject(session.subject) %}<span class="mt-1 inline-block">{{ badge('Special · not counted', 'info') }}</span>{% endif %}
-            <span class="mt-0.5 block font-normal tabular-nums">{{ session.created_at.strftime('%d/%m/%y') }}</span>
+            <span class="mt-0.5 block font-normal tabular-nums">{{ (session.created_at|local).strftime('%d/%m/%y') }}</span>
           </th>
           {% endfor %}
           <th scope="col" class="text-center">Total</th>
@@ -47,6 +47,7 @@
           {% set mark = row.attendance[session.id] %}
           <td class="text-center">
             {%- if mark == 'not_in_class' %}{{ attendance_badge('not_marked', short=True) }}
+            {%- elif mark == 'on_leave' %}{{ attendance_badge('on_leave', short=True) }}
             {%- elif mark == 'manual' %}{{ attendance_badge('present_staff', short=True) }}
             {%- elif mark %}{{ attendance_badge('present', short=True) }}
             {%- else %}{{ attendance_badge('absent', short=True) }}{% endif -%}
@@ -69,6 +70,7 @@
   <span class="flex items-center gap-1.5">{{ attendance_badge('present', short=True) }} QR scan</span>
   <span class="flex items-center gap-1.5">{{ attendance_badge('present_staff', short=True) }} entered manually by staff</span>
   <span class="flex items-center gap-1.5">{{ attendance_badge('absent', short=True) }} absent</span>
+  <span class="flex items-center gap-1.5">{{ attendance_badge('on_leave', short=True) }} on approved leave, not counted</span>
   <span class="flex items-center gap-1.5">{{ attendance_badge('not_marked', short=True) }} held after a student moved to another class (not counted for them)</span>
 </div>
 <p class="mt-2 text-body-sm text-muted-foreground">Sessions deactivated before anyone marked attendance, and special classes, are not counted in Total and %.</p>

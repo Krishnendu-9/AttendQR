@@ -42,7 +42,7 @@ btn btn-{{ variant }}{% if size %} btn-{{ size }}{% endif %}{% if icon_only %} b
 
 {#- The one place an attendance status becomes a badge, so every screen agrees.
     present: QR scan; present_staff: marked by staff (P*); absent; not_marked: no class for them
-    (held after they moved); moved_out: left this class. -#}
+    (held after they moved); moved_out: left this class; on_leave: approved leave (not counted). -#}
 {% macro attendance_badge(status, short=False) -%}
 {% set styles = {
   'present': ('P', 'Present', 'success', None),
@@ -50,6 +50,7 @@ btn btn-{{ variant }}{% if size %} btn-{{ size }}{% endif %}{% if icon_only %} b
   'absent': ('A', 'Absent', 'danger', None),
   'not_marked': ('–', 'Not marked', 'neutral', 'Held after the student moved to another class; not counted'),
   'moved_out': ('Moved out', 'Moved out', 'neutral', None),
+  'on_leave': ('L', 'On leave', 'info', 'On approved leave; not counted'),
 } %}
 {% set s = styles.get(status, styles['not_marked']) %}
 {{ badge(s[0] if short else s[1], s[2], s[3]) }}
