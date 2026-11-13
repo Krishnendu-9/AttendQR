@@ -55,10 +55,16 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.lock
-        pip install pytest==9.1.1 ruff==0.17.2
+        pip install pytest==9.1.1 ruff==0.17.2 pytest-cov==6.2.1 pyright==1.1.403
 
     - name: Lint
       run: ruff check --output-format=github .
+
+    - name: Type check
+      env:
+        PYRIGHT_PYTHON_IGNORE_WARNINGS: "1"
+      # Settings (and the rules turned off, with the reason) are in pyproject.toml.
+      run: pyright --pythonpath "$(which python)"
 
     - name: Check migrations match the models
       env:
@@ -67,7 +73,54 @@ jobs:
         flask --app wsgi init-db
         flask --app wsgi db check
 
-    - name: Run tests
+    - name: Run tests with coverage
+      run: python -m pytest -q --cov=attendqr --cov-report=term-missing:skip-covered --cov-fail-under=85
+
+  postgres:
+    name: Tests on PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: attendqr_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Every test starts from an emptied schema in this database (see tests/conftest.py).
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/attendqr_test
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+      with:
+        python-version: "3.13"
+        cache: 'pip'
+        cache-dependency-path: |
+          requirements.lock
+          requirements-dev.txt
+
+    - name: Install pinned dependencies and the PostgreSQL driver
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.lock
+        pip install pytest==9.1.1 "psycopg[binary]==3.2.10"
+
+    - name: Check migrations match the models on PostgreSQL
+      env:
+        DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+      run: |
+        flask --app wsgi init-db
+        flask --app wsgi db check
+
+    - name: Run tests on PostgreSQL
       run: python -m pytest -q
 
   docker:

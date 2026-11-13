@@ -66,3 +66,17 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["attendqr", "conftest"]
+
+[tool.pyright]
+include = ["attendqr"]
+venvPath = "."
+venv = "venv"
+typeCheckingMode = "basic"
+# The models use Flask-SQLAlchemy's db.Column style, which type checkers cannot see
+# through: every `User(username=...)`, `Subject.department` and joinedload() call is
+# reported as an unknown parameter or attribute. These three rules produce only that
+# noise here; the rest of basic mode (None safety, undefined names, unreachable
+# returns, wrong overrides...) stays on and runs in CI.
+reportCallIssue = false
+reportAttributeAccessIssue = false
+reportArgumentType = false
