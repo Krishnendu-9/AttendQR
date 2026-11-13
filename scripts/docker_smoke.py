@@ -9,11 +9,16 @@ with the one-time password shown to the Principal, replaces it, and marks attend
 sees exactly one entry. Standard library only, so it runs on the CI runner
 without installing the app.
 """
+import base64
+import hashlib
+import hmac
 import http.cookiejar
 import json
 import os
 import re
+import struct
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,6 +29,15 @@ PRINCIPAL_PASSWORD = os.environ.get('PRINCIPAL_PASSWORD', '')
 STUDENT = {'name': 'Smoke Student', 'roll_no': 'SMK001', 'email': 'smoke.student@example.com'}
 CSRF_PATTERN = re.compile(r'name="(?:_csrf_token|csrf-token)"\s+(?:value|content)="([^"]+)"')
 TEMPORARY_PASSWORD_PATTERN = re.compile(r'Temporary password: ([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})')
+TWO_STEP_KEY_PATTERN = re.compile(r'data-two-step-key>([A-Z2-7 ]+)<')
+
+
+def totp(key, at=None):
+    """The 6-digit code an authenticator app shows for this key (RFC 6238), without the app."""
+    secret = base64.b32decode(key.replace(' ', '') + '=' * (-len(key.replace(' ', '')) % 8))
+    digest = hmac.new(secret, struct.pack('>Q', int(at or time.time()) // 30), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    return f"{(struct.unpack('>I', digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 1_000_000:06d}"
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -107,6 +121,11 @@ def main(base_url):
     expect_redirect(principal.post('/account', current_password=PRINCIPAL_PASSWORD,
                                    new_password=new_password, confirm_password=new_password),
                     '/account', "Principal sets a private password")
+    expect_redirect(principal.get('/departments'), '/account/two-step', "Principal must set up two-step sign-in next")
+    match = TWO_STEP_KEY_PATTERN.search(principal.get('/account/two-step')[2])
+    check(match is not None, "two-step setup shows the key for an authenticator app")
+    status, _, page = principal.post('/account/two-step', action='enable', code=totp(match.group(1)))
+    check(status == 200 and 'recovery codes' in page.lower(), "Principal turns on two-step sign-in and gets recovery codes")
 
     principal.post('/departments', branch='SMOKE', name='Smoke Testing')
     page = principal.get('/generate_qr')[2]
