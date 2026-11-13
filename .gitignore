@@ -2,6 +2,8 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.coverage
+htmlcov/
 .mypy_cache/
 *.egg-info/
 build/
@@ -21,6 +23,9 @@ static/qrcodes/
 
 # VS Code
 .vscode/
+
+# Claude Code (local settings, never committed)
+.claude/
 
 # Environment Variables
 .env
