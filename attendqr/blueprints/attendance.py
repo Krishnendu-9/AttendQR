@@ -35,6 +35,7 @@ from ..access import (
 )
 from ..extensions import db
 from ..models import Attendance, ClassSession, Semester, Student, Subject, Teacher
+from ..observability import count_scan
 from ..security import is_safe_redirect_target
 from ..services.enrollment import class_roster, in_class_at, was_in_class
 from ..services.network import client_ip, scan_network_error
@@ -56,12 +57,12 @@ from ..services.qr import (
 )
 from ..services.reports import attendance_counts
 from ..services.retention import scan_ip_recording_enabled
-from ..utils import format_12h, ist_now, normalize_text, parse_int_value
+from ..utils import format_12h, normalize_text, parse_int_value, utc_now
 
 bp = Blueprint('attendance', __name__)
 
 # Deleting a session that has attendance erases those records, so it is kept from teachers.
-SESSION_DELETE_WITH_ATTENDANCE_ROLES = ('super_admin', 'hod')
+SESSION_DELETE_WITH_ATTENDANCE_ROLES = ('principal', 'hod')
 
 
 def get_or_create_special_subject(department_id, semester_id):
@@ -95,7 +96,7 @@ def _form_error(message):
 
 @bp.route('/generate_qr', methods=['GET', 'POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def generate_qr():
     if request.method == 'POST':
         return _create_session()
@@ -220,7 +221,7 @@ def _create_session():
     elif class_mode != 'special':
         return _form_error("Select a teacher for regular classes.")
 
-    now = ist_now()
+    now = utc_now()
     class_session = ClassSession(
         subject_id=subject.id,
         special_title=special_title,
@@ -250,7 +251,7 @@ def _session_for_action(id):
 
 @bp.route('/deactivate_session/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def deactivate_session(id):
     class_session = _session_for_action(id)
     if class_session.is_live():
@@ -267,10 +268,10 @@ def deactivate_session(id):
 
 @bp.route('/reactivate_session/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def reactivate_session(id):
     class_session = _session_for_action(id)
-    if not class_session.is_active and class_session.expires_at > ist_now():
+    if not class_session.is_active and class_session.expires_at > utc_now():
         class_session.is_active = True
         log_activity(
             'qr_session_reactivated',
@@ -284,7 +285,7 @@ def reactivate_session(id):
 
 @bp.route('/delete_session/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def delete_session(id):
     """Delete a session. One that has attendance takes its records with it, so only
     the HOD or Principal may do that, with a reason; a teacher can deactivate it or
@@ -338,7 +339,7 @@ def _correction_reason():
 
 @bp.route('/sessions/<int:id>/attendance', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def mark_present(id):
     """Staff mark a student present by hand, e.g. when their phone could not scan."""
     class_session = _session_for_action(id)
@@ -356,9 +357,9 @@ def mark_present(id):
         db.session.add(Attendance(
             student_id=student.id,
             session_id=class_session.id,
-            timestamp=ist_now(),
+            timestamp=utc_now(),
             source=Attendance.SOURCE_MANUAL,
-            marked_by_admin_id=current_user.id,
+            marked_by_user_id=current_user.id,
             note=note,
         ))
         log_activity(
@@ -378,7 +379,7 @@ def mark_present(id):
 
 @bp.route('/sessions/<int:id>/attendance/<int:attendance_id>/remove', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def remove_attendance(id, attendance_id):
     """Staff remove an attendance entry, e.g. one marked by mistake."""
     class_session = _session_for_action(id)
@@ -428,7 +429,7 @@ def _status_page(title, message, status=200, session_info=None, student=None):
 
 
 def _ended_status(class_session):
-    if ist_now() > class_session.expires_at:
+    if utc_now() > class_session.expires_at:
         return 'QR Expired', 'This QR session has ended. Please ask your teacher for a new QR code.'
     return 'QR Deactivated', 'This QR session has been deactivated by the teacher.'
 
@@ -477,25 +478,30 @@ def scan(token):
     # Checked before the token, so off-network clients learn nothing about it.
     refusal = _network_refusal('scan')
     if refusal:
+        count_scan('network_refused')
         return _status_page(*refusal)
 
     try:
         class_session_id = read_qr_token(token)
     except SignatureExpired:
+        count_scan('token_expired')
         return _status_page('QR Expired', 'This QR code has expired. Scan the code currently shown on the screen.', 410)
     except BadSignature:
+        count_scan('token_invalid')
         return _status_page('Invalid QR', 'This QR code is not valid. Scan the code shown by your teacher.', 404)
 
     class_session = db.session.get(ClassSession, class_session_id)
     if not class_session or not class_session.subject:
         return _status_page('Invalid QR', 'This QR session no longer exists.', 404)
     if not class_session.is_live():
+        count_scan('session_ended')
         title, message = _ended_status(class_session)
         return _status_page(title, message, 410, _session_info(class_session))
 
     existing_device = read_device_cookie()
     device_id = existing_device or new_device_id()
     grant_scan(class_session.id, device_id, client_ip() if scan_ip_recording_enabled() else None)
+    count_scan('granted')
     response = redirect(url_for('attendance.attend'))
     if device_id != existing_device:
         set_device_cookie(response, device_id)
@@ -577,11 +583,13 @@ def mark_attendance():
     student = current_user.student
     subject = class_session.subject
     if student.department_id != subject.department_id or student.semester_id != subject.semester_id:
+        count_scan('wrong_class')
         return _json_error(f'This QR code is only for {subject.department.display_name} - {subject.semester.name}.', 403)
 
     device_id = read_device_cookie()
     device_error = device_binding_error(student, device_id)
     if device_error:
+        count_scan('device_rejected')
         return _json_error(device_error, 403)
 
     if Attendance.query.filter_by(student_id=student.id, session_id=class_session.id).first():
@@ -592,6 +600,7 @@ def mark_attendance():
     refusal = _grant_refusal(grant)
     if refusal:
         _, message, status = refusal
+        count_scan('grant_refused')
         return _json_error(message, status)
 
     registers_device = not student.device_id
@@ -599,7 +608,7 @@ def mark_attendance():
         student.device_id = device_id
 
     db.session.add(Attendance(
-        student_id=student.id, session_id=class_session.id, timestamp=ist_now(),
+        student_id=student.id, session_id=class_session.id, timestamp=utc_now(),
         scan_ip=scan_grant_ip(grant) if scan_ip_recording_enabled() else None,
         scan_grant=grant['id'],
         new_device=registers_device,
@@ -613,9 +622,11 @@ def mark_attendance():
             return _json_error('Attendance already marked')
         if Attendance.query.filter_by(scan_grant=grant['id']).first():
             # The same grant, copied to another browser, was used at the same moment.
+            count_scan('grant_refused')
             return _json_error(GRANT_USED_MESSAGE, 409)
         # Another student registered this device at the same moment.
         return _json_error(DEVICE_TAKEN_MESSAGE, 403)
 
     clear_scan_grant()
+    count_scan('marked')
     return jsonify({'success': True, 'message': f'Attendance marked for {student.name}'})
