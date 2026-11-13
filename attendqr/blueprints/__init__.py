@@ -1,4 +1,4 @@
-from . import academics, accounts, api, attendance, auth, main, reports, students
+from . import academics, accounts, api, attendance, auth, leave, main, reports, students
 
 ALL_BLUEPRINTS = (
     auth.bp,
@@ -7,6 +7,7 @@ ALL_BLUEPRINTS = (
     students.bp,
     attendance.bp,
     reports.bp,
+    leave.bp,
     accounts.bp,
     api.bp,
 )

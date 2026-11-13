@@ -1,0 +1,133 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state, action_form, submit_button with context %}
+{% from 'components/forms.html' import text_input, select_input, textarea_input with context %}
+{% set page_title = 'Leave' %}
+
+{% macro status_badge(leave) -%}
+{% if leave.status == 'approved' %}{{ badge('Approved', 'success') }}
+{% elif leave.status == 'rejected' %}{{ badge('Rejected', 'danger') }}
+{% else %}{{ badge('Waiting', 'warning') }}{% endif %}
+{%- endmacro %}
+
+{% macro dates(leave) -%}
+<span class="tabular-nums">{{ leave.start_date.strftime('%d %b %Y') }}{% if leave.end_date != leave.start_date %} &ndash; {{ leave.end_date.strftime('%d %b %Y') }}{% endif %}</span>
+<span class="text-muted-foreground"> &middot; {{ leave.days }} day{{ '' if leave.days == 1 else 's' }}</span>
+{%- endmacro %}
+
+{% block content %}
+{% if student %}
+{# ── Student ─────────────────────────────────────────────── #}
+{{ page_header('Leave', 'Ask to be excused from classes. Classes during approved leave are not counted in your attendance, either way.') }}
+
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div>
+    {% call card('New request', 'Your HOD reviews it. You can withdraw it until then.') %}
+      <form method="POST" action="{{ url_for('leave.index') }}" class="grid gap-4" novalidate>
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        {% if form_error %}{% call callout('Request not sent', 'danger') %}{{ form_error }}{% endcall %}{% endif %}
+        {{ select_input('kind', 'Type', kinds.items()|list, selected=form.get('kind', 'medical'), required=True) }}
+        <div class="grid grid-cols-2 gap-3">
+          {{ text_input('start_date', 'First day', form.get('start_date', ''), type='date', required=True) }}
+          {{ text_input('end_date', 'Last day', form.get('end_date', ''), type='date', required=True) }}
+        </div>
+        {{ textarea_input('reason', 'Reason', form.get('reason', ''), required=True,
+                          hint='For example "Fever, doctor\'s certificate attached to email". At most 300 characters.',
+                          attrs={'maxlength': 300}) }}
+        {{ submit_button('Send request', 'Sending...', icon_name='calendar-clock') }}
+      </form>
+    {% endcall %}
+  </div>
+
+  <div class="xl:col-span-2">
+    {% call card('Your requests', flush=True) %}
+      {% if requests %}
+      <ul class="divide-y divide-border">
+        {% for leave in requests %}
+        <li class="flex flex-col gap-2 px-6 py-4 sm:flex-row sm:items-start sm:justify-between">
+          <div class="min-w-0">
+            <p class="text-label-lg text-foreground">{{ leave.kind_label }} &middot; {{ dates(leave) }}</p>
+            <p class="mt-0.5 text-body-sm text-muted-foreground">{{ leave.reason }}</p>
+            {% if leave.decision_note %}<p class="mt-1 text-body-sm text-foreground">Note from {{ leave.decided_by.username if leave.decided_by else 'staff' }}: {{ leave.decision_note }}</p>{% endif %}
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            {{ status_badge(leave) }}
+            {% if leave.status == 'pending' %}
+              {{ action_form('Withdraw', url_for('leave.withdraw', id=leave.id), 'ghost', size='sm',
+                             confirm='The request is deleted and your HOD will not see it.', confirm_title='Withdraw this request?') }}
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+        {{ empty_state('calendar-clock', 'No requests yet', 'Requests you send appear here with their status.', compact=True) }}
+      {% endif %}
+    {% endcall %}
+  </div>
+</div>
+
+{% else %}
+{# ── HOD and Principal ───────────────────────────────────── #}
+{{ page_header('Leave requests', 'Approve or reject student leave. Classes during approved leave are not counted for the student, either way.',
+               badge(pending|length ~ ' waiting', 'warning' if pending else 'neutral')) }}
+
+{% call card('Waiting for a decision', flush=True) %}
+  {% if pending %}
+  <ul class="divide-y divide-border">
+    {% for leave in pending %}
+    <li class="grid gap-4 px-6 py-5 lg:grid-cols-5">
+      <div class="min-w-0 lg:col-span-3">
+        <p class="text-label-lg text-foreground">{{ leave.student.name }} <span class="font-mono text-body-sm text-muted-foreground">{{ leave.student.roll_no }}</span></p>
+        <p class="mt-0.5 text-body-sm text-muted-foreground">{{ leave.student.department.display_name }} &middot; {{ leave.student.semester.name }}</p>
+        <p class="mt-2 text-body-md text-foreground">{{ leave.kind_label }} &middot; {{ dates(leave) }}</p>
+        <p class="mt-0.5 text-body-sm text-muted-foreground">{{ leave.reason }}</p>
+      </div>
+      <form method="POST" action="{{ url_for('leave.decide', id=leave.id) }}" class="grid gap-2 lg:col-span-2">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <label for="note-{{ leave.id }}" class="sr-only">Note for {{ leave.student.name }}</label>
+        <input class="input" id="note-{{ leave.id }}" name="note" maxlength="{{ max_note }}" placeholder="Note (required to reject)" autocomplete="off">
+        <div class="flex gap-2">
+          <button type="submit" name="decision" value="approve" class="{{ btn('primary', 'sm') }}">{{ icon('check') }}<span>Approve</span></button>
+          <button type="submit" name="decision" value="reject" class="{{ btn('outline', 'sm') }}">{{ icon('x') }}<span>Reject</span></button>
+        </div>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    {{ empty_state('inbox', 'Nothing waiting', 'New requests from students appear here.', compact=True) }}
+  {% endif %}
+{% endcall %}
+
+<div class="mt-6">
+{% call card('Recent decisions', 'The latest 50.', flush=True) %}
+  {% if decided %}
+  <div class="overflow-x-auto">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Student</th>
+          <th scope="col">Leave</th>
+          <th scope="col">Decision</th>
+          <th scope="col">By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leave in decided %}
+        <tr>
+          <td><p class="text-label-lg text-foreground">{{ leave.student.name }}</p><p class="font-mono text-body-sm text-muted-foreground">{{ leave.student.roll_no }}</p></td>
+          <td class="text-body-md"><p>{{ leave.kind_label }}</p><p class="text-body-sm text-muted-foreground">{{ dates(leave) }}</p></td>
+          <td>{{ status_badge(leave) }}{% if leave.decision_note %}<p class="mt-1 text-body-sm text-muted-foreground">{{ leave.decision_note }}</p>{% endif %}</td>
+          <td class="text-body-sm text-muted-foreground"><p>{{ leave.decided_by.username if leave.decided_by else 'Deleted account' }}</p><p>{{ format_12h(leave.decided_at) }}</p></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {{ empty_state('history', 'No decisions yet', 'Approved and rejected requests appear here.', compact=True) }}
+  {% endif %}
+{% endcall %}
+</div>
+{% endif %}
+{% endblock %}

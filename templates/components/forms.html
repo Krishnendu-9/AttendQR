@@ -32,6 +32,14 @@
 {% endcall %}
 {%- endmacro %}
 
+{% macro textarea_input(name, label, value='', id=None, required=False, hint=None, error=None, rows=3, attrs={}, cls='') -%}
+{% set id = id or name %}
+{% call field(id, label, required, hint, error, cls) %}
+<textarea class="input textarea" id="{{ id }}" name="{{ name }}" rows="{{ rows }}"
+  {%- if required %} required{% endif %} {{ described(id, hint, error) }} {{ attrs|xmlattr }}>{{ value or '' }}</textarea>
+{% endcall %}
+{%- endmacro %}
+
 {#- Styled select. options: list of (value, label), or records with value_attr/label_attr
     (e.g. options=departments, value_attr='id', label_attr='display_name'); or a caller rendering <option>s. -#}
 {% macro select_control(name, id=None, options=[], selected=None, placeholder=None, required=False, hint=None, error=None, attrs={}, value_attr=None, label_attr=None) -%}
