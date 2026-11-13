@@ -3,7 +3,7 @@
 {% from 'components/forms.html' import text_input, select_input, select_control with context %}
 {% set page_title = 'Subjects' %}
 {% set can_manage = current_user.role != 'teacher' %}
-{% set principal = current_user.role == 'super_admin' %}
+{% set principal = current_user.role == 'principal' %}
 {% set show_department = departments|length > 1 %}
 {% set default_department = departments[0].id if departments|length == 1 else '' %}
 

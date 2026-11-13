@@ -2,7 +2,7 @@
 {% from 'components/ui.html' import icon, btn, badge, page_header, empty_state, monogram, dropdown, menu_link, menu_form, menu_separator, pagination, submit_button with context %}
 {% from 'components/forms.html' import select_control with context %}
 {% set page_title = 'Students' %}
-{% set can_manage = current_user.role in ['super_admin', 'hod'] %}
+{% set can_manage = current_user.role in ['principal', 'hod'] %}
 {% set list_url = url_for('students.index', page=page.page if page.page > 1 else None, **filter_args) %}
 {% set filter_count = (1 if filters.department_id else 0) + (1 if filters.semester_id else 0) %}
 {% set show_department = departments|length > 1 %}
@@ -56,9 +56,9 @@
         </div>
         <div class="mt-5 rounded-xl border border-border bg-background p-4">
           <p class="text-label-md text-foreground">Columns</p>
-          <p class="mt-1 font-mono text-body-sm text-muted-foreground">name, roll_no, email, semester{% if current_user.role == 'super_admin' %}, department{% endif %}</p>
+          <p class="mt-1 font-mono text-body-sm text-muted-foreground">name, roll_no, email, semester{% if current_user.role == 'principal' %}, department{% endif %}</p>
           <p class="mt-2 text-body-sm text-muted-foreground">
-            {% if current_user.role == 'super_admin' %}Department is the label shown in the template, or use department_id.{% else %}Students are added to your department.{% endif %}
+            {% if current_user.role == 'principal' %}Department is the label shown in the template, or use department_id.{% else %}Students are added to your department.{% endif %}
             Up to 2,000 rows per file.
           </p>
           <a href="{{ url_for('students.import_template') }}" class="{{ btn('link') }} mt-3 text-label-md">{{ icon('download') }}<span>Download the template</span></a>

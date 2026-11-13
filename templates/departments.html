@@ -2,7 +2,7 @@
 {% from 'components/ui.html' import icon, btn, badge, page_header, empty_state, monogram, dropdown, menu_form, menu_separator, record_opener, record_dialog, client_toolbar, search_empty with context %}
 {% from 'components/forms.html' import text_input with context %}
 {% set page_title = 'Departments' %}
-{% set can_manage = current_user.role == 'super_admin' %}
+{% set can_manage = current_user.role == 'principal' %}
 
 {% block content %}
 {% call page_header('Departments', 'Branches and courses offered by the institution.') %}

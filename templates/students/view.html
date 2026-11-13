@@ -2,7 +2,7 @@
 {% from 'components/ui.html' import icon, btn, badge, attendance_badge, percent_badge, account_badge, page_header, card, detail_list, detail_item, empty_state, action_form, relative_time with context %}
 {% set page_title = student.name %}
 {% set breadcrumbs = [('Students', url_for('students.index')), (student.name, None)] %}
-{% set can_manage = current_user.role in ['super_admin', 'hod'] %}
+{% set can_manage = current_user.role in ['principal', 'hod'] %}
 {% set this_page = url_for('students.view', id=student.id) %}
 {% set target = summary.target %}
 

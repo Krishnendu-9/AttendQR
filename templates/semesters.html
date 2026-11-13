@@ -70,7 +70,7 @@
 {% call record_dialog('semester-dialog', 'New semester', 'Create semester') %}
   {{ text_input('name', 'Semester name', id='semester_name', required=True, placeholder='Semester 1',
                 attrs={'maxlength': 50, 'autocomplete': 'off'}) }}
-  {% if current_user.role == 'super_admin' %}
+  {% if current_user.role == 'principal' %}
     {{ select_input('department_id', 'Department', departments, id='semester_department', placeholder='Select department',
                     required=True, value_attr='id', label_attr='display_name') }}
   {% else %}

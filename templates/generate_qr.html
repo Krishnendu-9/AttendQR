@@ -1,7 +1,7 @@
 {% extends 'layouts/app.html' %}
 {% from 'components/ui.html' import icon, btn, badge, session_badge, page_header, card, callout, empty_state, dropdown, menu_link, menu_form, menu_separator, action_form, submit_button with context %}
 {% from 'components/forms.html' import field, text_input, select_input, select_control with context %}
-{% set can_force_delete = user_role() in ['super_admin', 'hod'] %}
+{% set can_force_delete = user_role() in ['principal', 'hod'] %}
 {% if view_session %}
   {% set page_title = session_display_name(view_session) %}
   {% set breadcrumbs = [('Generate QR', url_for('attendance.generate_qr')), (page_title, None)] %}

@@ -27,7 +27,7 @@
   {% endcall %}
 
   {% call form_section('Class', 'The department and semester the student attends.') %}
-    {% if current_user.role == 'super_admin' %}
+    {% if current_user.role == 'principal' %}
       {% call field('department_id', 'Department', required=True) %}
         <div class="relative">
           <select class="input" id="department_id" name="department_id" required>

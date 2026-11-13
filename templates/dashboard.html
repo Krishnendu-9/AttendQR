@@ -19,7 +19,7 @@
   <a href="{{ url_for('attendance.generate_qr') }}" class="{{ btn('primary') }}">{{ icon('qr-code') }}<span>Generate QR</span></a>
 {% endcall %}
 
-{% if current_user.role in ['super_admin', 'hod'] %}
+{% if current_user.role in ['principal', 'hod'] %}
 <section aria-label="Totals" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
   {{ stat('Departments', departments, 'building-2', url_for('academics.departments')) }}
   {{ stat('Semesters', semesters, 'calendar-range', url_for('academics.semesters')) }}
