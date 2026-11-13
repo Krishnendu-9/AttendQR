@@ -5,9 +5,9 @@ from datetime import timedelta
 from itsdangerous import TimestampSigner
 
 from attendqr.extensions import db
-from attendqr.models import Admin, Attendance, ClassSession, Student, Teacher
+from attendqr.models import Attendance, ClassSession, Student, Teacher, User
 from attendqr.services.qr import make_qr_token
-from attendqr.utils import ist_now
+from attendqr.utils import utc_now
 from conftest import PASSWORD, login, post, post_json
 
 
@@ -47,7 +47,7 @@ def test_full_scan_flow_marks_attendance_once(data, client_for):
 def test_scan_survives_login_and_first_password_change(app, data, client_for):
     """A student who is not logged in still has time to log in and replace the roll-number password."""
     class_session = create_session(client_for(data.teacher), data)
-    account = Admin.query.filter_by(username=data.student).one()
+    account = User.query.filter_by(username=data.student).one()
     account.must_change_password = True
     db.session.commit()
 
@@ -72,7 +72,7 @@ def test_scan_survives_login_and_first_password_change(app, data, client_for):
 
 def test_logged_in_student_who_must_change_password_keeps_the_scan(app, data, client_for):
     class_session = create_session(client_for(data.teacher), data)
-    account = Admin.query.filter_by(username=data.student).one()
+    account = User.query.filter_by(username=data.student).one()
     account.must_change_password = True
     db.session.commit()
 
@@ -180,7 +180,7 @@ def test_session_qr_endpoint(data, client_for):
     assert client_for(data.student).get(f'/api/session/{class_session.id}/qr').status_code == 403
     assert client_for(data.other_teacher).get(f'/api/session/{class_session.id}/qr').status_code == 403
 
-    class_session.expires_at = ist_now() - timedelta(minutes=1)
+    class_session.expires_at = utc_now() - timedelta(minutes=1)
     db.session.commit()
     assert teacher.get(f'/api/session/{class_session.id}/qr').status_code == 410
 

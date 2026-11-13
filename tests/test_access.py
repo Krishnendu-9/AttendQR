@@ -5,32 +5,32 @@ import io
 import pytest
 
 from attendqr.extensions import db
-from attendqr.models import Admin, ClassSession, Student, Subject, Teacher
-from attendqr.utils import ist_now
+from attendqr.models import ClassSession, Student, Subject, Teacher, User
+from attendqr.utils import utc_now
 from conftest import PASSWORD, make_account, post
 
 
 def test_protected_page_redirects_to_login_with_next(app):
-    response = app.test_client().get('/add_admin')
+    response = app.test_client().get('/accounts')
     assert response.status_code == 302
-    assert '/login?next=%2Fadd_admin' in response.headers['Location']
+    assert '/login?next=%2Faccounts' in response.headers['Location']
 
 
 def test_login_redirects_to_requested_page(app, data):
     client = app.test_client()
-    response = post(client, '/login?next=%2Fadd_admin', {'username': data.principal, 'password': PASSWORD, 'next': '/add_admin'})
+    response = post(client, '/login?next=%2Faccounts', {'username': data.principal, 'password': PASSWORD, 'next': '/accounts'})
     assert response.status_code == 302
-    assert response.headers['Location'].endswith('/add_admin')
+    assert response.headers['Location'].endswith('/accounts')
 
 
 @pytest.mark.parametrize('who, pages', [
     ('principal', {'/': 200, '/account': 200, '/students': 200, '/students/import-template': 200,
-                   '/add_admin': 200, '/generate_qr': 200, '/reports': 200, '/departments': 200,
+                   '/accounts': 200, '/generate_qr': 200, '/reports': 200, '/departments': 200,
                    '/semesters': 200, '/subjects': 200, '/teachers': 200}),
-    ('hod', {'/': 200, '/students': 200, '/add_admin': 200, '/generate_qr': 200, '/reports': 200,
+    ('hod', {'/': 200, '/students': 200, '/accounts': 200, '/generate_qr': 200, '/reports': 200,
              '/departments': 200, '/teachers': 200}),
     ('teacher', {'/': 200, '/students': 200, '/generate_qr': 200, '/reports': 200, '/subjects': 200,
-                 '/add_admin': 403, '/departments': 403, '/teachers': 403}),
+                 '/accounts': 403, '/departments': 403, '/teachers': 403}),
     ('student', {'/': 200, '/student/attendance': 200, '/account': 200, '/students': 403,
                  '/generate_qr': 403, '/reports': 403, '/subjects': 403}),
 ])
@@ -42,27 +42,27 @@ def test_page_access_by_role(data, client_for, who, pages):
 
 def test_unknown_role_fails_closed(data, client_for):
     client = client_for(data.hod)
-    account = Admin.query.filter_by(username=data.hod).one()
+    account = User.query.filter_by(username=data.hod).one()
     account.role = 'superuser'
     db.session.commit()
-    assert client.get('/add_admin').status_code == 403
+    assert client.get('/accounts').status_code == 403
     assert client.get('/students').status_code == 403
 
 
 def test_student_accounts_cannot_be_created_or_deleted_from_accounts(data, client_for):
     client = client_for(data.principal)
-    response = post(client, '/add_admin', {
+    response = post(client, '/accounts', {
         'username': 'blocked@gmail.com', 'role': 'student',
         'password': 'Bright7Lamp', 'confirm_password': 'Bright7Lamp',
     }, follow_redirects=True)
     assert 'Invalid role selected' in response.get_data(as_text=True)
 
-    student_account = Admin.query.filter_by(username=data.student).one()
+    student_account = User.query.filter_by(username=data.student).one()
     assert post(client, f'/delete_admin/{student_account.id}').status_code == 403
 
 
 def test_hod_only_offers_teacher_accounts(data, client_for):
-    html = client_for(data.hod).get('/add_admin').get_data(as_text=True)
+    html = client_for(data.hod).get('/accounts').get_data(as_text=True)
     assert '<option value="teacher"' in html
     assert '<option value="hod"' not in html
     assert '<option value="student"' not in html
@@ -70,45 +70,45 @@ def test_hod_only_offers_teacher_accounts(data, client_for):
 
 def test_principal_account_rules(data, client_for):
     client = client_for(data.principal)
-    response = post(client, '/add_admin', {
-        'username': 'second.principal@gmail.com', 'role': 'super_admin',
+    response = post(client, '/accounts', {
+        'username': 'second.principal@gmail.com', 'role': 'principal',
         'password': 'Bright7Lamp', 'confirm_password': 'Bright7Lamp',
     }, follow_redirects=True)
     assert "Principal account 'second.principal@gmail.com' added" in html.unescape(response.get_data(as_text=True))
 
-    me = Admin.query.filter_by(username=data.principal).one()
+    me = User.query.filter_by(username=data.principal).one()
     assert post(client, f'/delete_admin/{me.id}').status_code == 403
 
-    extra = Admin.query.filter_by(username='second.principal@gmail.com').one()
+    extra = User.query.filter_by(username='second.principal@gmail.com').one()
     assert post(client, f'/delete_admin/{extra.id}').status_code == 302
-    assert db.session.get(Admin, extra.id) is None
+    assert db.session.get(User, extra.id) is None
 
 
 def test_creating_teacher_account_creates_linked_profile(data, client_for):
     client = client_for(data.principal)
-    response = post(client, '/add_admin', {
+    response = post(client, '/accounts', {
         'username': 'new.teacher@gmail.com', 'role': 'teacher', 'teacher_name': 'New Teacher',
         'department_id': data.mca_id, 'password': 'Bright7Lamp', 'confirm_password': 'Bright7Lamp',
     }, follow_redirects=True)
     assert 'Teacher account' in response.get_data(as_text=True)
     profile = Teacher.query.filter_by(email='new.teacher@gmail.com').one()
-    account = Admin.query.filter_by(username='new.teacher@gmail.com').one()
+    account = User.query.filter_by(username='new.teacher@gmail.com').one()
     assert account.teacher_id == profile.id
     assert account.must_change_password
 
 
 def test_account_creation_enforces_password_policy(data, client_for):
     client = client_for(data.principal)
-    response = post(client, '/add_admin', {
-        'username': 'weak@gmail.com', 'role': 'super_admin',
+    response = post(client, '/accounts', {
+        'username': 'weak@gmail.com', 'role': 'principal',
         'password': 'abcdefgh', 'confirm_password': 'abcdefgh',
     }, follow_redirects=True)
     assert 'at least one letter and one number' in response.get_data(as_text=True)
-    assert not Admin.query.filter_by(username='weak@gmail.com').first()
+    assert not User.query.filter_by(username='weak@gmail.com').first()
 
 
 def test_hod_cannot_edit_principal(data, client_for):
-    principal = Admin.query.filter_by(username=data.principal).one()
+    principal = User.query.filter_by(username=data.principal).one()
     response = post(client_for(data.hod), f'/edit_admin/{principal.id}', {'username': 'x@gmail.com'})
     assert response.status_code == 403
 
@@ -127,7 +127,7 @@ def test_teacher_import_is_scoped_to_own_department(data, client_for):
     assert 'Imported 1 student profile' in response.get_data(as_text=True)
     student = Student.query.filter_by(email='smoke@example.com').one()
     assert student.department_id == data.mca_id
-    assert Admin.query.filter_by(username='smoke@example.com', role='student').one().must_change_password
+    assert User.query.filter_by(username='smoke@example.com', role='student').one().must_change_password
 
 
 def test_students_list_is_paginated_and_filtered(app, data, client_for):
@@ -152,14 +152,14 @@ def test_hod_cannot_see_other_department_students(data, client_for):
 def test_without_staff_domains_no_staff_account_can_be_created(app, data, client_for):
     app.config['ALLOWED_STAFF_DOMAINS'] = []
     client = client_for(data.principal)
-    page = client.get('/add_admin').get_data(as_text=True)
+    page = client.get('/accounts').get_data(as_text=True)
     assert 'cannot be created until the server administrator sets' in page
-    response = post(client, '/add_admin', {
+    response = post(client, '/accounts', {
         'username': 'new.teacher@rcciit.org.in', 'role': 'teacher', 'teacher_name': 'New Teacher',
         'department_id': data.mca_id, 'password': 'Passw0rd!x', 'confirm_password': 'Passw0rd!x',
     }, follow_redirects=True)
     assert 'must set ALLOWED_STAFF_DOMAINS' in response.get_data(as_text=True)
-    assert not Admin.query.filter_by(username='new.teacher@rcciit.org.in').first()
+    assert not User.query.filter_by(username='new.teacher@rcciit.org.in').first()
 
 
 def test_staff_domain_setting_has_no_built_in_default(monkeypatch):
@@ -196,7 +196,7 @@ def test_teacher_account_without_a_profile_sees_nothing(app, data, client_for):
     special = Subject(name='__SPECIAL_CLASS__', department_id=data.other_id, semester_id=data.other_sem_id)
     db.session.add(special)
     db.session.flush()
-    now = ist_now()
+    now = utc_now()
     orphan = ClassSession(subject_id=special.id, teacher_id=None, special_title='Hidden Workshop', token='orphan',
                           created_at=now, expires_at=now, is_active=True)
     db.session.add(orphan)
@@ -223,9 +223,9 @@ def test_hod_without_a_department_manages_no_accounts(app, data, client_for):
     db.session.commit()
     client = client_for('lost-hod@rcciit.org.in')
 
-    page = client.get('/add_admin').get_data(as_text=True)
+    page = client.get('/accounts').get_data(as_text=True)
     assert data.principal not in page and 'loose-teacher@rcciit.org.in' not in page
-    loose = Admin.query.filter_by(username='loose-teacher@rcciit.org.in').one()
+    loose = User.query.filter_by(username='loose-teacher@rcciit.org.in').one()
     assert post(client, f'/toggle_admin_status/{loose.id}').status_code == 403
     assert post(client, f'/reset_admin_password/{loose.id}').status_code == 403
     assert client.get('/').status_code == 200

@@ -4,7 +4,7 @@ import io
 import openpyxl
 
 from attendqr.extensions import db
-from attendqr.models import ActivityLog, Admin, Attendance, Student
+from attendqr.models import ActivityLog, Attendance, Student, User
 from attendqr.services.reports import build_student_attendance_summary
 from conftest import add_session, post
 
@@ -20,9 +20,9 @@ def test_teacher_marks_student_present_with_reason(data, client_for):
     assert response.headers['Location'].endswith(f'/generate_qr?session_id={class_session.id}#qr-attendance')
 
     entry = Attendance.query.filter_by(session_id=class_session.id, student_id=data.student_id).one()
-    teacher_account = Admin.query.filter_by(username=data.teacher).one()
+    teacher_account = User.query.filter_by(username=data.teacher).one()
     assert entry.source == 'manual' and entry.is_manual
-    assert entry.marked_by_admin_id == teacher_account.id
+    assert entry.marked_by_user_id == teacher_account.id
     assert entry.note == 'Phone battery died'
 
     log = ActivityLog.query.filter_by(action='attendance_marked_manually').one()
@@ -133,11 +133,11 @@ def test_student_sees_manual_entries_marked_as_such(data, client_for):
 def test_deleting_staff_account_keeps_their_manual_entries(data, client_for):
     class_session = add_session(data)
     mark(client_for(data.hod), class_session, data.student_id)
-    hod = Admin.query.filter_by(username=data.hod).one()
+    hod = User.query.filter_by(username=data.hod).one()
     assert post(client_for(data.principal), f'/delete_admin/{hod.id}').status_code == 302
 
     db.session.expire_all()
     entry = Attendance.query.one()
-    assert entry.source == 'manual' and entry.marked_by_admin_id is None
+    assert entry.source == 'manual' and entry.marked_by_user_id is None
     page = client_for(data.teacher).get(f'/generate_qr?session_id={class_session.id}').get_data(as_text=True)
     assert 'Deleted account' in page

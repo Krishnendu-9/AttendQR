@@ -7,7 +7,7 @@ import pytest
 
 from attendqr import create_app
 from attendqr.extensions import db
-from attendqr.models import Admin
+from attendqr.models import User
 from conftest import login, post
 
 EMAIL = 'principal@example.com'
@@ -58,7 +58,7 @@ def test_unset_or_placeholder_password_is_replaced_by_a_generated_one(run_app, i
     assert can_log_in(app, password)
     assert not can_log_in(app, 'ChangeMe123!')
     with app.app_context():
-        assert Admin.query.filter_by(username=EMAIL).one().must_change_password
+        assert User.query.filter_by(username=EMAIL).one().must_change_password
 
     # The log says where the password is, never what it is.
     assert str(initial_password_file) in caplog.text
@@ -104,7 +104,7 @@ def test_stale_file_is_deleted_at_startup(run_app, initial_password_file):
 
     app = run_app()
     with app.app_context():
-        principal = Admin.query.filter_by(username=EMAIL).one()
+        principal = User.query.filter_by(username=EMAIL).one()
         principal.password = generate_password_hash(NEW_PASSWORD)
         principal.must_change_password = False
         db.session.commit()
@@ -127,7 +127,7 @@ def test_a_process_that_loses_the_first_start_race_keeps_the_winners_password(
         # The losing worker checked for accounts before the winner committed.
         monkeypatch.setattr(schema, '_has_accounts', lambda: False)
         schema.ensure_default_principal()
-        assert Admin.query.filter_by(role='super_admin').count() == 1
+        assert User.query.filter_by(role='principal').count() == 1
 
     assert initial_password_file.read_text().strip() == winning_password
     assert can_log_in(app, winning_password)

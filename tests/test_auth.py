@@ -6,7 +6,7 @@ from flask import Flask
 from werkzeug.security import check_password_hash
 
 from attendqr.extensions import db
-from attendqr.models import ActivityLog, Admin
+from attendqr.models import ActivityLog, User
 from attendqr.security import configure_secret_key, is_safe_redirect_target, password_policy_error
 from conftest import PASSWORD, login, post
 
@@ -45,7 +45,7 @@ def test_login_errors_do_not_reveal_whether_account_exists(app, data):
 
 
 def test_inactive_account_is_only_revealed_with_correct_password(app, data):
-    account = Admin.query.filter_by(username=data.teacher).one()
+    account = User.query.filter_by(username=data.teacher).one()
     account.is_active = False
     db.session.commit()
     client = app.test_client()
@@ -70,10 +70,10 @@ def test_password_reset_by_admin_unlocks_account(app, data, client_for):
     for _ in range(app.config['LOGIN_IP_FAILURE_LIMIT']):
         login(app.test_client(), data.teacher, 'wrong-pass1', expect_success=False)
     hod = client_for(data.hod)
-    assert 'Locked' in hod.get('/add_admin').get_data(as_text=True)
-    target = Admin.query.filter_by(username=data.teacher).one()
+    assert 'Locked' in hod.get('/accounts').get_data(as_text=True)
+    target = User.query.filter_by(username=data.teacher).one()
     post(hod, f'/reset_admin_password/{target.id}')
-    assert 'Locked' not in hod.get('/add_admin').get_data(as_text=True)
+    assert 'Locked' not in hod.get('/accounts').get_data(as_text=True)
 
 
 def test_logout_requires_post(data, client_for):
@@ -131,7 +131,7 @@ def test_wrong_current_password_is_throttled(app, data, client_for):
     # Paused now, even with the right password, and the pause is logged.
     page = change_password(client, PASSWORD).get_data(as_text=True)
     assert 'Too many failed attempts' in page
-    account = Admin.query.filter_by(username=data.teacher).one()
+    account = User.query.filter_by(username=data.teacher).one()
     assert account.must_change_password is False
     db.session.refresh(account)
     assert check_password_hash(account.password, PASSWORD)
@@ -175,20 +175,20 @@ def test_password_may_not_equal_roll_number_or_email(app):
 def test_admin_reset_and_deactivation_end_existing_sessions(data, client_for):
     teacher = client_for(data.teacher)
     hod = client_for(data.hod)
-    account = Admin.query.filter_by(username=data.teacher).one()
+    account = User.query.filter_by(username=data.teacher).one()
 
     post(hod, f'/reset_admin_password/{account.id}')
     assert teacher.get('/generate_qr').status_code == 302
-    assert hod.get('/add_admin').status_code == 200  # the HOD's own session is unaffected
+    assert hod.get('/accounts').status_code == 200  # the HOD's own session is unaffected
 
     teacher = client_for(data.other_teacher)
-    other = Admin.query.filter_by(username=data.other_teacher).one()
+    other = User.query.filter_by(username=data.other_teacher).one()
     post(client_for(data.principal), f'/toggle_admin_status/{other.id}')
     assert teacher.get('/generate_qr').status_code == 302
 
 
 def test_must_change_password_is_enforced(app, data):
-    account = Admin.query.filter_by(username=data.teacher).one()
+    account = User.query.filter_by(username=data.teacher).one()
     account.must_change_password = True
     db.session.commit()
 
@@ -209,7 +209,7 @@ def test_must_change_password_is_enforced(app, data):
 
 
 def test_default_principal_must_change_password(app):
-    principal = Admin.query.filter_by(username='principal@example.com').one()
+    principal = User.query.filter_by(username='principal@example.com').one()
     assert principal.must_change_password
 
 
@@ -410,7 +410,7 @@ def test_sign_ins_are_audited(app, data, client_for):
     client_for(data.student)
 
     actions = [(log.action, log.target_id) for log in ActivityLog.query.order_by(ActivityLog.id)]
-    teacher_id = Admin.query.filter_by(username=data.teacher).one().id
+    teacher_id = User.query.filter_by(username=data.teacher).one().id
     assert ('login_failed', teacher_id) in actions
     assert ('login_succeeded', teacher_id) in actions
     # Unknown usernames and student sign-ins are not recorded.
@@ -434,7 +434,7 @@ def test_lockout_is_audited_and_shown_to_the_account_owner(app, data, client_for
 
 def test_error_pages_are_friendly_and_keep_their_status(app, data, client_for):
     teacher = client_for(data.teacher)
-    page = teacher.get('/add_admin')
+    page = teacher.get('/accounts')
     assert page.status_code == 403 and 'Access Denied' in page.get_data(as_text=True)
     missing = teacher.get('/no-such-page')
     assert missing.status_code == 404 and 'Page Not Found' in missing.get_data(as_text=True)

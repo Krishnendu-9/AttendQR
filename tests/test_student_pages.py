@@ -70,7 +70,7 @@ def test_actions_return_to_the_student_page_or_the_list(data, client_for):
     assert response.headers['Location'] == page
     response = post(client, f'/students/reset-device/{data.student_id}', {'return_to': '/students?q=rahul&page=2'})
     assert response.headers['Location'] == '/students?q=rahul&page=2'
-    for unsafe in ('/add_admin', '//evil.example/students', f'/students/{data.student_id}/edit', 'https://evil.example/'):
+    for unsafe in ('/accounts', '//evil.example/students', f'/students/{data.student_id}/edit', 'https://evil.example/'):
         response = post(client, f'/students/reset-device/{data.student_id}', {'return_to': unsafe})
         assert response.headers['Location'] == '/students', unsafe
 

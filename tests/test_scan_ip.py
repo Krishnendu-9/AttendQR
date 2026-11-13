@@ -8,7 +8,7 @@ from attendqr.extensions import db
 from attendqr.models import Attendance
 from attendqr.services.qr import make_qr_token
 from attendqr.services.retention import purge_expired_scan_ips
-from attendqr.utils import ist_now
+from attendqr.utils import utc_now
 from conftest import add_session, login, post
 
 SCAN_IP = '127.0.0.5'
@@ -77,7 +77,7 @@ def test_zero_retention_records_nothing(app, data):
 def _entry_with_ip(data, days_ago, ip):
     class_session = add_session(data, days_ago=days_ago)
     entry = Attendance(student_id=data.student_id, session_id=class_session.id,
-                       timestamp=ist_now() - timedelta(days=days_ago), scan_ip=ip)
+                       timestamp=utc_now() - timedelta(days=days_ago), scan_ip=ip)
     db.session.add(entry)
     db.session.commit()
     return entry.id

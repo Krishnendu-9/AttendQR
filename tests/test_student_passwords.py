@@ -2,7 +2,7 @@
 import io
 import re
 
-from attendqr.models import Admin
+from attendqr.models import User
 from attendqr.security import TEMPORARY_PASSWORD_ALPHABET, generate_temporary_password
 from conftest import login, post
 
@@ -34,7 +34,7 @@ def test_new_student_logs_in_with_the_one_time_password_not_the_roll_number(app,
     phone = app.test_client()
     login(phone, 'new.student@example.com', password)
     assert phone.get('/').headers['Location'].startswith('/account')
-    assert Admin.query.filter_by(username='new.student@example.com').one().must_change_password
+    assert User.query.filter_by(username='new.student@example.com').one().must_change_password
 
 
 def test_reset_gives_a_new_one_time_password(app, data, client_for):
@@ -44,7 +44,7 @@ def test_reset_gives_a_new_one_time_password(app, data, client_for):
 
     assert login(app.test_client(), data.student, 'MCA001', expect_success=False).status_code == 200
     login(app.test_client(), data.student, password)
-    assert Admin.query.filter_by(username=data.student).one().must_change_password
+    assert User.query.filter_by(username=data.student).one().must_change_password
 
 
 def test_import_shows_each_one_time_password_once(app, data, client_for):
@@ -88,4 +88,4 @@ def test_oversized_import_is_refused_before_adding_anyone(app, data, client_for)
         'student_file': (io.BytesIO(("name,roll_no,email,semester\n" + rows).encode()), 'students.csv'),
     }, content_type='multipart/form-data', follow_redirects=True)
     assert 'more than 3 student rows' in response.get_data(as_text=True)
-    assert not Admin.query.filter(Admin.username.like('bulk%')).count()
+    assert not User.query.filter(User.username.like('bulk%')).count()
