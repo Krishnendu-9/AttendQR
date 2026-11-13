@@ -94,6 +94,10 @@ class Config:
     # After a valid scan, the student has this long to log in and confirm attendance.
     SCAN_GRANT_SECONDS = env_int('SCAN_GRANT_SECONDS', 300)
 
+    # The college's time zone (IANA name). Timestamps are stored in UTC and shown in this zone;
+    # report date filters and "today" use its calendar days.
+    TIMEZONE = os.environ.get('TIMEZONE', '').strip() or 'Asia/Kolkata'
+
     ATTENDANCE_TARGET = 80
     MIN_QR_DURATION = 1
     MAX_QR_DURATION = 180
@@ -114,6 +118,14 @@ class Config:
     LOGIN_IP_TOTAL_FAILURE_LIMIT = env_int('LOGIN_IP_TOTAL_FAILURE_LIMIT', 100)
     LOGIN_IP_TOTAL_WINDOW_MINUTES = 10
     LOGIN_IP_TOTAL_LOCK_MINUTES = 10
+
+    # Logs: 'text' (default) or 'json' (one object per line, for log collectors). Every line
+    # carries the request id. The access log records route patterns only, never IPs or tokens.
+    LOG_FORMAT = 'json' if os.environ.get('LOG_FORMAT', '').strip().lower() == 'json' else 'text'
+    ACCESS_LOG = env_bool('ACCESS_LOG', True)
+    # /metrics (Prometheus) is served only when this is set, to requests sending
+    # `Authorization: Bearer <METRICS_TOKEN>`. Use a long random value.
+    METRICS_TOKEN = os.environ.get('METRICS_TOKEN', '').strip()
 
     STUDENTS_PER_PAGE = 50
     SESSIONS_PER_PAGE = 50
