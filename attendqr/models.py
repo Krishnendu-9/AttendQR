@@ -29,6 +29,15 @@ class User(UserMixin, db.Model):
     must_change_password = db.Column(db.Boolean, nullable=False, default=False)
     # Part of the login session identifier; rotating it signs out every existing session.
     session_token = db.Column(db.String(64), nullable=False, default=new_session_token)
+    # Two-step sign-in (services/two_factor.py). The secret is set once the user has proved
+    # their authenticator works; until then it waits in totp_pending_secret.
+    totp_secret = db.Column(db.String(64), nullable=True)
+    totp_pending_secret = db.Column(db.String(64), nullable=True)
+    totp_enabled_at = db.Column(db.DateTime, nullable=True)
+    # The last 30-second step a code was accepted for: each code works once.
+    totp_last_step = db.Column(db.Integer, nullable=True)
+    # JSON list of SHA-256 hashes of the unused recovery codes.
+    recovery_codes = db.Column(db.Text, nullable=True)
 
     department = db.relationship('Department', foreign_keys=[department_id])
     teacher = db.relationship('Teacher', foreign_keys=[teacher_id])
@@ -88,6 +97,18 @@ class Semester(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
+    # Set once the semester's attendance is final (after exams): nothing in it can change until unlocked.
+    attendance_locked_at = db.Column(db.DateTime, nullable=True)
+    attendance_locked_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey('user_account.id', ondelete='SET NULL', name='fk_semester_locked_by_user'),
+        nullable=True,
+    )
+    locked_by = db.relationship('User', foreign_keys=[attendance_locked_by_user_id])
+
+    @property
+    def attendance_locked(self):
+        return self.attendance_locked_at is not None
     subjects = db.relationship('Subject', backref='semester', lazy=True)
     students = db.relationship('Student', backref='semester', lazy=True, foreign_keys='Student.semester_id')
 
@@ -210,6 +231,7 @@ class ActivityLog(db.Model):
     __table_args__ = (
         db.Index('ix_activity_log_created_at', 'created_at'),
         db.Index('ix_activity_log_actor_user_id', 'actor_user_id'),
+        db.Index('uq_activity_log_chain_seq', 'chain_seq', unique=True),
     )
     id = db.Column(db.Integer, primary_key=True)
     actor_user_id = db.Column(db.Integer, db.ForeignKey('user_account.id', ondelete='SET NULL'), nullable=True)
@@ -220,9 +242,23 @@ class ActivityLog(db.Model):
     target_id = db.Column(db.Integer, nullable=True)
     description = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
+    # Tamper evidence (services/audit.py): position in the chain and a keyed hash over this
+    # entry and the previous one. Empty until the entry is sealed, right after its request.
+    chain_seq = db.Column(db.Integer, nullable=True)
+    entry_hash = db.Column(db.String(64), nullable=True)
 
     actor = db.relationship('User', foreign_keys=[actor_user_id])
     department = db.relationship('Department', foreign_keys=[department_id])
+
+
+class AuditChain(db.Model):
+    """The one row that records the end of the activity log's hash chain.
+
+    Sealing locks this row first, so concurrent requests extend the chain one at a time.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    last_seq = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+    last_hash = db.Column(db.String(64), nullable=False, default='', server_default='')
 
 
 class LeaveRequest(db.Model):
@@ -266,3 +302,50 @@ class LeaveRequest(db.Model):
     @property
     def days(self):
         return (self.end_date - self.start_date).days + 1
+
+
+class SpotCheck(db.Model):
+    """A teacher checking that a randomly chosen student marked present is really in the room."""
+    PENDING = 'pending'
+    PRESENT = 'present'
+    ABSENT = 'absent'
+
+    __table_args__ = (
+        db.Index('uq_spot_check_session_student', 'session_id', 'student_id', unique=True),
+        db.Index('ix_spot_check_student_id', 'student_id'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('class_session.id', ondelete='CASCADE'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False)
+    result = db.Column(db.String(10), nullable=False, default=PENDING, server_default=PENDING)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+    checked_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey('user_account.id', ondelete='SET NULL', name='fk_spot_check_checked_by_user'),
+        nullable=True,
+    )
+    resolved_at = db.Column(db.DateTime, nullable=True)
+
+    session = db.relationship('ClassSession', backref=db.backref('spot_checks', cascade='all, delete-orphan'))
+    student = db.relationship('Student', backref=db.backref('spot_checks', cascade='all, delete-orphan'))
+    checked_by = db.relationship('User', foreign_keys=[checked_by_user_id])
+
+
+class Condonation(db.Model):
+    """An HOD or the Principal allowing a student in the condonation band to sit the exams anyway."""
+    __table_args__ = (
+        db.Index('uq_condonation_student_semester', 'student_id', 'semester_id', unique=True),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False)
+    semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
+    reason = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+    granted_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey('user_account.id', ondelete='SET NULL', name='fk_condonation_granted_by_user'),
+        nullable=True,
+    )
+
+    student = db.relationship('Student', backref=db.backref('condonations', cascade='all, delete-orphan'))
+    granted_by = db.relationship('User', foreign_keys=[granted_by_user_id])
