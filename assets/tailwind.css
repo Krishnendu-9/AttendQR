@@ -381,6 +381,39 @@
     display: none;
   }
 
+  /* Chart tooltips (static/js/charts.js) ------------------- */
+  .chart-tip {
+    position: absolute;
+    z-index: 20;
+    transform: translateX(-50%);
+    pointer-events: none;
+    min-width: 7rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background-color: var(--popover, var(--card));
+    box-shadow: 0 4px 12px rgb(15 23 42 / 0.12);
+    text-align: center;
+  }
+  .chart-tip-value {
+    color: var(--foreground);
+    font-weight: 600;
+    font-size: var(--text-body-md);
+  }
+  .chart-tip-label {
+    color: var(--muted-foreground);
+    font-size: var(--text-body-sm);
+    white-space: nowrap;
+  }
+  [data-tip]:focus-visible {
+    outline: 2px solid var(--ring, var(--primary));
+    outline-offset: 2px;
+  }
+  rect[data-tip].is-active {
+    fill: var(--foreground);
+    fill-opacity: 0.04;
+  }
+
   /* Form controls ------------------------------------------ */
   .input {
     display: block;
@@ -415,6 +448,12 @@
   }
   .input[aria-invalid="true"]:focus {
     box-shadow: var(--focus-ring-danger);
+  }
+  textarea.input {
+    height: auto;
+    min-height: 5rem;
+    padding: 0.5rem 0.75rem;
+    resize: vertical;
   }
   select.input {
     appearance: none;
