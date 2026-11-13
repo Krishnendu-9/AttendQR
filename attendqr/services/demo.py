@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 
 from flask import current_app
+from sqlalchemy.schema import sort_tables
 from werkzeug.security import generate_password_hash
 
 from ..access import SPECIAL_CLASS_SUBJECT_NAME
@@ -24,6 +25,7 @@ from ..models import (
     Department,
     LeaveRequest,
     Semester,
+    SpotCheck,
     Student,
     Subject,
     Teacher,
@@ -31,6 +33,7 @@ from ..models import (
 )
 from ..schema import discard_used_initial_password
 from ..utils import local_now, local_to_utc, normalize_email, utc_now
+from .audit import seal_pending
 
 DEFAULT_DEMO_PASSWORD = 'AttendQR@demo1'  # noqa: S105 - published on purpose; demo accounts only
 STAFF_DOMAIN = 'college.example'  # .example is reserved (RFC 2606), so no real address is ever used
@@ -110,9 +113,16 @@ def has_records():
     return User.query.count() > 1
 
 
+# Foreign keys that set themselves to NULL when their row is deleted, and would otherwise
+# make a cycle (user_account -> student -> semester -> user_account) that has no delete order.
+_NULLABLE_BACK_REFERENCES = {'fk_semester_locked_by_user'}
+
+
 def clear_all_data():
     """Delete every row of every table (the schema and migration history stay)."""
-    for table in reversed(db.metadata.sorted_tables):
+    tables = sort_tables(db.metadata.tables.values(),
+                         skip_fn=lambda fk: fk.constraint.name in _NULLABLE_BACK_REFERENCES)
+    for table in reversed(tables):
         db.session.execute(table.delete())
     db.session.flush()
 
@@ -194,12 +204,14 @@ def seed_demo(password=DEFAULT_DEMO_PASSWORD, weeks=6, seed=2026, reset=False):
             if dept_index == 0 and class_index == 0:
                 _add_special_and_void_sessions(rng, department, semester, subjects, students, today, totals)
                 totals['leave'] = _add_leave_requests(students, hod, today)
+                totals['spot checks'] = _add_integrity_story(rng, subjects, students, today)
 
     db.session.add(ActivityLog(
         actor_username='System', action='demo_data_loaded', created_at=utc_now(),
         description=f"Loaded demo data: {student_number} students and {totals['sessions']} sessions.",
     ))
     db.session.commit()
+    seal_pending()
     discard_used_initial_password()
 
     summary.counts = {
@@ -209,6 +221,7 @@ def seed_demo(password=DEFAULT_DEMO_PASSWORD, weeks=6, seed=2026, reset=False):
         'attendance entries': totals['attendance'],
         'manual corrections': totals['manual'],
         'leave requests': totals.get('leave', 0),
+        'spot checks': totals.get('spot checks', 0),
     }
     return summary
 
@@ -262,7 +275,7 @@ def _attendance_habit(rng):
         return rng.uniform(0.86, 0.97)
     if roll < 0.88:
         return rng.uniform(0.74, 0.84)
-    return rng.uniform(0.50, 0.68)
+    return rng.uniform(0.55, 0.74)  # detained, or in the condonation band
 
 
 def _class_days(first_day, today):
@@ -319,6 +332,8 @@ def _add_session(rng, subject, teacher, account, start, students, totals,
             db.session.add(Attendance(
                 student_id=student.id, session_id=session.id, timestamp=marked_at,
                 source=Attendance.SOURCE_SCAN, scan_grant=secrets.token_hex(16),
+                # Addresses are kept for SCAN_IP_RETENTION_DAYS (30), so only recent scans have one.
+                scan_ip=f'10.20.{student.department_id}.{10 + student.id}' if start >= utc_now() - RECENT else None,
             ))
         totals['attendance'] += 1
     return session
@@ -345,6 +360,54 @@ def _add_leave_requests(students, hod, today):
         leave.created_at = utc_now() - timedelta(days=22)
     db.session.add_all(requests)
     return len(requests)
+
+
+RECENT = timedelta(days=28)
+
+
+def _add_integrity_story(rng, subjects, students, today):
+    """Something for the integrity report to find, and the spot checks that go with it.
+
+    Two students always scan seconds apart from one address (one phone marking for both),
+    and a spot check catches one of them; other recent checks pass. Returns the number of checks.
+    """
+    regular = sorted(students, key=lambda item: -item[1])
+    first, second = regular[2][0], regular[3][0]
+    teacher_account = subjects[0][2]
+    sessions = (
+        ClassSession.query.filter(ClassSession.subject_id.in_([s.id for s, _, _ in subjects]),
+                                  ClassSession.created_at >= utc_now() - RECENT)
+        .order_by(ClassSession.created_at).all()
+    )
+    shared_address = f'10.20.{first.department_id}.{10 + first.id}'
+    both = []
+    for session in sessions:
+        entries = {a.student_id: a for a in Attendance.query.filter(
+            Attendance.session_id == session.id, Attendance.student_id.in_([first.id, second.id]),
+            Attendance.source == Attendance.SOURCE_SCAN)}
+        if len(entries) == 2:
+            entries[second.id].timestamp = entries[first.id].timestamp + timedelta(seconds=rng.randint(4, 12))
+            entries[second.id].scan_ip = entries[first.id].scan_ip = shared_address
+            both.append(session)
+
+    checks = 0
+    for session in sessions[-6:]:
+        present = [a.student_id for a in Attendance.query.filter_by(session_id=session.id, source=Attendance.SOURCE_SCAN)
+                   if a.student_id not in (first.id, second.id)]
+        for student_id in rng.sample(present, min(3, len(present))):
+            db.session.add(SpotCheck(session_id=session.id, student_id=student_id, result=SpotCheck.PRESENT,
+                                     checked_by_user_id=teacher_account.id, created_at=session.expires_at,
+                                     resolved_at=session.expires_at))
+            checks += 1
+    if both:
+        caught = both[-1]
+        db.session.add(SpotCheck(session_id=caught.id, student_id=second.id, result=SpotCheck.ABSENT,
+                                 checked_by_user_id=teacher_account.id, created_at=caught.expires_at,
+                                 resolved_at=caught.expires_at))
+        Attendance.query.filter_by(session_id=caught.id, student_id=second.id).delete()
+        checks += 1
+    db.session.flush()
+    return checks
 
 
 def _add_special_and_void_sessions(rng, department, semester, subjects, students, today, totals):
