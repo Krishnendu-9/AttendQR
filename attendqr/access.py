@@ -7,16 +7,16 @@ from flask_login import current_user
 from sqlalchemy import and_, false, or_
 
 from .extensions import db, login_manager
-from .models import ActivityLog, Admin, ClassSession, Department, Semester, Student, Subject, Teacher
-from .utils import infer_department_branch, ist_now, normalize_email, normalize_paper_code
+from .models import ActivityLog, ClassSession, Department, Semester, Student, Subject, Teacher, User
+from .utils import infer_department_branch, normalize_email, normalize_paper_code, utc_now
 
 ROLE_LABELS = {
-    'super_admin': 'Principal',
+    'principal': 'Principal',
     'hod': 'HOD',
     'teacher': 'Teacher',
     'student': 'Student',
 }
-STAFF_ROLES = ('super_admin', 'hod', 'teacher')
+STAFF_ROLES = ('principal', 'hod', 'teacher')
 SPECIAL_CLASS_SUBJECT_NAME = '__SPECIAL_CLASS__'
 
 
@@ -32,8 +32,8 @@ def user_role():
     return role if role in ROLE_LABELS else None
 
 
-def is_super_admin():
-    return user_role() == 'super_admin'
+def is_principal():
+    return user_role() == 'principal'
 
 
 def role_required(*roles):
@@ -125,14 +125,14 @@ def is_own_teacher(teacher_id):
 def can_access_department(department_id):
     if department_id is None:
         return False
-    if is_super_admin():
+    if is_principal():
         return True
     dept_id = current_department_id()
     return dept_id is not None and int(department_id) == int(dept_id)
 
 
 def can_access_student(student):
-    if is_super_admin():
+    if is_principal():
         return True
     if user_role() == 'student':
         return current_user.student_id == student.id
@@ -140,7 +140,7 @@ def can_access_student(student):
 
 
 def can_access_teacher(teacher):
-    if is_super_admin():
+    if is_principal():
         return True
     if user_role() == 'teacher':
         return is_own_teacher(teacher.id)
@@ -163,7 +163,7 @@ def can_access_session(class_session):
             can_access_department(class_session.subject.department_id)
             and is_own_teacher(class_session.teacher_id)
         )
-    return user_role() in ('super_admin', 'hod') and can_access_subject(class_session.subject)
+    return user_role() in ('principal', 'hod') and can_access_subject(class_session.subject)
 
 
 def department_filter(column):
@@ -173,15 +173,15 @@ def department_filter(column):
     return column == dept_id if dept_id else false()
 
 
-def is_teacher_in_own_department(admin):
-    """For HODs: whether `admin` is a teacher account in the HOD's department."""
+def is_teacher_in_own_department(account):
+    """For HODs: whether `account` is a teacher account in the HOD's department."""
     dept_id = current_department_id()
-    return admin.role == 'teacher' and dept_id is not None and admin.department_id == dept_id
+    return account.role == 'teacher' and dept_id is not None and account.department_id == dept_id
 
 
 def visible_departments_query():
     query = Department.query
-    if not is_super_admin():
+    if not is_principal():
         query = query.filter(department_filter(Department.id))
     return query
 
@@ -192,7 +192,7 @@ def ordered_departments_query():
 
 def visible_semesters_query():
     query = Semester.query
-    if not is_super_admin():
+    if not is_principal():
         query = query.filter(department_filter(Semester.department_id))
     return query
 
@@ -201,7 +201,7 @@ def visible_subjects_query():
     query = Subject.query.filter(Subject.name != SPECIAL_CLASS_SUBJECT_NAME)
     if user_role() == 'teacher':
         query = query.filter(own_teacher_filter(Subject.teacher_id))
-    elif not is_super_admin():
+    elif not is_principal():
         query = query.filter(department_filter(Subject.department_id))
     return query
 
@@ -210,7 +210,7 @@ def visible_teachers_query():
     query = Teacher.query
     if user_role() == 'teacher':
         query = query.filter(own_teacher_filter(Teacher.id))
-    elif not is_super_admin():
+    elif not is_principal():
         query = query.filter(department_filter(Teacher.department_id))
     return query
 
@@ -219,7 +219,7 @@ def visible_students_query():
     query = Student.query
     if user_role() == 'student':
         query = query.filter(Student.id == current_user.student_id)
-    elif not is_super_admin():
+    elif not is_principal():
         query = query.filter(department_filter(Student.department_id))
     return query
 
@@ -228,74 +228,74 @@ def visible_sessions_query():
     query = ClassSession.query.join(Subject)
     if user_role() == 'teacher':
         query = query.filter(own_teacher_filter(ClassSession.teacher_id))
-    elif not is_super_admin():
+    elif not is_principal():
         query = query.filter(department_filter(Subject.department_id))
     return query
 
 
 def visible_activity_logs_query():
-    query = ActivityLog.query.outerjoin(Admin, ActivityLog.actor_admin_id == Admin.id)
-    if is_super_admin():
+    query = ActivityLog.query.outerjoin(User, ActivityLog.actor_user_id == User.id)
+    if is_principal():
         return query
     if user_role() == 'hod':
         return query.filter(
             or_(
-                ActivityLog.actor_admin_id == current_user.id,
-                and_(department_filter(ActivityLog.department_id), Admin.role == 'teacher'),
+                ActivityLog.actor_user_id == current_user.id,
+                and_(department_filter(ActivityLog.department_id), User.role == 'teacher'),
             )
         )
-    return query.filter(ActivityLog.actor_admin_id == current_user.id)
+    return query.filter(ActivityLog.actor_user_id == current_user.id)
 
 
 def own_security_activity_logs_query():
     return ActivityLog.query.filter(
         ActivityLog.action.in_(OWN_SECURITY_ACTIONS),
         or_(
-            ActivityLog.actor_admin_id == current_user.id,
-            and_(ActivityLog.target_type == 'admin', ActivityLog.target_id == current_user.id),
+            ActivityLog.actor_user_id == current_user.id,
+            and_(ActivityLog.target_type == 'user', ActivityLog.target_id == current_user.id),
         ),
     )
 
 
 # ── Account management rules ─────────────────────────────────
 
-def has_active_hod(department_id, exclude_admin_id=None):
-    query = Admin.query.filter_by(role='hod', department_id=department_id, is_active=True)
-    if exclude_admin_id:
-        query = query.filter(Admin.id != exclude_admin_id)
+def has_active_hod(department_id, exclude_user_id=None):
+    query = User.query.filter_by(role='hod', department_id=department_id, is_active=True)
+    if exclude_user_id:
+        query = query.filter(User.id != exclude_user_id)
     return db.session.query(query.exists()).scalar()
 
 
-def can_manage_account(admin):
+def can_manage_account(account):
     if user_role() == 'hod':
-        return is_teacher_in_own_department(admin)
-    if not is_super_admin():
+        return is_teacher_in_own_department(account)
+    if not is_principal():
         return False
-    if admin.role == 'student' or admin.id == current_user.id:
+    if account.role == 'student' or account.id == current_user.id:
         return False
     if (
-        admin.role == 'super_admin'
-        and admin.is_active
-        and Admin.query.filter_by(role='super_admin', is_active=True).count() <= 1
+        account.role == 'principal'
+        and account.is_active
+        and User.query.filter_by(role='principal', is_active=True).count() <= 1
     ):
         return False
     return True
 
 
-def can_edit_account(admin):
-    if admin.role == 'student':
+def can_edit_account(account):
+    if account.role == 'student':
         return False
     if user_role() == 'hod':
-        return is_teacher_in_own_department(admin)
-    return is_super_admin()
+        return is_teacher_in_own_department(account)
+    return is_principal()
 
 
-def can_reset_staff_account(admin):
+def can_reset_staff_account(account):
     if user_role() == 'hod':
-        return is_teacher_in_own_department(admin)
-    if not is_super_admin():
+        return is_teacher_in_own_department(account)
+    if not is_principal():
         return False
-    return admin.role in STAFF_ROLES and admin.id != current_user.id
+    return account.role in STAFF_ROLES and account.id != current_user.id
 
 
 # ── Display helpers ──────────────────────────────────────────
@@ -331,41 +331,41 @@ def session_display_name(class_session):
     return subject_display_name(class_session.subject) if class_session.subject else 'Special Class'
 
 
-def build_account_profile(admin):
-    role = admin.role
+def build_account_profile(account):
+    role = account.role
     profile = {
-        'display_name': admin.username,
-        'username': admin.username,
+        'display_name': account.username,
+        'username': account.username,
         'role_label': role_label(role),
-        'email': admin.username if '@' in (admin.username or '') else None,
+        'email': account.username if '@' in (account.username or '') else None,
         'scope_label': 'System Access',
-        'scope_value': 'All departments' if role == 'super_admin' else 'Not assigned',
+        'scope_value': 'All departments' if role == 'principal' else 'Not assigned',
         'details': [],
     }
 
-    if role == 'student' and admin.student:
+    if role == 'student' and account.student:
         profile.update({
-            'display_name': admin.student.name,
-            'email': admin.student.email,
+            'display_name': account.student.name,
+            'email': account.student.email,
             'scope_label': 'Department',
-            'scope_value': admin.student.department.display_name,
+            'scope_value': account.student.department.display_name,
         })
         profile['details'] = [
-            ('Roll Number', admin.student.roll_no),
-            ('Semester', admin.student.semester.name),
+            ('Roll Number', account.student.roll_no),
+            ('Semester', account.student.semester.name),
         ]
-    elif role == 'teacher' and admin.teacher:
+    elif role == 'teacher' and account.teacher:
         profile.update({
-            'display_name': admin.teacher.name,
-            'email': admin.teacher.email,
+            'display_name': account.teacher.name,
+            'email': account.teacher.email,
             'scope_label': 'Department',
-            'scope_value': admin.teacher.department.display_name,
+            'scope_value': account.teacher.department.display_name,
         })
-        profile['details'] = [('Teacher Profile', admin.teacher.name)]
+        profile['details'] = [('Teacher Profile', account.teacher.name)]
     elif role == 'hod':
         profile.update({
             'scope_label': 'Department',
-            'scope_value': admin.department.display_name if admin.department else 'Not assigned',
+            'scope_value': account.department.display_name if account.department else 'Not assigned',
         })
     return profile
 
@@ -380,14 +380,14 @@ SIGN_IN_ATTEMPT_ACTOR = 'Sign-in attempt'
 def log_activity(action, description, target_type=None, target_id=None, department_id=None, anonymous_actor='System'):
     authenticated = current_user.is_authenticated
     db.session.add(ActivityLog(
-        actor_admin_id=current_user.id if authenticated else None,
+        actor_user_id=current_user.id if authenticated else None,
         actor_username=current_user.username if authenticated else anonymous_actor,
         department_id=department_id,
         action=action,
         target_type=target_type,
         target_id=target_id,
         description=description[:255],
-        created_at=ist_now(),
+        created_at=utc_now(),
     ))
 
 

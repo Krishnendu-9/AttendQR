@@ -6,9 +6,9 @@ import itertools
 import openpyxl
 from flask import current_app
 
-from ..access import can_access_department, current_department_id, is_super_admin, is_valid_email
+from ..access import can_access_department, current_department_id, is_principal, is_valid_email
 from ..extensions import db
-from ..models import Admin, Department, Semester, Student
+from ..models import Department, Semester, Student, User
 from ..security import generate_temporary_password, hash_temporary_password
 from ..utils import normalize_course_name, normalize_email, normalize_header, normalize_roll_no, normalize_text
 
@@ -21,18 +21,18 @@ def ensure_student_account(student):
     """
     if not student.email:
         return None
-    existing = Admin.query.filter_by(student_id=student.id).first()
+    existing = User.query.filter_by(student_id=student.id).first()
     if existing:
         existing.role = 'student'
         existing.username = student.email
         existing.department_id = student.department_id
         return None
-    if Admin.query.filter_by(username=student.email).first():
+    if User.query.filter_by(username=student.email).first():
         return None
     # Random rather than the roll number: roll numbers and student emails are easy
     # to guess, so anyone could otherwise claim an account before its owner.
     temporary_password = generate_temporary_password()
-    db.session.add(Admin(
+    db.session.add(User(
         username=student.email,
         password=hash_temporary_password(temporary_password),
         role='student',
@@ -59,7 +59,7 @@ def department_labels(department):
 def import_template_rows():
     headers = ['name', 'roll_no', 'email', 'semester']
     sample = ['Rahul Das', 'MCA2026001', 'mca2026001@rcciit.org.in', 'Semester 1']
-    if is_super_admin():
+    if is_principal():
         headers.append('department')
         department = Department.query.order_by(Department.branch, Department.name).first()
         # Use a label the importer actually resolves, taken from real data when possible.
@@ -90,7 +90,8 @@ def parse_student_import(file_storage):
     if filename.endswith('.xlsx'):
         workbook = openpyxl.load_workbook(file_storage.stream, read_only=True, data_only=True)
         try:
-            rows = workbook.active.iter_rows(values_only=True)
+            sheet = workbook.active or workbook.worksheets[0]
+            rows = sheet.iter_rows(values_only=True)
             header_row = next(rows, None)
             if header_row is None:
                 return []
@@ -118,12 +119,12 @@ def row_value(row, *keys):
 
 class _DepartmentResolver:
     def __init__(self):
-        self.departments = Department.query.all() if is_super_admin() else []
-        self.own = db.session.get(Department, current_department_id()) if not is_super_admin() else None
+        self.departments = Department.query.all() if is_principal() else []
+        self.own = db.session.get(Department, current_department_id()) if not is_principal() else None
 
     def resolve(self, row):
         """Return (department, error)."""
-        if not is_super_admin():
+        if not is_principal():
             return self.own, None
 
         dept_id = row_value(row, 'department_id', 'dept_id')
@@ -208,7 +209,7 @@ def import_students_from_rows(rows):
         if Student.query.filter(db.func.lower(Student.email) == email).first():
             errors.append(f"Row {index}: email {email} already exists")
             continue
-        if Admin.query.filter(db.func.lower(Admin.username) == email).first():
+        if User.query.filter(db.func.lower(User.username) == email).first():
             errors.append(f"Row {index}: login account email {email} already exists")
             continue
 
