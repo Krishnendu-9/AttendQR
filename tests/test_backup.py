@@ -7,6 +7,8 @@ import pytest
 
 from attendqr.services.backup import _BACKUP_NAME
 
+# backup-db copies SQLite files; other databases use their own tools (pg_dump).
+pytestmark = pytest.mark.sqlite_only
 
 def test_backup_contains_the_data(app, data, tmp_path):
     target = tmp_path / 'copy.db'

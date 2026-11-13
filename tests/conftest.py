@@ -1,8 +1,16 @@
-"""Shared fixtures. Every test gets its own temporary SQLite database built by the real migrations."""
+"""Shared fixtures. Every test gets its own empty database built by the real migrations.
+
+By default that is a temporary SQLite file. Set TEST_DATABASE_URL (for example
+postgresql+psycopg://postgres:test@localhost:5432/attendqr_test) to run the suite against
+PostgreSQL instead: each test then starts from an emptied `public` schema. Tests marked
+`sqlite_only` cover SQLite features (WAL, file backups, pre-migration upgrades) and are skipped.
+"""
+import os
 from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+import sqlalchemy as sa
 from flask import g
 from flask.testing import FlaskClient
 from werkzeug.security import generate_password_hash as _generate_password_hash
@@ -10,10 +18,36 @@ from werkzeug.security import generate_password_hash as _generate_password_hash
 from attendqr import create_app
 from attendqr.config import Config
 from attendqr.extensions import db
-from attendqr.models import Admin, Attendance, ClassSession, Department, Semester, Student, Subject, Teacher
-from attendqr.utils import ist_now
+from attendqr.models import Attendance, ClassSession, Department, Semester, Student, Subject, Teacher, User
+from attendqr.utils import utc_now
 
 PASSWORD = 'Passw0rd!'
+TEST_DATABASE_URL = os.environ.get('TEST_DATABASE_URL', '').strip()
+
+
+def pytest_configure(config):
+    config.addinivalue_line('markers', 'sqlite_only: needs SQLite; skipped when TEST_DATABASE_URL is set')
+
+
+def pytest_collection_modifyitems(config, items):
+    if not TEST_DATABASE_URL:
+        return
+    skip = pytest.mark.skip(reason='SQLite-specific; TEST_DATABASE_URL points at another database')
+    for item in items:
+        if 'sqlite_only' in item.keywords:
+            item.add_marker(skip)
+
+
+def fresh_database_uri(tmp_path):
+    """An empty database for one test."""
+    if not TEST_DATABASE_URL:
+        return f"sqlite:///{(tmp_path / 'test.db').as_posix()}"
+    engine = sa.create_engine(TEST_DATABASE_URL)
+    with engine.begin() as connection:
+        connection.exec_driver_sql('DROP SCHEMA IF EXISTS public CASCADE')
+        connection.exec_driver_sql('CREATE SCHEMA public')
+    engine.dispose()
+    return TEST_DATABASE_URL
 
 
 def generate_password_hash(password):
@@ -45,7 +79,7 @@ def app(tmp_path):
     app = create_app({
         'TESTING': True,
         'SECRET_KEY': 'test-secret-key-for-the-suite-only',
-        'SQLALCHEMY_DATABASE_URI': f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
+        'SQLALCHEMY_DATABASE_URI': fresh_database_uri(tmp_path),
         'DEFAULT_PRINCIPAL_EMAIL': 'principal@example.com',
         'DEFAULT_PRINCIPAL_PASSWORD': 'Initial123',
         'ALLOWED_STAFF_DOMAINS': ['@rcciit.org.in', '@gmail.com'],
@@ -61,7 +95,7 @@ def app(tmp_path):
 
 
 def make_account(username, role, password=PASSWORD, **fields):
-    account = Admin(
+    account = User(
         username=username,
         password=generate_password_hash(password),
         role=role,
@@ -79,7 +113,7 @@ def make_student(name, roll_no, email, department, semester, password=PASSWORD, 
                       department_id=department.id, semester_id=semester.id)
     db.session.add(student)
     db.session.flush()
-    account = Admin(
+    account = User(
         username=email,
         password=generate_password_hash(password),
         role='student',
@@ -96,7 +130,7 @@ def make_student(name, roll_no, email, department, semester, password=PASSWORD, 
 @pytest.fixture
 def data(app):
     """A department with two semesters, a teacher with a subject, students, and staff accounts."""
-    principal = Admin.query.filter_by(username='principal@example.com').one()
+    principal = User.query.filter_by(username='principal@example.com').one()
     principal.password = generate_password_hash(PASSWORD)
     principal.must_change_password = False
 
@@ -152,7 +186,7 @@ def data(app):
 
 
 def add_session(data, subject_id=None, active=True, present=(), special_title=None, days_ago=0):
-    now = ist_now() - timedelta(days=days_ago)
+    now = utc_now() - timedelta(days=days_ago)
     class_session = ClassSession(
         subject_id=subject_id or data.subject_id, teacher_id=data.teacher_id, special_title=special_title,
         token=f"t-{ClassSession.query.count()}-{now.timestamp()}", created_at=now,

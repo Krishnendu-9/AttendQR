@@ -195,11 +195,48 @@ def test_detailed_report_percentage_matches_the_dashboard_with_special_classes(a
     assert notes
 
 
-def test_ist_now_is_india_time():
-    from datetime import UTC, datetime, timedelta
+def test_utc_now_is_utc_and_naive():
+    from datetime import UTC, datetime
 
-    from attendqr.utils import ist_now
+    from attendqr.utils import utc_now
 
-    expected = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
-    assert abs((ist_now() - expected).total_seconds()) < 5
-    assert ist_now().tzinfo is None  # stored as naive IST, as before
+    assert abs((utc_now() - datetime.now(UTC).replace(tzinfo=None)).total_seconds()) < 5
+    assert utc_now().tzinfo is None  # stored naive, compared naive
+
+
+def test_times_are_shown_in_the_college_time_zone(app):
+    from datetime import date, datetime
+
+    from attendqr.utils import format_12h, local_day_start_utc, to_local
+
+    stored = datetime(2026, 11, 12, 4, 30)  # 04:30 UTC
+    assert to_local(stored) == datetime(2026, 11, 12, 10, 0)
+    assert format_12h(stored) == '12-11-2026 10:00 AM'
+    # A local calendar day starts at 18:30 UTC the evening before.
+    assert local_day_start_utc(date(2026, 11, 12)) == datetime(2026, 11, 11, 18, 30)
+
+    app.config['TIMEZONE'] = 'Europe/London'
+    assert format_12h(stored) == '12-11-2026 04:30 AM'
+
+
+def test_report_date_filter_uses_local_days(data, client_for):
+    """A class at 00:30 local time on 12 Nov is stored as 11 Nov 19:00 UTC, but belongs to 12 Nov."""
+    from datetime import datetime, timedelta
+
+    from attendqr.extensions import db
+    from attendqr.models import ClassSession
+
+    early = ClassSession(subject_id=data.subject_id, teacher_id=data.teacher_id, token='early',
+                         created_at=datetime(2026, 11, 11, 19, 0), expires_at=datetime(2026, 11, 11, 19, 30))
+    db.session.add(early)
+    db.session.commit()
+    client = client_for(data.principal)
+
+    def listed(day):
+        page = client.get(f'/reports?department_id={data.mca_id}&semester_id={data.sem1_id}'
+                          f'&date_from={day}&date_to={day}').get_data(as_text=True)
+        return '12-11-2026 12:30 AM' in page
+
+    assert listed('2026-11-12')
+    assert not listed('2026-11-11')
+    assert early.expires_at - early.created_at == timedelta(minutes=30)
