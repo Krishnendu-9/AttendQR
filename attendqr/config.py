@@ -99,6 +99,11 @@ class Config:
     TIMEZONE = os.environ.get('TIMEZONE', '').strip() or 'Asia/Kolkata'
 
     ATTENDANCE_TARGET = 80
+    # Exam eligibility (the eligibility report): at or above ELIGIBILITY_PERCENT a student may sit
+    # the exams; between CONDONATION_PERCENT and it, only if the HOD or Principal condones it with a
+    # reason; below CONDONATION_PERCENT they are detained. Universities set their own numbers.
+    ELIGIBILITY_PERCENT = env_int('ELIGIBILITY_PERCENT', 75)
+    CONDONATION_PERCENT = env_int('CONDONATION_PERCENT', 65)
     MIN_QR_DURATION = 1
     MAX_QR_DURATION = 180
     MIN_PASSWORD_LENGTH = 8
@@ -126,6 +131,15 @@ class Config:
     # /metrics (Prometheus) is served only when this is set, to requests sending
     # `Authorization: Bearer <METRICS_TOKEN>`. Use a long random value.
     METRICS_TOKEN = os.environ.get('METRICS_TOKEN', '').strip()
+
+    # Roles that must set up two-step sign-in (an authenticator app code) before using the app.
+    # Other staff may turn it on from their account page. Empty (TOTP_REQUIRED_ROLES=none) requires nobody.
+    TOTP_REQUIRED_ROLES = tuple(
+        role.strip() for role in os.environ.get('TOTP_REQUIRED_ROLES', 'principal,hod').split(',')
+        if role.strip() and role.strip() != 'none'
+    )
+    # The name authenticator apps show next to the code.
+    TOTP_ISSUER = os.environ.get('TOTP_ISSUER', '').strip() or 'AttendQR'
 
     STUDENTS_PER_PAGE = 50
     SESSIONS_PER_PAGE = 50

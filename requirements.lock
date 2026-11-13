@@ -16,6 +16,7 @@ Mako==1.4.3
 MarkupSafe==3.0.4
 openpyxl==3.1.5
 pillow==13.0.0
+pyotp==2.9.0
 python-dotenv==1.2.4
 qrcode==8.2
 reportlab==5.0.1
