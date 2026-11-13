@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import cast
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
@@ -13,7 +14,8 @@ from ..access import (
     role_label,
 )
 from ..extensions import db
-from ..models import ActivityLog, Admin
+from ..models import ActivityLog, User
+from ..observability import count_login
 from ..schema import discard_used_initial_password
 from ..security import (
     clear_login_failures,
@@ -38,20 +40,20 @@ def _dummy_password_hash():
     return generate_password_hash('attendqr-timing-equaliser')
 
 
-def _log_failed_login(admin, locked):
+def _log_failed_login(user, locked):
     """Audit failed sign-ins to real accounts (unknown usernames are not logged, so they cannot flood it).
 
     The throttle bounds how many can be recorded: once an account is paused,
     further attempts are refused before the password is checked.
     """
     log_activity(
-        'login_failed', f"Failed sign-in attempt for '{admin.username}' (wrong password).",
-        'admin', admin.id, admin.department_id, anonymous_actor=SIGN_IN_ATTEMPT_ACTOR,
+        'login_failed', f"Failed sign-in attempt for '{user.username}' (wrong password).",
+        'user', user.id, user.department_id, anonymous_actor=SIGN_IN_ATTEMPT_ACTOR,
     )
     if locked:
         log_activity(
-            'login_locked', f"Sign-in for '{admin.username}' paused after repeated failed attempts.",
-            'admin', admin.id, admin.department_id, anonymous_actor=SIGN_IN_ATTEMPT_ACTOR,
+            'login_locked', f"Sign-in for '{user.username}' paused after repeated failed attempts.",
+            'user', user.id, user.department_id, anonymous_actor=SIGN_IN_ATTEMPT_ACTOR,
         )
     db.session.commit()
 
@@ -76,31 +78,35 @@ def login():
         if not username or not password:
             error = "Enter your email and password."
         elif is_login_locked(username, ip):
+            count_login('locked')
             error = LOCKED_LOGIN_MESSAGE
         else:
-            admin = Admin.query.filter(db.func.lower(Admin.username) == username).first()
-            password_ok = check_password_hash(admin.password if admin else _dummy_password_hash(), password)
-            if admin and password_ok:
-                if not admin.is_active:
+            user = User.query.filter(db.func.lower(User.username) == username).first()
+            password_ok = check_password_hash(user.password if user else _dummy_password_hash(), password)
+            if user and password_ok:
+                if not user.is_active:
                     # Only revealed once the password is proven correct.
+                    count_login('inactive')
                     error = "This account is inactive. Please contact the Principal or HOD."
                 else:
                     clear_login_failures(username)
                     session.pop('_flashes', None)
-                    login_user(admin)
+                    login_user(user)
                     mark_session_active()
-                    if admin.role != 'student':
+                    if user.role != 'student':
                         # Staff sign-ins are audited; students sign in daily, which would flood the log.
                         log_activity(
-                            'login_succeeded', f"{role_label(admin.role)} account '{admin.username}' signed in.",
-                            'admin', admin.id, admin.department_id,
+                            'login_succeeded', f"{role_label(user.role)} account '{user.username}' signed in.",
+                            'user', user.id, user.department_id,
                         )
                     db.session.commit()
+                    count_login('success')
                     return redirect(next_url or url_for('main.dashboard'))
             else:
                 locked = register_login_failure(username, ip)
-                if admin:
-                    _log_failed_login(admin, locked)
+                count_login('locked' if locked else 'failed')
+                if user:
+                    _log_failed_login(user, locked)
                 error = INVALID_LOGIN_MESSAGE
 
     return render_template('login.html', error=error, next_url=next_url)
@@ -153,7 +159,7 @@ def account():
                 log_activity(
                     'login_locked',
                     f"Password change for '{current_user.username}' paused after repeated wrong current passwords.",
-                    'admin', current_user.id, current_department_id(),
+                    'user', current_user.id, current_department_id(),
                 )
                 db.session.commit()
         elif new_password != confirm_password:
@@ -164,7 +170,7 @@ def account():
             error = password_policy_error(new_password, identifiers)
 
         if not error:
-            user = current_user._get_current_object()
+            user = cast(User, current_user._get_current_object())  # @login_required: never anonymous
             user.password = generate_password_hash(new_password)
             user.must_change_password = False
             # Sign out every other session that used the old password, then keep this one.
@@ -173,12 +179,12 @@ def account():
             log_activity(
                 'password_changed',
                 f"{role_label(user.role)} account '{user.username}' changed its password.",
-                target_type='admin',
+                target_type='user',
                 target_id=user.id,
                 department_id=current_department_id(),
             )
             db.session.commit()
-            if user.role == 'super_admin':
+            if user.role == 'principal':
                 _discard_initial_password()
             login_user(user)
             flash("Password updated successfully.", "success")

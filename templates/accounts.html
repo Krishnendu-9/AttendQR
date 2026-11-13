@@ -2,7 +2,7 @@
 {% from 'components/ui.html' import icon, btn, badge, page_header, card, empty_state, monogram, callout, dropdown, menu_form, menu_separator, record_opener, record_dialog, client_toolbar, search_empty with context %}
 {% from 'components/forms.html' import field, text_input, select_input, select_control, password_input, password_meter with context %}
 {% set page_title = 'Accounts' %}
-{% set principal = current_user.role == 'super_admin' %}
+{% set principal = current_user.role == 'principal' %}
 {% set email_pattern = staff_email_pattern() %}
 {% set email_hint = ('Use an email ending with ' ~ (staff_domains|join(' or ')) ~ '.') if staff_domains else 'ALLOWED_STAFF_DOMAINS is not set on the server, so staff accounts cannot be created yet.' %}
 
@@ -23,7 +23,7 @@
 {% endif %}
 
 <section class="card overflow-hidden" aria-label="Account list">
-  {% if admins %}
+  {% if users %}
   {% call client_toolbar('accounts-filter', '#accounts-list', 'Search email, role or department', 'Search accounts', filters=True) %}
     {% if principal %}
     <div>
@@ -49,68 +49,68 @@
           </tr>
         </thead>
         <tbody>
-          {% for admin in admins %}
-          {% set is_locked = admin.username in locked %}
-          {% if admin.role == 'super_admin' %}
+          {% for account in users %}
+          {% set is_locked = account.username in locked %}
+          {% if account.role == 'principal' %}
             {% set scope = 'All departments' %}
-          {% elif admin.role == 'teacher' and admin.teacher %}
-            {% set scope = department_scope_label(admin.teacher.department) %}
-          {% elif admin.department %}
-            {% set scope = department_scope_label(admin.department) %}
+          {% elif account.role == 'teacher' and account.teacher %}
+            {% set scope = department_scope_label(account.teacher.department) %}
+          {% elif account.department %}
+            {% set scope = department_scope_label(account.department) %}
           {% else %}
             {% set scope = 'Not assigned' %}
           {% endif %}
-          {% set status = 'locked' if is_locked else ('active' if admin.is_active else 'inactive') %}
-          {% set can_edit = can_edit_account(admin) %}
-          {% set can_reset = can_reset_staff_account(admin) %}
-          {% set can_toggle = can_toggle_account_status(admin) %}
-          {% set can_delete = can_manage_account(admin) %}
-          <tr data-search="{{ (admin.username ~ ' ' ~ role_label(admin.role) ~ ' ' ~ scope ~ ' ' ~ (admin.teacher.name if admin.teacher else ''))|lower }}"
-              data-filter-role="{{ admin.role }}" data-filter-status="{{ status }}">
+          {% set status = 'locked' if is_locked else ('active' if account.is_active else 'inactive') %}
+          {% set can_edit = can_edit_account(account) %}
+          {% set can_reset = can_reset_staff_account(account) %}
+          {% set can_toggle = can_toggle_account_status(account) %}
+          {% set can_delete = can_manage_account(account) %}
+          <tr data-search="{{ (account.username ~ ' ' ~ role_label(account.role) ~ ' ' ~ scope ~ ' ' ~ (account.teacher.name if account.teacher else ''))|lower }}"
+              data-filter-role="{{ account.role }}" data-filter-status="{{ status }}">
             <td class="py-3">
               <div class="flex items-center gap-3">
-                {{ monogram(admin.teacher.name if admin.teacher else admin.username.split('@')[0].replace('.', ' ')) }}
+                {{ monogram(account.teacher.name if account.teacher else account.username.split('@')[0].replace('.', ' ')) }}
                 <div class="min-w-0">
-                  <p class="truncate text-label-lg text-foreground">{{ admin.teacher.name if admin.teacher else admin.username }}</p>
-                  {% if admin.teacher %}<p class="truncate text-body-sm text-muted-foreground">{{ admin.username }}</p>{% endif %}
-                  {% if admin.id == current_user.id %}<p class="text-body-sm text-muted-foreground">This is you</p>{% endif %}
+                  <p class="truncate text-label-lg text-foreground">{{ account.teacher.name if account.teacher else account.username }}</p>
+                  {% if account.teacher %}<p class="truncate text-body-sm text-muted-foreground">{{ account.username }}</p>{% endif %}
+                  {% if account.id == current_user.id %}<p class="text-body-sm text-muted-foreground">This is you</p>{% endif %}
                 </div>
               </div>
             </td>
-            <td>{{ badge(role_label(admin.role), 'info') }}</td>
+            <td>{{ badge(role_label(account.role), 'info') }}</td>
             <td class="py-3">
               <div class="flex flex-wrap items-center gap-1.5">
                 {% if is_locked %}{{ badge('Locked', 'danger', 'Too many failed sign-ins. Resetting the password unlocks it.') }}
-                {% elif admin.is_active %}{{ badge('Active', 'success') }}
+                {% elif account.is_active %}{{ badge('Active', 'success') }}
                 {% else %}{{ badge('Inactive', 'neutral') }}{% endif %}
-                {% if admin.must_change_password %}{{ badge('Password change pending', 'warning') }}{% endif %}
+                {% if account.must_change_password %}{{ badge('Password change pending', 'warning') }}{% endif %}
               </div>
             </td>
             <td class="whitespace-nowrap text-body-md text-muted-foreground">{{ scope }}</td>
             <td class="col-actions">
               {% if can_edit or can_reset or can_toggle or can_delete %}
-              {% call dropdown('Actions for ' ~ admin.username) %}
+              {% call dropdown('Actions for ' ~ account.username) %}
                 {% if can_edit %}
-                {{ record_opener('Edit', 'account-edit-dialog', url_for('accounts.edit', id=admin.id), 'Edit ' ~ role_label(admin.role) ~ ' account', 'Save changes',
-                                 {'username': admin.username, 'role': admin.role, 'role_label': role_label(admin.role),
-                                  'teacher_name': admin.teacher.name if admin.teacher else '', 'department_id': admin.department_id or ''}, 'pencil') }}
+                {{ record_opener('Edit', 'account-edit-dialog', url_for('accounts.edit', id=account.id), 'Edit ' ~ role_label(account.role) ~ ' account', 'Save changes',
+                                 {'username': account.username, 'role': account.role, 'role_label': role_label(account.role),
+                                  'teacher_name': account.teacher.name if account.teacher else '', 'department_id': account.department_id or ''}, 'pencil') }}
                 {% endif %}
                 {% if can_reset %}
-                {{ menu_form('Reset password', url_for('accounts.reset_password', id=admin.id), 'key-round',
+                {{ menu_form('Reset password', url_for('accounts.reset_password', id=account.id), 'key-round',
                              confirm='A temporary password is created and shown once. They must change it at next sign-in, and are signed out everywhere.',
-                             confirm_title='Reset password for ' ~ admin.username ~ '?', confirm_label='Reset password') }}
+                             confirm_title='Reset password for ' ~ account.username ~ '?', confirm_label='Reset password') }}
                 {% endif %}
                 {% if can_toggle %}
-                {{ menu_form('Deactivate' if admin.is_active else 'Activate', url_for('accounts.toggle_status', id=admin.id),
-                             'circle-x' if admin.is_active else 'circle-check',
-                             confirm='They can no longer sign in, and are signed out everywhere.' if admin.is_active else 'They can sign in again.',
-                             confirm_title=('Deactivate ' if admin.is_active else 'Activate ') ~ admin.username ~ '?') }}
+                {{ menu_form('Deactivate' if account.is_active else 'Activate', url_for('accounts.toggle_status', id=account.id),
+                             'circle-x' if account.is_active else 'circle-check',
+                             confirm='They can no longer sign in, and are signed out everywhere.' if account.is_active else 'They can sign in again.',
+                             confirm_title=('Deactivate ' if account.is_active else 'Activate ') ~ account.username ~ '?') }}
                 {% endif %}
                 {% if can_delete %}
                 {{ menu_separator() }}
-                {{ menu_form('Delete', url_for('accounts.delete', id=admin.id), 'trash-2', danger=True,
+                {{ menu_form('Delete', url_for('accounts.delete', id=account.id), 'trash-2', danger=True,
                              confirm='The login is removed. Teachers who still have subjects or sessions cannot be deleted; deactivate them instead.',
-                             confirm_title='Delete ' ~ admin.username ~ '?', confirm_label='Delete') }}
+                             confirm_title='Delete ' ~ account.username ~ '?', confirm_label='Delete') }}
                 {% endif %}
               {% endcall %}
               {% else %}
@@ -123,7 +123,7 @@
       </table>
     </div>
     {{ search_empty() }}
-    <p class="border-t border-border px-6 py-3 text-body-sm text-muted-foreground tabular-nums" data-search-count data-noun="accounts">{{ admins|length }} accounts</p>
+    <p class="border-t border-border px-6 py-3 text-body-sm text-muted-foreground tabular-nums" data-search-count data-noun="accounts">{{ users|length }} accounts</p>
   </div>
   {% else %}
     {{ empty_state('shield-user', 'No accounts yet', 'Create logins for HODs and teachers here.') }}

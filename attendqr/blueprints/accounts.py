@@ -15,7 +15,7 @@ from ..access import (
     describe_delete_block,
     has_active_hod,
     is_allowed_staff_email,
-    is_super_admin,
+    is_principal,
     log_activity,
     ordered_departments_query,
     role_label,
@@ -26,7 +26,7 @@ from ..access import (
     visible_activity_logs_query,
 )
 from ..extensions import db
-from ..models import ActivityLog, Admin, ClassSession, Subject, Teacher
+from ..models import ActivityLog, ClassSession, Subject, Teacher, User
 from ..security import (
     clear_login_failures,
     generate_temporary_password,
@@ -44,7 +44,7 @@ class AccountError(ValueError):
 
 
 def allowed_roles():
-    keys = ('super_admin', 'hod', 'teacher') if is_super_admin() else ('teacher',)
+    keys = ('principal', 'hod', 'teacher') if is_principal() else ('teacher',)
     return {key: ROLE_LABELS[key] for key in keys}
 
 
@@ -74,7 +74,7 @@ def _create_account(roles):
     username = normalize_email(request.form.get('username', ''))
     password = request.form.get('password', '')
     confirm_password = request.form.get('confirm_password', '')
-    role = request.form.get('role', 'teacher' if user_role() == 'hod' else 'super_admin')
+    role = request.form.get('role', 'teacher' if user_role() == 'hod' else 'principal')
     raw_department_id = request.form.get('department_id')
     subject_id = parse_int_value(request.form.get('subject_id'))
     teacher_name = normalize_text(request.form.get('teacher_name'))
@@ -90,7 +90,7 @@ def _create_account(roles):
         raise AccountError(policy_error)
     if password != confirm_password:
         raise AccountError("Passwords do not match")
-    if Admin.query.filter(db.func.lower(Admin.username) == username).first():
+    if User.query.filter(db.func.lower(User.username) == username).first():
         raise AccountError(f"Account email '{username}' already exists")
 
     department_id = teacher_id = None
@@ -102,7 +102,7 @@ def _create_account(roles):
         if has_active_hod(department_id):
             raise AccountError("This department already has an active HOD. Deactivate the current HOD first.")
     elif role == 'teacher':
-        department_id = parse_int_value(raw_department_id) if is_super_admin() else current_department_id()
+        department_id = parse_int_value(raw_department_id) if is_principal() else current_department_id()
         if not teacher_name:
             raise AccountError("Teacher name is required for teacher accounts")
         if len(teacher_name) > 100:
@@ -124,7 +124,7 @@ def _create_account(roles):
         teacher_id = teacher.id
         assigned_subject = _assign_subject(subject_id, department_id, teacher)
 
-    account = Admin(
+    account = User(
         username=username,
         password=generate_password_hash(password),
         role=role,
@@ -135,7 +135,7 @@ def _create_account(roles):
     )
     db.session.add(account)
     db.session.flush()
-    log_activity('account_created', f"Created {role_label(role)} account '{username}'.", 'admin', account.id, department_id)
+    log_activity('account_created', f"Created {role_label(role)} account '{username}'.", 'user', account.id, department_id)
     db.session.commit()
 
     message = f"{role_label(role)} account '{username}' added successfully."
@@ -144,9 +144,9 @@ def _create_account(roles):
     return message + " The user must change the password at first login."
 
 
-@bp.route('/add_admin', methods=['GET', 'POST'])
+@bp.route('/accounts', methods=['GET', 'POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def index():
     roles = allowed_roles()
     if request.method == 'POST':
@@ -157,14 +157,14 @@ def index():
             flash(str(exc), 'danger')
         return redirect(url_for('accounts.index'))
 
-    accounts = Admin.query.filter(Admin.role != 'student')
-    if not is_super_admin():
-        accounts = accounts.filter(department_filter(Admin.department_id))
-    accounts = accounts.order_by(Admin.role, Admin.is_active.desc(), Admin.username).all()
+    accounts = User.query.filter(User.role != 'student')
+    if not is_principal():
+        accounts = accounts.filter(department_filter(User.department_id))
+    accounts = accounts.order_by(User.role, User.is_active.desc(), User.username).all()
 
     return render_template(
-        'add_admin.html',
-        admins=accounts,
+        'accounts.html',
+        users=accounts,
         locked=locked_usernames([a.username for a in accounts]),
         departments=ordered_departments_query().all(),
         roles=roles,
@@ -174,9 +174,9 @@ def index():
 
 @bp.route('/edit_admin/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def edit(id):
-    account = db.get_or_404(Admin, id)
+    account = db.get_or_404(User, id)
     if not can_edit_account(account):
         abort(403)
 
@@ -190,25 +190,25 @@ def edit(id):
             raise AccountError("Account email is required.")
         if not is_allowed_staff_email(username):
             raise AccountError(staff_email_rule_message())
-        if Admin.query.filter(Admin.id != account.id, db.func.lower(Admin.username) == username).first():
+        if User.query.filter(User.id != account.id, db.func.lower(User.username) == username).first():
             raise AccountError(f"Account email '{username}' already exists.")
 
-        if account.role == 'super_admin':
+        if account.role == 'principal':
             account.username = username
         elif account.role == 'hod':
-            if not is_super_admin():
+            if not is_principal():
                 abort(403)
             department_id = parse_int_value(raw_department_id)
             if not department_id:
                 raise AccountError("Valid department is required for HOD accounts")
             if not can_access_department(department_id):
                 abort(403)
-            if account.is_active and has_active_hod(department_id, exclude_admin_id=account.id):
+            if account.is_active and has_active_hod(department_id, exclude_user_id=account.id):
                 raise AccountError("This department already has an active HOD. Deactivate the current HOD first.")
             account.username = username
             account.department_id = department_id
         elif account.role == 'teacher':
-            department_id = parse_int_value(raw_department_id) if is_super_admin() else current_department_id()
+            department_id = parse_int_value(raw_department_id) if is_principal() else current_department_id()
             if not teacher_name:
                 raise AccountError("Teacher name is required for Teacher accounts")
             if not department_id:
@@ -237,7 +237,7 @@ def edit(id):
             _assign_subject(subject_id, department_id, teacher)
 
         log_activity('account_updated', f"Updated {role_label(account.role)} account '{account.username}'.",
-                     'admin', account.id, account.department_id)
+                     'user', account.id, account.department_id)
         db.session.commit()
         flash(f"{role_label(account.role)} account '{account.username}' updated successfully.", "success")
     except AccountError as exc:
@@ -249,9 +249,9 @@ def edit(id):
 
 @bp.route('/delete_admin/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def delete(id):
-    account = db.get_or_404(Admin, id)
+    account = db.get_or_404(User, id)
     if not can_manage_account(account):
         abort(403)
 
@@ -266,7 +266,7 @@ def delete(id):
             return redirect(url_for('accounts.index'))
 
     log_activity('account_deleted', f"Deleted {role_label(account.role)} account '{account.username}'.",
-                 'admin', account.id, account.department_id)
+                 'user', account.id, account.department_id)
     clear_login_failures(account.username)
     db.session.delete(account)
     db.session.commit()
@@ -275,14 +275,14 @@ def delete(id):
 
 @bp.route('/toggle_admin_status/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def toggle_status(id):
-    account = db.get_or_404(Admin, id)
+    account = db.get_or_404(User, id)
     if not can_manage_account(account):
         abort(403)
 
     activate = not account.is_active
-    if activate and account.role == 'hod' and account.department_id and has_active_hod(account.department_id, exclude_admin_id=account.id):
+    if activate and account.role == 'hod' and account.department_id and has_active_hod(account.department_id, exclude_user_id=account.id):
         flash("This department already has an active HOD. Deactivate that HOD first.", 'warning')
         return redirect(url_for('accounts.index'))
 
@@ -292,7 +292,7 @@ def toggle_status(id):
     log_activity(
         'account_status_changed',
         f"{'Activated' if activate else 'Deactivated'} {role_label(account.role)} account '{account.username}'.",
-        'admin', account.id, account.department_id,
+        'user', account.id, account.department_id,
     )
     db.session.commit()
     flash(f"{role_label(account.role)} account '{account.username}' is now {'active' if activate else 'inactive'}.", 'success')
@@ -301,9 +301,9 @@ def toggle_status(id):
 
 @bp.route('/reset_admin_password/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def reset_password(id):
-    account = db.get_or_404(Admin, id)
+    account = db.get_or_404(User, id)
     if not can_reset_staff_account(account):
         abort(403)
 
@@ -313,7 +313,7 @@ def reset_password(id):
     account.rotate_session_token()
     clear_login_failures(account.username)
     log_activity('account_password_reset', f"Reset password for {role_label(account.role)} account '{account.username}'.",
-                 'admin', account.id, account.department_id)
+                 'user', account.id, account.department_id)
     db.session.commit()
     current_app.logger.info("Password reset for account %s", account.id)
     flash(f"Temporary password for {account.username}: {temporary_password}", 'success')
