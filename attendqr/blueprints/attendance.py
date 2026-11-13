@@ -34,10 +34,11 @@ from ..access import (
     visible_sessions_query,
 )
 from ..extensions import db
-from ..models import Attendance, ClassSession, Semester, Student, Subject, Teacher
+from ..models import Attendance, ClassSession, Semester, SpotCheck, Student, Subject, Teacher
 from ..observability import count_scan
 from ..security import is_safe_redirect_target
 from ..services.enrollment import class_roster, in_class_at, was_in_class
+from ..services.locks import semester_lock_error, session_lock_error
 from ..services.network import client_ip, scan_network_error
 from ..services.qr import (
     DEVICE_TAKEN_MESSAGE,
@@ -57,6 +58,15 @@ from ..services.qr import (
 )
 from ..services.reports import attendance_counts
 from ..services.retention import scan_ip_recording_enabled
+from ..services.spot_checks import (
+    FAILED_CHECK_NOTE,
+    SPOT_CHECK_SIZE,
+    candidates,
+    checks_for,
+    resolve_spot_check,
+    spot_check_open,
+    start_spot_check,
+)
 from ..utils import format_12h, normalize_text, parse_int_value, utc_now
 
 bp = Blueprint('attendance', __name__)
@@ -153,6 +163,11 @@ def _render_session(class_session_id):
         attendance_records=attendance_records,
         absent_students=_absent_students(class_session),
         refresh_seconds=current_app.config['QR_REFRESH_SECONDS'],
+        spot_checks=checks_for(class_session),
+        spot_check_open=spot_check_open(class_session),
+        spot_check_candidates=len(candidates(class_session)),
+        spot_check_size=SPOT_CHECK_SIZE,
+        lock_error=session_lock_error(class_session),
     )
 
 
@@ -191,6 +206,8 @@ def _create_session():
     semester = db.session.get(Semester, semester_id)
     if not semester or semester.department_id != department_id:
         return _form_error("The selected semester does not belong to the selected department.")
+    if semester_lock_error(semester):
+        return _form_error(semester_lock_error(semester))
 
     if class_mode == 'special':
         if not special_title:
@@ -249,11 +266,22 @@ def _session_for_action(id):
     return class_session
 
 
+def _locked(class_session, back):
+    """A redirect explaining the lock when the session's semester is locked, else None."""
+    error = session_lock_error(class_session)
+    if error:
+        flash(error, 'warning')
+        return back()
+    return None
+
+
 @bp.route('/deactivate_session/<int:id>', methods=['POST'])
 @login_required
 @role_required('principal', 'hod', 'teacher')
 def deactivate_session(id):
     class_session = _session_for_action(id)
+    if (refusal := _locked(class_session, lambda: _redirect_after_session_action())):
+        return refusal
     if class_session.is_live():
         class_session.is_active = False
         log_activity(
@@ -271,6 +299,8 @@ def deactivate_session(id):
 @role_required('principal', 'hod', 'teacher')
 def reactivate_session(id):
     class_session = _session_for_action(id)
+    if (refusal := _locked(class_session, lambda: _redirect_after_session_action())):
+        return refusal
     if not class_session.is_active and class_session.expires_at > utc_now():
         class_session.is_active = True
         log_activity(
@@ -291,6 +321,8 @@ def delete_session(id):
     the HOD or Principal may do that, with a reason; a teacher can deactivate it or
     remove single entries instead."""
     class_session = _session_for_action(id)
+    if (refusal := _locked(class_session, lambda: _redirect_after_session_action())):
+        return refusal
     present = Attendance.query.filter_by(session_id=class_session.id).count()
     description = f"Deleted QR session for '{session_display_name(class_session)}'"
 
@@ -343,6 +375,8 @@ def _correction_reason():
 def mark_present(id):
     """Staff mark a student present by hand, e.g. when their phone could not scan."""
     class_session = _session_for_action(id)
+    if (refusal := _locked(class_session, lambda: _back_to_session_attendance(class_session))):
+        return refusal
     note, error = _correction_reason()
     student = db.session.get(Student, parse_int_value(request.form.get('student_id')) or 0)
     subject = class_session.subject
@@ -383,6 +417,8 @@ def mark_present(id):
 def remove_attendance(id, attendance_id):
     """Staff remove an attendance entry, e.g. one marked by mistake."""
     class_session = _session_for_action(id)
+    if (refusal := _locked(class_session, lambda: _back_to_session_attendance(class_session))):
+        return refusal
     entry = db.get_or_404(Attendance, attendance_id)
     if entry.session_id != class_session.id:
         abort(404)
@@ -402,6 +438,77 @@ def remove_attendance(id, attendance_id):
     db.session.commit()
     flash(f"Removed {student.name}'s attendance for this session.", 'success')
     return _back_to_session_attendance(class_session)
+
+
+# ── Spot checks ──────────────────────────────────────────────
+
+def _back_to_spot_checks(class_session):
+    return redirect(url_for('attendance.generate_qr', session_id=class_session.id) + '#spot-checks')
+
+
+@bp.route('/sessions/<int:id>/spot-checks', methods=['POST'])
+@login_required
+@role_required('principal', 'hod', 'teacher')
+def start_spot_checks(id):
+    """Pick students marked present at random, for the teacher to look for in the room."""
+    class_session = _session_for_action(id)
+    if (refusal := _locked(class_session, lambda: _back_to_spot_checks(class_session))):
+        return refusal
+    if not spot_check_open(class_session):
+        flash("Spot checks are only possible during the session and up to 2 hours after it.", 'warning')
+        return _back_to_spot_checks(class_session)
+    checks = start_spot_check(class_session)
+    if not checks:
+        flash("Nobody marked present by QR scan is left to check.", 'warning')
+        return _back_to_spot_checks(class_session)
+    log_activity(
+        'spot_check_started',
+        f"Started a spot check of {len(checks)} student(s) in '{session_display_name(class_session)}'.",
+        'class_session', class_session.id, class_session.subject.department_id,
+    )
+    db.session.commit()
+    return _back_to_spot_checks(class_session)
+
+
+@bp.route('/sessions/<int:id>/spot-checks/<int:check_id>', methods=['POST'])
+@login_required
+@role_required('principal', 'hod', 'teacher')
+def resolve_spot_checks(id, check_id):
+    class_session = _session_for_action(id)
+    if (refusal := _locked(class_session, lambda: _back_to_spot_checks(class_session))):
+        return refusal
+    check = db.get_or_404(SpotCheck, check_id)
+    if check.session_id != class_session.id:
+        abort(404)
+    result = request.form.get('result')
+    if result not in ('present', 'absent'):
+        abort(400)
+    if check.result != SpotCheck.PENDING:
+        flash("That check has already been answered.", 'warning')
+        return _back_to_spot_checks(class_session)
+    if not spot_check_open(class_session):
+        flash("Spot checks are only possible during the session and up to 2 hours after it.", 'warning')
+        return _back_to_spot_checks(class_session)
+
+    student = check.student
+    removed = resolve_spot_check(check, result == 'present', current_user)
+    department_id = class_session.subject.department_id
+    if result == 'present':
+        log_activity('spot_check_passed', f"{student.name} ({student.roll_no}) was in the room for "
+                     f"'{session_display_name(class_session)}'.", 'class_session', class_session.id, department_id)
+        flash(f"{student.name} confirmed in the room.", 'success')
+    else:
+        log_activity('spot_check_failed', f"{student.name} ({student.roll_no}) was not in the room for "
+                     f"'{session_display_name(class_session)}'"
+                     + ("; their attendance was removed." if removed else "."),
+                     'class_session', class_session.id, department_id)
+        if removed:
+            log_activity('attendance_removed', f"Removed {student.name} ({student.roll_no}) from "
+                         f"'{session_display_name(class_session)}' ({removed.source} entry). Reason: {FAILED_CHECK_NOTE}",
+                         'class_session', class_session.id, department_id)
+        flash(f"{student.name} was not in the room; their attendance for this session was removed.", 'warning')
+    db.session.commit()
+    return _back_to_spot_checks(class_session)
 
 
 # ── Student side ─────────────────────────────────────────────
@@ -493,6 +600,9 @@ def scan(token):
     class_session = db.session.get(ClassSession, class_session_id)
     if not class_session or not class_session.subject:
         return _status_page('Invalid QR', 'This QR session no longer exists.', 404)
+    if session_lock_error(class_session):
+        count_scan('session_locked')
+        return _status_page('Attendance Locked', session_lock_error(class_session), 403, _session_info(class_session))
     if not class_session.is_live():
         count_scan('session_ended')
         title, message = _ended_status(class_session)
@@ -579,6 +689,9 @@ def mark_attendance():
     if not class_session or not class_session.subject or not class_session.is_live():
         clear_scan_grant()
         return _json_error('This QR session has ended.', 410)
+    if session_lock_error(class_session):
+        clear_scan_grant()
+        return _json_error(session_lock_error(class_session), 403)
 
     student = current_user.student
     subject = class_session.subject
