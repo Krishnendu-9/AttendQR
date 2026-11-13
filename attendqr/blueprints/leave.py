@@ -7,6 +7,7 @@ from ..access import can_access_student, department_filter, is_principal, log_ac
 from ..extensions import db
 from ..models import LeaveRequest, Student
 from ..services.leave import MAX_NOTE_LENGTH, describe_range, parse_leave_form
+from ..services.locks import semester_lock_error
 from ..utils import normalize_text, utc_now
 
 bp = Blueprint('leave', __name__)
@@ -105,6 +106,10 @@ def decide(id):
         abort(400)
     if leave.status != LeaveRequest.PENDING:
         flash("This request has already been decided.", 'warning')
+        return redirect(url_for('leave.index'))
+    lock_error = semester_lock_error(leave.student.semester)
+    if lock_error:
+        flash(lock_error, 'warning')
         return redirect(url_for('leave.index'))
     if decision == 'reject' and not note:
         flash("Give the student a short reason for rejecting the request.", 'danger')

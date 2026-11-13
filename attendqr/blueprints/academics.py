@@ -1,5 +1,5 @@
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 from sqlalchemy import or_
 
 from ..access import (
@@ -30,6 +30,7 @@ from ..utils import (
     normalize_text,
     parse_int_value,
     sort_semesters,
+    utc_now,
 )
 
 bp = Blueprint('academics', __name__)
@@ -198,6 +199,47 @@ def edit_semester(id):
     semester.department_id = department_id
     log_activity('semester_updated', f"Updated semester '{semester.name}'.", 'semester', semester.id, department_id)
     db.session.commit()
+    return redirect(url_for('academics.semesters'))
+
+
+@bp.route('/semesters/<int:id>/lock', methods=['POST'])
+@login_required
+@role_required('principal', 'hod')
+def lock_semester(id):
+    """Make the semester's attendance final: nothing in it can change until the Principal unlocks it."""
+    semester = db.get_or_404(Semester, id)
+    if not can_access_department(semester.department_id):
+        abort(403)
+    if semester.attendance_locked:
+        flash(f"Attendance for {semester.name} is already locked.", 'warning')
+        return redirect(url_for('academics.semesters'))
+    semester.attendance_locked_at = utc_now()
+    semester.attendance_locked_by_user_id = current_user.id
+    log_activity('attendance_locked', f"Locked attendance for {semester.department.display_name} {semester.name}.",
+                 'semester', semester.id, semester.department_id)
+    db.session.commit()
+    flash(f"Attendance for {semester.name} is locked. Only the Principal can unlock it.", 'success')
+    return redirect(url_for('academics.semesters'))
+
+
+@bp.route('/semesters/<int:id>/unlock', methods=['POST'])
+@login_required
+@role_required('principal')
+def unlock_semester(id):
+    semester = db.get_or_404(Semester, id)
+    reason = normalize_text(request.form.get('note'))
+    if not semester.attendance_locked:
+        flash(f"Attendance for {semester.name} is not locked.", 'warning')
+        return redirect(url_for('academics.semesters'))
+    if not reason or len(reason) > 200:
+        flash("Give a short reason for unlocking (at most 200 characters).", 'danger')
+        return redirect(url_for('academics.semesters'))
+    semester.attendance_locked_at = None
+    semester.attendance_locked_by_user_id = None
+    log_activity('attendance_unlocked', f"Unlocked attendance for {semester.department.display_name} "
+                 f"{semester.name}. Reason: {reason}", 'semester', semester.id, semester.department_id)
+    db.session.commit()
+    flash(f"Attendance for {semester.name} is unlocked.", 'success')
     return redirect(url_for('academics.semesters'))
 
 

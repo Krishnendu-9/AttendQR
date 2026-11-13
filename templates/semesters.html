@@ -38,6 +38,7 @@
               <div class="flex items-center gap-3">
                 <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-ink">{{ icon('calendar-range') }}</span>
                 <span class="text-label-lg text-foreground">{{ s.name }}</span>
+                {% if s.attendance_locked %}{{ badge('Locked', 'neutral', 'Attendance is final since ' ~ format_12h(s.attendance_locked_at) ~ (' (' ~ s.locked_by.username ~ ')' if s.locked_by else '')) }}{% endif %}
               </div>
             </td>
             {% if show_department %}<td class="text-body-md text-muted-foreground">{{ s.department.display_name }}</td>{% endif %}
@@ -45,6 +46,13 @@
               {% call dropdown('Actions for ' ~ s.name) %}
                 {{ record_opener('Edit', 'semester-dialog', url_for('academics.edit_semester', id=s.id), 'Edit semester', 'Save changes',
                                  {'name': s.name, 'department_id': s.department_id}, 'pencil') }}
+                {% if not s.attendance_locked %}
+                {{ menu_form('Lock attendance', url_for('academics.lock_semester', id=s.id), 'lock',
+                             confirm='Nothing in this semester can change after this: no new sessions, scans, corrections or leave decisions. Only the Principal can unlock it, with a reason.',
+                             confirm_title='Lock attendance for ' ~ s.name ~ '?', confirm_label='Lock') }}
+                {% elif current_user.role == 'principal' %}
+                {{ record_opener('Unlock attendance', 'unlock-dialog', url_for('academics.unlock_semester', id=s.id), 'Unlock ' ~ s.name, 'Unlock', {}, 'lock') }}
+                {% endif %}
                 {{ menu_separator() }}
                 {{ menu_form('Delete', url_for('academics.delete_semester', id=s.id), 'trash-2', danger=True,
                              confirm='Semesters that still have students, subjects or sessions cannot be deleted.',
@@ -77,5 +85,9 @@
     {{ text_input('department_display', 'Department', departments[0].display_name if departments else 'Not assigned',
                   id='semester_department_display', attrs={'readonly': True}) }}
   {% endif %}
+{% endcall %}
+{% call record_dialog('unlock-dialog', 'Unlock attendance', 'Unlock') %}
+  {{ text_input('note', 'Reason', id='unlock_note', required=True, placeholder='e.g. Correcting a session after the revaluation board',
+                hint='Recorded in the activity log.', attrs={'maxlength': 200, 'autocomplete': 'off'}) }}
 {% endcall %}
 {% endblock %}
