@@ -13,11 +13,21 @@ AttendQR/
     security.py         Secret key, CSRF, safe redirects, password policy, temporary passwords, CSP/security headers,
                         idle sign-out, login throttling
     schema.py           prepare_database(): migrations, upgrade of pre-migration databases, first Principal
-    utils.py            Time, normalisation, natural sorting, date-range parsing
+    observability.py    Request ids, JSON logs, the access log, Prometheus metrics (/metrics)
+    utils.py            Time (stored UTC, shown in TIMEZONE), normalisation, natural sorting, date parsing
     services/
       network.py        SCAN_ALLOWED_NETWORKS parsing and the scan address check
       qr.py             Rotating QR tokens, scan URLs, scan grants, device binding
       reports.py        Attendance summaries, report filters, Excel/PDF export
+      analytics.py      Weekly trend, per-subject rates and students at risk, from the report matrix
+      leave.py          Approved-leave windows used by every percentage, and leave request validation
+      demo.py           Sample college for demonstrations (`flask seed-demo`)
+      spot_checks.py    Random in-class checks of students marked present
+      integrity.py      The integrity report: failed checks, buddy pairs, new phones, manual entries
+      eligibility.py    Exam eligibility and condonation
+      audit.py          The hash-chained activity log: sealing and `flask verify-audit`
+      locks.py          Locked semesters
+      two_factor.py     Two-step sign-in (TOTP) and recovery codes
       roster.py         Student login accounts and bulk import
       enrollment.py     Class membership over time, so moved students stay in their old class's reports
       retention.py      Clearing scan IP addresses after SCAN_IP_RETENTION_DAYS
@@ -28,8 +38,9 @@ AttendQR/
       academics.py      Departments, semesters, subjects, teachers
       students.py       Student records, import, password and device resets
       attendance.py     QR sessions (/generate_qr) and the student scan flow (/scan, /attend, /mark_attendance)
-      reports.py        Reports, detailed view, exports
-      accounts.py       Staff account management (/add_admin)
+      reports.py        Reports, detailed view, exports, analytics, integrity, exam eligibility
+      leave.py          Leave requests: students apply, the HOD or Principal decides (/leave)
+      accounts.py       Staff account management (/accounts)
       api.py            JSON endpoints used by the pages (/api/...)
   migrations/           Alembic environment and versions (Flask-Migrate)
   templates/            Jinja2 templates (see "Frontend" below)
@@ -43,13 +54,17 @@ AttendQR/
     js/theme.js         Applies the Light / Dark / System theme before the page paints
     js/ui.js            Alpine components and page behaviour (menus, dialogs, toasts, palette, list filters)
     js/app.js           Shared page helpers (dropdown loading, password meter)
+    js/charts.js        Hover and keyboard tooltips for the analytics charts
     vendor/             Alpine.js (CSP build), htmx and the Inter font, served locally
-  tests/                pytest suite (conftest.py builds a fresh migrated database per test)
+  tests/                pytest suite (conftest.py builds a fresh migrated database per test; TEST_DATABASE_URL
+                        runs it on PostgreSQL)
   run.py                Local/LAN server (waitress; debug server on localhost with FLASK_DEBUG=1)
   wsgi.py               WSGI entry point; also used by the `flask` CLI
   Dockerfile            Production image: lock-file dependencies, non-root, waitress via run.py
   compose.yaml          Runs the image with a data volume; requires APP_BASE_URL
   scripts/docker_smoke.py  End-to-end QR attendance check that CI runs against the image
+  scripts/load_test.py  A whole class through the attendance flow against the real server, with latency percentiles
+  docs/                 DEPLOYMENT.md, GUIDE.md, THREAT_MODEL.md, RBAC.md, screenshots
   scripts/tailwind.py   Builds static/css/app.css with the pinned Tailwind standalone CLI (no Node.js)
   scripts/lucide_icons.py  Copies the Lucide icons the templates use into templates/components/icons/
 ```

@@ -16,7 +16,12 @@ The system supports four roles:
 - Keeps one active HOD per department.
 - Can activate, deactivate, reset, or delete non-student accounts from the Accounts page.
 - Creates or bulk-imports student profiles from the Students page; student login accounts are auto-created.
-- Views all reports and exports.
+- Views all reports, exports and analytics.
+- Approves or rejects leave requests from any department.
+- Sees the integrity report and exam eligibility for every class, and condones students in the condonation band.
+- Locks and unlocks semesters (unlocking needs a reason).
+- Resets two-step sign-in for HOD and Teacher accounts (lost phone).
+- Must use two-step sign-in (by default).
 
 ## HOD
 
@@ -27,6 +32,11 @@ The system supports four roles:
 - Can reset student passwords and device locks in the assigned department.
 - Can correct attendance on any session in the assigned department and view the department shortage list.
 - Can delete a session that has attendance in the assigned department, with a reason (this erases its records).
+- Approves or rejects leave requests from the department's students (a rejection needs a note).
+- Views analytics, the integrity report and exam eligibility for the department's classes, and condones students in the condonation band.
+- Locks the department's semesters; cannot unlock them.
+- Runs spot checks in any of the department's sessions, and resets two-step sign-in for the department's teachers.
+- Must use two-step sign-in (by default).
 - Cannot create Principal or HOD accounts.
 - Cannot access other departments.
 
@@ -35,7 +45,10 @@ The system supports four roles:
 - Generates QR sessions only for assigned subjects.
 - Can manually mark students present in, or remove entries from, their own sessions (with a reason).
 - Can delete their own sessions only while nobody has marked attendance in them; after that, deactivate instead or ask the HOD.
-- Sees the shortage list for their own sessions.
+- Sees the shortage list and analytics for their own sessions.
+- Runs spot checks in their own sessions.
+- May turn on two-step sign-in (optional by default).
+- Cannot decide leave requests; classes during approved leave show as `L` in their reports.
 - Views attendance only for own sessions.
 - Creates or bulk-imports student profiles for the assigned department.
 - Can reset student passwords and device locks in the assigned department.
@@ -47,6 +60,7 @@ The system supports four roles:
 - Sees subject-wise percentage, overall percentage, and classes needed for the 80% target.
 - Logs in with the student email and the temporary password given by staff, and must set a private password at first login.
 - Marks attendance only from their own registered phone; each phone can be registered to one student.
+- Applies for leave and can withdraw a request until it is decided; sees the decision and any note.
 
 ## Account Verification
 
