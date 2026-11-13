@@ -1,22 +1,27 @@
 import re
 import secrets
+from typing import ClassVar
 
 import sqlalchemy as sa
 from flask_login import UserMixin
 
 from .extensions import db
-from .utils import ist_now
+from .utils import utc_now
 
 
 def new_session_token():
     return secrets.token_hex(16)
 
 
-class Admin(UserMixin, db.Model):
+class User(UserMixin, db.Model):
+    """Every login: Principal, HOD, Teacher and Student accounts (see `role`)."""
+    # Not "user": that is a reserved word in PostgreSQL.
+    __tablename__ = 'user_account'
+
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
-    role = db.Column(db.String(20), nullable=False, default='super_admin')
+    role = db.Column(db.String(20), nullable=False)  # 'principal', 'hod', 'teacher' or 'student'
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='SET NULL'), nullable=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id', ondelete='SET NULL'), nullable=True)
     student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='SET NULL'), nullable=True)
@@ -152,14 +157,14 @@ class ClassSession(db.Model):
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id', ondelete='SET NULL'), nullable=True)
     special_title = db.Column(db.String(200), nullable=True)
     token = db.Column(db.String(100), unique=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=ist_now)
+    created_at = db.Column(db.DateTime, default=utc_now)
     expires_at = db.Column(db.DateTime, nullable=False)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     subject = db.relationship('Subject', backref=db.backref('sessions', lazy=True))
     teacher = db.relationship('Teacher', backref=db.backref('sessions', lazy=True))
 
     def is_live(self, now=None):
-        return bool(self.is_active and (now or ist_now()) <= self.expires_at)
+        return bool(self.is_active and (now or utc_now()) <= self.expires_at)
 
 
 class Attendance(db.Model):
@@ -176,12 +181,12 @@ class Attendance(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False)
     session_id = db.Column(db.Integer, db.ForeignKey('class_session.id', ondelete='CASCADE'), nullable=False)
-    timestamp = db.Column(db.DateTime, default=ist_now)
+    timestamp = db.Column(db.DateTime, default=utc_now)
     # 'scan' when the student scanned the QR, 'manual' when staff entered it.
     source = db.Column(db.String(10), nullable=False, default=SOURCE_SCAN, server_default=SOURCE_SCAN)
-    marked_by_admin_id = db.Column(
+    marked_by_user_id = db.Column(
         db.Integer,
-        db.ForeignKey('admin.id', ondelete='SET NULL', name='fk_attendance_marked_by_admin'),
+        db.ForeignKey('user_account.id', ondelete='SET NULL', name='fk_attendance_marked_by_user'),
         nullable=True,
     )
     note = db.Column(db.String(200), nullable=True)
@@ -194,7 +199,7 @@ class Attendance(db.Model):
     new_device = db.Column(db.Boolean, nullable=False, default=False, server_default=sa.false())
     student = db.relationship('Student', backref=db.backref('attendances', cascade='all, delete-orphan'))
     session = db.relationship('ClassSession', backref=db.backref('attendances', cascade='all, delete-orphan'))
-    marked_by = db.relationship('Admin', foreign_keys=[marked_by_admin_id])
+    marked_by = db.relationship('User', foreign_keys=[marked_by_user_id])
 
     @property
     def is_manual(self):
@@ -204,17 +209,60 @@ class Attendance(db.Model):
 class ActivityLog(db.Model):
     __table_args__ = (
         db.Index('ix_activity_log_created_at', 'created_at'),
-        db.Index('ix_activity_log_actor_admin_id', 'actor_admin_id'),
+        db.Index('ix_activity_log_actor_user_id', 'actor_user_id'),
     )
     id = db.Column(db.Integer, primary_key=True)
-    actor_admin_id = db.Column(db.Integer, db.ForeignKey('admin.id', ondelete='SET NULL'), nullable=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey('user_account.id', ondelete='SET NULL'), nullable=True)
     actor_username = db.Column(db.String(120), nullable=False)
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='SET NULL'), nullable=True)
     action = db.Column(db.String(80), nullable=False)
     target_type = db.Column(db.String(40), nullable=True)
     target_id = db.Column(db.Integer, nullable=True)
     description = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=ist_now, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
 
-    actor = db.relationship('Admin', foreign_keys=[actor_admin_id])
+    actor = db.relationship('User', foreign_keys=[actor_user_id])
     department = db.relationship('Department', foreign_keys=[department_id])
+
+
+class LeaveRequest(db.Model):
+    """A student's request to be excused from classes on some days (medical, personal, college duty).
+
+    Once approved, classes held on those days do not count for the student either way:
+    they are left out of both classes held and classes attended.
+    """
+    PENDING = 'pending'
+    APPROVED = 'approved'
+    REJECTED = 'rejected'
+    KINDS: ClassVar[dict[str, str]] = {'medical': 'Medical', 'personal': 'Personal', 'duty': 'College duty'}
+
+    __table_args__ = (
+        db.Index('ix_leave_request_student_status', 'student_id', 'status'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False)
+    # Calendar days in the college's time zone, both included.
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    kind = db.Column(db.String(20), nullable=False)
+    reason = db.Column(db.String(300), nullable=False)
+    status = db.Column(db.String(10), nullable=False, default=PENDING, server_default=PENDING)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+    decided_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey('user_account.id', ondelete='SET NULL', name='fk_leave_request_decided_by_user'),
+        nullable=True,
+    )
+    decided_at = db.Column(db.DateTime, nullable=True)
+    decision_note = db.Column(db.String(200), nullable=True)
+
+    student = db.relationship('Student', backref=db.backref('leave_requests', cascade='all, delete-orphan'))
+    decided_by = db.relationship('User', foreign_keys=[decided_by_user_id])
+
+    @property
+    def kind_label(self) -> str:
+        return self.KINDS.get(self.kind) or str(self.kind).title()
+
+    @property
+    def days(self):
+        return (self.end_date - self.start_date).days + 1
