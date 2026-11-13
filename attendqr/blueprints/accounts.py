@@ -34,6 +34,7 @@ from ..security import (
     locked_usernames,
     password_policy_error,
 )
+from ..services import two_factor
 from ..utils import normalize_email, normalize_text, parse_int_value
 
 bp = Blueprint('accounts', __name__)
@@ -317,4 +318,25 @@ def reset_password(id):
     db.session.commit()
     current_app.logger.info("Password reset for account %s", account.id)
     flash(f"Temporary password for {account.username}: {temporary_password}", 'success')
+    return redirect(url_for('accounts.index'))
+
+
+@bp.route('/accounts/<int:id>/reset-two-step', methods=['POST'])
+@login_required
+@role_required('principal', 'hod')
+def reset_two_step(id):
+    """For a lost phone: turn two-step sign-in off, so they set it up again at next sign-in."""
+    account = db.get_or_404(User, id)
+    if not can_reset_staff_account(account):
+        abort(403)
+    if not two_factor.is_enabled(account):
+        flash(f"{account.username} does not use two-step sign-in.", 'warning')
+        return redirect(url_for('accounts.index'))
+    two_factor.disable(account)
+    account.rotate_session_token()
+    log_activity('two_factor_reset', f"Reset two-step sign-in for {role_label(account.role)} account '{account.username}'.",
+                 'user', account.id, account.department_id)
+    db.session.commit()
+    flash(f"Two-step sign-in reset for {account.username}. They are signed out everywhere"
+          + (" and must set it up again at next sign-in." if two_factor.is_required(account) else "."), 'success')
     return redirect(url_for('accounts.index'))

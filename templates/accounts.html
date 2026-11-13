@@ -99,6 +99,11 @@
                 {{ menu_form('Reset password', url_for('accounts.reset_password', id=account.id), 'key-round',
                              confirm='A temporary password is created and shown once. They must change it at next sign-in, and are signed out everywhere.',
                              confirm_title='Reset password for ' ~ account.username ~ '?', confirm_label='Reset password') }}
+                {% if account.totp_secret %}
+                {{ menu_form('Reset two-step sign-in', url_for('accounts.reset_two_step', id=account.id), 'smartphone',
+                             confirm='For a lost phone. Their authenticator code and recovery codes stop working, and they are signed out everywhere.',
+                             confirm_title='Reset two-step sign-in for ' ~ account.username ~ '?', confirm_label='Reset') }}
+                {% endif %}
                 {% endif %}
                 {% if can_toggle %}
                 {{ menu_form('Deactivate' if account.is_active else 'Activate', url_for('accounts.toggle_status', id=account.id),
