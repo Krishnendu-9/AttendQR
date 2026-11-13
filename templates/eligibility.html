@@ -1,0 +1,107 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state, submit_button, record_opener, record_dialog, action_form with context %}
+{% from 'components/forms.html' import field, select_control, text_input with context %}
+{% set page_title = 'Exam eligibility' %}
+
+{% macro stat(label, value, icon_name, meta=None) -%}
+<div class="card flex items-start justify-between gap-4 p-5">
+  <div class="min-w-0">
+    <p class="text-label-md text-muted-foreground">{{ label }}</p>
+    <p class="mt-2 text-headline-lg text-foreground">{{ value }}</p>
+    {% if meta %}<p class="mt-1 text-body-sm text-muted-foreground">{{ meta }}</p>{% endif %}
+  </div>
+  <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-ink">{{ icon(icon_name, 'size-5') }}</span>
+</div>
+{%- endmacro %}
+
+{% macro status_badge(status) -%}
+{% set tones = {'eligible': 'success', 'condoned': 'info', 'needs_condonation': 'warning', 'detained': 'danger', 'no_classes': 'neutral'} %}
+{{ badge(labels[status], tones[status]) }}
+{%- endmacro %}
+
+{% block content %}
+{% call page_header('Exam eligibility', 'Who may sit the semester\'s exams on attendance. Percentages count every class this semester, as in the reports: approved leave, void sessions and special classes are left out.') %}
+  {% if report %}
+  <a href="{{ url_for('reports.eligibility_export', department_id=department.id, semester_id=semester.id) }}" class="{{ btn('outline') }}">{{ icon('file-spreadsheet') }}<span>Export Excel</span></a>
+  {% endif %}
+{% endcall %}
+
+<form method="GET" action="{{ url_for('reports.eligibility') }}" class="card mb-6 p-6" novalidate>
+  <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+    {% call field('dept_select', 'Department', required=True) %}
+      {{ select_control('department_id', 'dept_select', departments, selected=filters.department_id, placeholder='Select department',
+                        required=True, value_attr='id', label_attr='display_name') }}
+    {% endcall %}
+    {% call field('sem_select', 'Semester', required=True) %}
+      {{ select_control('semester_id', 'sem_select', semesters, selected=filters.semester_id, placeholder='Select semester',
+                        required=True, value_attr='id', label_attr='name') }}
+    {% endcall %}
+    <div class="flex items-end">{{ submit_button('Show', 'Loading...', icon_name='list-checks', extra='w-full sm:w-auto') }}</div>
+  </div>
+</form>
+
+{% if not report %}
+<section class="card">
+  {{ empty_state('list-checks', 'Choose a class', 'Select a department and semester to see who may sit the exams.') }}
+</section>
+{% else %}
+<section aria-label="Totals" class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+  {{ stat('Eligible', report.counts['eligible'] + report.counts['condoned'], 'circle-check', report.counts['condoned'] ~ ' of them condoned') }}
+  {{ stat('Needs condonation', report.counts['needs_condonation'], 'triangle-alert', report.condonable_at ~ '% to ' ~ report.eligible_at ~ '%') }}
+  {{ stat('Detained', report.counts['detained'], 'circle-x', 'below ' ~ report.condonable_at ~ '%') }}
+  {{ stat('Class size', report.rows|length, 'users', semester.name) }}
+</section>
+
+{% if semester.attendance_locked %}
+<div class="mt-6">{% call callout('Attendance is final', 'info', 'lock') %}This semester's attendance is locked, so these percentages will not change. Condonations can still be granted.{% endcall %}</div>
+{% endif %}
+
+<div class="mt-6">
+{% call card('Students', 'Detained first, then those waiting for a decision. Condoning needs a reason, which is in the activity log and the export.', flush=True) %}
+  {% if report.rows %}
+  <div class="overflow-x-auto">
+    <table class="data-table">
+      <thead><tr><th scope="col">Student</th><th scope="col" class="text-right">Attended</th><th scope="col" class="text-right">%</th><th scope="col">Status</th><th scope="col" class="col-actions"><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+        {% for row in report.rows %}
+        <tr>
+          <td><a href="{{ url_for('students.view', id=row.student.id) }}" class="block truncate rounded text-label-lg text-foreground hover:text-primary focus-visible:shadow-focus focus-visible:outline-none">{{ row.student.name }}</a>
+              <p class="font-mono text-body-sm text-muted-foreground">{{ row.student.roll_no }}</p></td>
+          <td class="text-right tabular-nums">{{ row.attended }}<span class="text-muted-foreground"> / {{ row.held }}</span></td>
+          <td class="text-right tabular-nums text-label-lg">{{ row.percentage }}%</td>
+          <td>{{ status_badge(row.status) }}
+              {% if row.status == 'condoned' %}<p class="mt-1 max-w-72 text-body-sm text-muted-foreground">{{ row.condonation.granted_by.username if row.condonation.granted_by else 'Deleted account' }}: {{ row.condonation.reason }}</p>{% endif %}</td>
+          <td class="col-actions">
+            {% if row.status == 'needs_condonation' %}
+              {{ record_opener('Condone', 'condone-dialog', url_for('reports.condone', semester_id=semester.id, student_id=row.student.id),
+                               'Condone ' ~ row.student.name ~ ' (' ~ row.percentage ~ '%)', 'Condone', {}, 'check', as_button=True, variant='outline') }}
+            {% elif row.status == 'condoned' %}
+              {{ action_form('Revoke', url_for('reports.revoke_condonation', id=row.condonation.id), 'ghost', size='sm',
+                             confirm='They will need condonation again to sit the exams.', confirm_title='Revoke the condonation of ' ~ row.student.name ~ '?') }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {{ empty_state('users', 'No students', 'This class has no students yet.', compact=True) }}
+  {% endif %}
+{% endcall %}
+</div>
+
+{% call record_dialog('condone-dialog', 'Condone', 'Condone') %}
+  {{ text_input('note', 'Reason', id='condone_note', required=True, placeholder='e.g. Hospitalised in October; medical certificate on file',
+                hint='Recorded in the activity log and the export.', attrs={'maxlength': 200, 'autocomplete': 'off'}) }}
+{% endcall %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}">
+document.getElementById('dept_select').addEventListener('change', function (event) {
+  AttendQR.loadSemesters(document.getElementById('sem_select'), event.target.value);
+});
+</script>
+{% endblock %}

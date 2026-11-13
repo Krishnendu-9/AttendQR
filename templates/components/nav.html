@@ -17,6 +17,8 @@
     {'label': 'Attendance report', 'icon': 'chart-column', 'endpoint': 'reports.index', 'show': staff, 'match': ['reports.index', 'reports.detailed', 'reports.export'], 'keywords': 'export excel pdf'},
     {'label': 'Analytics', 'icon': 'activity', 'endpoint': 'reports.analytics', 'show': staff, 'match': ['reports.analytics'], 'keywords': 'trend chart weekly at risk'},
     {'label': 'Shortage list', 'icon': 'triangle-alert', 'endpoint': 'reports.shortage', 'show': staff, 'match': ['reports.shortage'], 'keywords': 'below target defaulters'},
+    {'label': 'Integrity', 'icon': 'shield-check', 'endpoint': 'reports.integrity', 'show': managers, 'match': ['reports.integrity'], 'keywords': 'proxy suspicious spot check buddy'},
+    {'label': 'Exam eligibility', 'icon': 'list-checks', 'endpoint': 'reports.eligibility', 'show': managers, 'match': ['reports.eligibility'], 'keywords': 'condonation detained exam 75'},
     {'label': 'Leave' if role == 'student' else 'Leave requests', 'icon': 'calendar-clock', 'endpoint': 'leave.index', 'show': role in ['student', 'principal', 'hod'], 'match': ['leave.'], 'keywords': 'medical absence excuse approve'},
   ]},
   {'id': 'people', 'label': 'People', 'items': [

@@ -1,0 +1,135 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state, submit_button with context %}
+{% from 'components/forms.html' import field, select_control %}
+{% set page_title = 'Integrity' %}
+
+{% macro stat(label, value, icon_name, meta=None) -%}
+<div class="card flex items-start justify-between gap-4 p-5">
+  <div class="min-w-0">
+    <p class="text-label-md text-muted-foreground">{{ label }}</p>
+    <p class="mt-2 text-headline-lg text-foreground">{{ value }}</p>
+    {% if meta %}<p class="mt-1 text-body-sm text-muted-foreground">{{ meta }}</p>{% endif %}
+  </div>
+  <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-ink">{{ icon(icon_name, 'size-5') }}</span>
+</div>
+{%- endmacro %}
+
+{% block content %}
+{{ page_header('Integrity', 'Patterns that suggest attendance marked for someone who was not there. Each flag says why it was raised; none of them decides anything on its own.') }}
+
+<form method="GET" action="{{ url_for('reports.integrity') }}" class="card mb-6 p-6" novalidate>
+  <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+    {% call field('dept_select', 'Department', required=True) %}
+      {{ select_control('department_id', 'dept_select', departments, selected=filters.department_id, placeholder='Select department',
+                        required=True, value_attr='id', label_attr='display_name') }}
+    {% endcall %}
+    {% call field('sem_select', 'Semester', required=True) %}
+      {{ select_control('semester_id', 'sem_select', semesters, selected=filters.semester_id, placeholder='Select semester',
+                        required=True, value_attr='id', label_attr='name') }}
+    {% endcall %}
+    {% call field('weeks_select', 'Period') %}
+      {% call select_control('weeks', 'weeks_select') %}
+        {% for n in periods %}<option value="{{ n }}"{% if n == weeks %} selected{% endif %}>Last {{ n }} weeks</option>{% endfor %}
+      {% endcall %}
+    {% endcall %}
+    <div class="flex items-end">{{ submit_button('Show', 'Loading...', icon_name='shield-check', extra='w-full sm:w-auto') }}</div>
+  </div>
+</form>
+
+{% if not report %}
+<section class="card">
+  {{ empty_state('shield-check', 'Choose a class', 'Select a department and semester to look for unusual patterns.') }}
+</section>
+{% else %}
+<section aria-label="Totals" class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+  {{ stat('Students flagged', report.students|length, 'users', 'of the class') }}
+  {{ stat('Spot checks', report.checks, 'list-checks', (report.failed_checks ~ ' not in the room') if report.checks else 'none done yet') }}
+  {{ stat('Buddy pairs', report.pairs|length, 'activity', 'same address, within ' ~ buddy_window ~ ' s') }}
+  {{ stat('Sessions', report.sessions, 'calendar-check', 'last ' ~ weeks ~ ' weeks') }}
+</section>
+
+{% if report.scans and report.scans_with_address < report.scans %}
+<div class="mt-6">
+  {% call callout('Some scans have no address', 'info') %}
+    {{ report.scans_with_address }} of {{ report.scans }} scans in this period still have their address (addresses are kept for {{ ip_retention }} days), so buddy pairs only cover those.
+  {% endcall %}
+</div>
+{% endif %}
+
+<div class="mt-6">
+{% call card('Students to look into', 'Highest score first: a failed spot check counts most, then buddy pairs, new phones and manual entries.', flush=True) %}
+  {% if report.students %}
+  <div class="overflow-x-auto">
+    <table class="data-table">
+      <thead><tr><th scope="col">Student</th><th scope="col">Why</th><th scope="col" class="text-right">Score</th></tr></thead>
+      <tbody>
+        {% for row in report.students %}
+        <tr>
+          <td class="align-top"><a href="{{ url_for('students.view', id=row.student.id) }}" class="block truncate rounded text-label-lg text-foreground hover:text-primary focus-visible:shadow-focus focus-visible:outline-none">{{ row.student.name }}</a>
+              <p class="font-mono text-body-sm text-muted-foreground">{{ row.student.roll_no }}</p></td>
+          <td>
+            <ul class="grid gap-1.5">
+              {% for flag in row.flags %}
+              <li class="flex items-start gap-2 text-body-md text-foreground">
+                {{ icon({'spot_check': 'circle-x', 'buddy': 'users', 'new_device': 'smartphone', 'manual': 'pencil'}[flag.kind], 'mt-0.5 size-4 shrink-0 text-muted-foreground') }}<span>{{ flag.text }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+          </td>
+          <td class="align-top text-right tabular-nums text-label-lg">{{ row.score }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {{ empty_state('circle-check', 'Nothing unusual', 'No failed spot checks, buddy pairs, repeated new phones or frequent manual entries in this period.', compact=True) }}
+  {% endif %}
+{% endcall %}
+</div>
+
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+  {% call card('Buddy pairs', 'Scanned within ' ~ buddy_window ~ ' s of each other from the same address in at least ' ~ buddy_min_sessions ~ ' sessions, and in at least half of the sessions either scanned in.', flush=True) %}
+    {% if report.pairs %}
+    <ul class="divide-y divide-border">
+      {% for pair in report.pairs %}
+      <li class="flex items-center justify-between gap-3 px-6 py-3.5">
+        <p class="min-w-0 text-body-md text-foreground">{{ pair.first.name }} <span class="text-muted-foreground">and</span> {{ pair.second.name }}
+          <span class="block font-mono text-body-sm text-muted-foreground">{{ pair.address }}</span></p>
+        <p class="shrink-0 text-right text-body-sm text-muted-foreground"><span class="text-label-lg tabular-nums text-foreground">{{ pair.together }}</span> sessions<span class="block">{{ pair.share }}% of theirs</span></p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      {{ empty_state('users', 'No buddy pairs', 'No two students repeatedly scanned together from one address.', compact=True) }}
+    {% endif %}
+  {% endcall %}
+
+  {% call card('New-phone bursts', burst_size ~ ' or more phones registered for the first time in one session. Open the session to check those students were in the room.', flush=True) %}
+    {% if report.bursts %}
+    <ul class="divide-y divide-border">
+      {% for burst in report.bursts %}
+      <li>
+        <a href="{{ url_for('attendance.generate_qr', session_id=burst.session.id) }}" class="flex items-center justify-between gap-3 px-6 py-3.5 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none">
+          <span class="min-w-0"><span class="block truncate text-label-lg text-foreground">{{ session_display_name(burst.session) }}</span>
+            <span class="block text-body-sm text-muted-foreground">{{ format_12h(burst.session.created_at) }}</span></span>
+          <span class="shrink-0 text-right text-body-sm text-muted-foreground"><span class="text-label-lg tabular-nums text-foreground">{{ burst.count }}</span> new phones<span class="block">from {{ burst.addresses }} address{{ '' if burst.addresses == 1 else 'es' }}</span></span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      {{ empty_state('smartphone', 'No bursts', 'No session registered several new phones at once.', compact=True) }}
+    {% endif %}
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}">
+document.getElementById('dept_select').addEventListener('change', function (event) {
+  AttendQR.loadSemesters(document.getElementById('sem_select'), event.target.value);
+});
+</script>
+{% endblock %}

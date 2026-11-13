@@ -1,17 +1,25 @@
-from flask import Blueprint, abort, current_app, redirect, render_template, request, send_file, url_for
-from flask_login import login_required
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
 
 from ..access import (
     can_access_department,
+    log_activity,
     ordered_departments_query,
     role_required,
     visible_semesters_query,
     visible_subjects_query,
 )
 from ..extensions import db
-from ..models import ClassSession, Department, Semester, Student, Subject
+from ..models import ClassSession, Condonation, Department, Semester, Student, Subject
 from ..services.analytics import PERIODS, build_class_trends, parse_weeks
+from ..services.eligibility import LABELS, NEEDS_CONDONATION, build_eligibility, export_rows
+from ..services.integrity import (
+    BUDDY_MIN_SESSIONS,
+    BUDDY_WINDOW_SECONDS,
+    NEW_DEVICE_BURST,
+    build_integrity_report,
+)
 from ..services.leave import LEAVE_LEGEND, ON_LEAVE
 from ..services.reports import (
     MANUAL_MARK_LEGEND,
@@ -31,7 +39,7 @@ from ..services.reports import (
     report_sessions_query,
     total_attendance,
 )
-from ..utils import local_now, normalize_paper_code, sort_semesters
+from ..utils import local_now, normalize_paper_code, normalize_text, sort_semesters
 
 bp = Blueprint('reports', __name__)
 
@@ -138,6 +146,106 @@ def analytics():
         'analytics.html', trends=trends, filters=filters, weeks=weeks, periods=PERIODS,
         department=department, semester=semester, **_filter_choices(filters),
     )
+
+
+@bp.route('/reports/integrity')
+@login_required
+@role_required('principal', 'hod')
+def integrity():
+    """Patterns that suggest proxy attendance in one class, each with its reason."""
+    filters = parse_report_filters(request.args)
+    weeks = parse_weeks(request.args.get('weeks'))
+    report = department = semester = None
+    if filters.department_id and filters.semester_id:
+        department, semester = _load_class(filters.department_id, filters.semester_id)
+        report = build_integrity_report(filters.department_id, filters.semester_id, weeks)
+    return render_template(
+        'integrity.html', report=report, filters=filters, weeks=weeks, periods=PERIODS,
+        department=department, semester=semester, buddy_window=BUDDY_WINDOW_SECONDS,
+        buddy_min_sessions=BUDDY_MIN_SESSIONS, burst_size=NEW_DEVICE_BURST,
+        ip_retention=current_app.config['SCAN_IP_RETENTION_DAYS'], **_filter_choices(filters),
+    )
+
+
+@bp.route('/reports/eligibility')
+@login_required
+@role_required('principal', 'hod')
+def eligibility():
+    """Who may sit the semester's exams on attendance, with condonations."""
+    filters = parse_report_filters(request.args)
+    report = department = semester = None
+    if filters.department_id and filters.semester_id:
+        department, semester = _load_class(filters.department_id, filters.semester_id)
+        report = build_eligibility(filters.department_id, filters.semester_id)
+    return render_template('eligibility.html', report=report, filters=filters, department=department,
+                           semester=semester, labels=LABELS, **_filter_choices(filters))
+
+
+def _eligibility_page(semester):
+    return redirect(url_for('reports.eligibility', department_id=semester.department_id, semester_id=semester.id))
+
+
+@bp.route('/reports/eligibility/<int:semester_id>/students/<int:student_id>/condone', methods=['POST'])
+@login_required
+@role_required('principal', 'hod')
+def condone(semester_id, student_id):
+    semester = db.get_or_404(Semester, semester_id)
+    _load_class(semester.department_id, semester.id)
+    reason = normalize_text(request.form.get('note'))
+    if not reason or len(reason) > 200:
+        flash("Give a short reason for the condonation (at most 200 characters).", 'danger')
+        return _eligibility_page(semester)
+    row = next((r for r in build_eligibility(semester.department_id, semester.id).rows
+                if r['student'].id == student_id), None)
+    if row is None:
+        abort(404)
+    if row['status'] != NEEDS_CONDONATION:
+        flash(f"{row['student'].name} is {LABELS[row['status']].lower()}; only students between the condonation "
+              "and eligibility limits can be condoned.", 'warning')
+        return _eligibility_page(semester)
+    db.session.add(Condonation(student_id=student_id, semester_id=semester.id, reason=reason,
+                               granted_by_user_id=current_user.id))
+    log_activity('attendance_condoned', f"Condoned {row['student'].name} ({row['student'].roll_no}) at "
+                 f"{row['percentage']}% for {semester.name}. Reason: {reason}", 'student', student_id,
+                 semester.department_id)
+    db.session.commit()
+    flash(f"{row['student'].name} may sit the exams (condoned).", 'success')
+    return _eligibility_page(semester)
+
+
+@bp.route('/reports/eligibility/condonations/<int:id>/revoke', methods=['POST'])
+@login_required
+@role_required('principal', 'hod')
+def revoke_condonation(id):
+    condonation = db.get_or_404(Condonation, id)
+    semester = db.get_or_404(Semester, condonation.semester_id)
+    _load_class(semester.department_id, semester.id)
+    student = condonation.student
+    log_activity('condonation_revoked', f"Revoked the condonation of {student.name} ({student.roll_no}) for "
+                 f"{semester.name}.", 'student', student.id, semester.department_id)
+    db.session.delete(condonation)
+    db.session.commit()
+    flash(f"Condonation for {student.name} revoked.", 'success')
+    return _eligibility_page(semester)
+
+
+@bp.route('/reports/eligibility/export')
+@login_required
+@role_required('principal', 'hod')
+def eligibility_export():
+    filters = parse_report_filters(request.args)
+    if not filters.department_id or not filters.semester_id:
+        abort(400)
+    department, semester = _load_class(filters.department_id, filters.semester_id)
+    report = build_eligibility(department.id, semester.id)
+    headers, data = export_rows(report)
+    notes = [(f"Eligible at {report.eligible_at}% or more; {report.condonable_at}% to {report.eligible_at}% only if "
+             f"condoned; below {report.condonable_at}% detained. Approved leave, void sessions and special classes "
+             f"are not counted. Exported on {local_now().strftime('%d/%m/%Y %I:%M %p')}.")]
+    name = ''.join(ch if ch.isalnum() else '_' for ch in f"{department.branch_name or department.course_name}_"
+                   f"{semester.name}_eligibility")
+    return send_file(render_excel(headers, data, notes, title='Exam eligibility'), download_name=f'{name}.xlsx',
+                     as_attachment=True)
 
 
 @bp.route('/reports/detailed')
