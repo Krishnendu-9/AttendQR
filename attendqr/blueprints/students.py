@@ -13,7 +13,7 @@ from ..access import (
     can_access_student,
     current_department_id,
     email_format_rule_message,
-    is_super_admin,
+    is_principal,
     is_valid_email,
     log_activity,
     ordered_departments_query,
@@ -22,7 +22,7 @@ from ..access import (
     visible_students_query,
 )
 from ..extensions import db
-from ..models import Admin, Semester, Student
+from ..models import Semester, Student, User
 from ..security import (
     clear_login_failures,
     generate_temporary_password,
@@ -81,7 +81,7 @@ def _student_form():
         'name': normalize_text(request.form.get('name')),
         'roll_no': normalize_roll_no(request.form.get('roll_no')),
         'email': normalize_email(request.form.get('email')),
-        'department_id': parse_int_value(request.form.get('department_id')) if is_super_admin() else current_department_id(),
+        'department_id': parse_int_value(request.form.get('department_id')) if is_principal() else current_department_id(),
         'semester_id': parse_int_value(request.form.get('semester_id')),
     }
     if not values['name'] or not values['roll_no'] or not values['email']:
@@ -114,12 +114,12 @@ def _error_field(error):
 def _render_form(student=None, error=None, status=200):
     """The add/edit page. After a failed save it shows what was typed, with the error on its field."""
     submitted = request.method == 'POST'
-    source = request.form if submitted else None
+    source = request.form if submitted else {}
 
     def value(name, default=''):
         return source.get(name, '') if submitted else default
 
-    department_id = parse_int_value(value('department_id', student.department_id if student else '')) if is_super_admin() else current_department_id()
+    department_id = parse_int_value(value('department_id', student.department_id if student else '')) if is_principal() else current_department_id()
     departments = ordered_departments_query().all()
     if department_id is None and len(departments) == 1:
         department_id = departments[0].id
@@ -173,11 +173,11 @@ def _duplicate_error(values, student=None):
         Student.semester_id == values['semester_id'],
     )
     email_match = Student.query.filter(db.func.lower(Student.email) == values['email'])
-    login_match = Admin.query.filter(db.func.lower(Admin.username) == values['email'])
+    login_match = User.query.filter(db.func.lower(User.username) == values['email'])
     if student is not None:
         roll_match = roll_match.filter(Student.id != student.id)
         email_match = email_match.filter(Student.id != student.id)
-        login_match = login_match.filter(or_(Admin.student_id.is_(None), Admin.student_id != student.id))
+        login_match = login_match.filter(or_(User.student_id.is_(None), User.student_id != student.id))
     if roll_match.first():
         return f"Roll number {values['roll_no']} already exists in this department and semester."
     if email_match.first():
@@ -189,7 +189,7 @@ def _duplicate_error(values, student=None):
 
 @bp.route('/students', methods=['GET', 'POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def index():
     if request.method == 'POST':
         values, error = _student_form()
@@ -245,14 +245,14 @@ def index():
 
 @bp.route('/students/new')
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def new():
     return _render_form()
 
 
 @bp.route('/students/<int:id>')
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def view(id):
     student = _find_student(id)
     if student is None:
@@ -260,14 +260,14 @@ def view(id):
     return render_template(
         'students/view.html',
         student=student,
-        account=Admin.query.filter_by(student_id=student.id).first(),
+        account=User.query.filter_by(student_id=student.id).first(),
         summary=build_student_attendance_summary(student),
     )
 
 
 @bp.route('/students/<int:id>/edit')
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def edit_form(id):
     student = _find_student(id)
     if student is None:
@@ -277,7 +277,7 @@ def edit_form(id):
 
 @bp.route('/students/import', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def import_students():
     upload = request.files.get('student_file')
     if not upload or not upload.filename:
@@ -328,7 +328,7 @@ def import_students():
 
 @bp.route('/students/import-template')
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def import_template():
     headers, sample = import_template_rows()
     output = io.StringIO()
@@ -345,14 +345,14 @@ def import_template():
 
 @bp.route('/students/edit/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def edit(id):
     student = db.get_or_404(Student, id)
     if not can_access_student(student):
         abort(403)
     values, error = _student_form()
     error = error or _duplicate_error(values, student)
-    if error:
+    if error or values is None:
         return _save_failed(error, student)
     old_class = (student.department_id, student.semester_id)
     for key, value in values.items():
@@ -371,13 +371,13 @@ def edit(id):
 
 @bp.route('/students/delete/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def delete(id):
     student = db.get_or_404(Student, id)
     if not can_access_student(student):
         abort(403)
     log_activity('student_deleted', f"Deleted student profile '{student.name}' ({student.roll_no}).", 'student', student.id, student.department_id)
-    Admin.query.filter_by(student_id=student.id).delete()
+    User.query.filter_by(student_id=student.id).delete()
     name = student.name
     db.session.delete(student)
     db.session.commit()
@@ -387,7 +387,7 @@ def delete(id):
 
 @bp.route('/students/reset-password/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def reset_password(id):
     student = db.get_or_404(Student, id)
     if not can_access_student(student):
@@ -395,7 +395,7 @@ def reset_password(id):
 
     ensure_student_account(student)
     db.session.flush()
-    account = Admin.query.filter_by(student_id=student.id).first()
+    account = User.query.filter_by(student_id=student.id).first()
     if not account:
         flash(f"{student.name} has no login account because {student.email} is used by another account.", "danger")
         return back_to_list()
@@ -418,7 +418,7 @@ def reset_password(id):
 
 @bp.route('/students/reset-device/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def reset_device(id):
     student = db.get_or_404(Student, id)
     if not can_access_student(student):

@@ -20,7 +20,7 @@ from ..utils import format_12h, sort_semesters
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
-STAFF = ('super_admin', 'hod', 'teacher')
+STAFF = ('principal', 'hod', 'teacher')
 
 
 def _subject_json(subject, include_semester=False):
@@ -66,7 +66,7 @@ def subjects(semester_id):
 
 @bp.route('/department-subjects/<int:department_id>')
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def department_subjects(department_id):
     if not can_access_department(department_id):
         abort(403)

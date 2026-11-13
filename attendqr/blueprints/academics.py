@@ -8,7 +8,7 @@ from ..access import (
     current_department_id,
     describe_delete_block,
     is_allowed_staff_email,
-    is_super_admin,
+    is_principal,
     log_activity,
     ordered_departments_query,
     role_required,
@@ -20,7 +20,7 @@ from ..access import (
     visible_teachers_query,
 )
 from ..extensions import db
-from ..models import Admin, Attendance, ClassSession, Department, Semester, Student, Subject, Teacher
+from ..models import Attendance, ClassSession, Department, Semester, Student, Subject, Teacher, User
 from ..utils import (
     natural_key,
     normalize_branch,
@@ -37,7 +37,7 @@ bp = Blueprint('academics', __name__)
 
 def scoped_department_id_from_form():
     """Principals choose a department; everyone else is pinned to their own."""
-    return parse_int_value(request.form.get('department_id')) if is_super_admin() else current_department_id()
+    return parse_int_value(request.form.get('department_id')) if is_principal() else current_department_id()
 
 
 # ── Departments ──────────────────────────────────────────────
@@ -54,13 +54,13 @@ def _department_form():
 
 @bp.route('/departments', methods=['GET', 'POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def departments():
     if request.method == 'POST':
-        if not is_super_admin():
+        if not is_principal():
             abort(403)
         branch, course_name, error = _department_form()
-        if error:
+        if error or not course_name:
             flash(error, "danger")
             return redirect(url_for('academics.departments'))
         existing = Department.query.filter(db.func.lower(Department.name) == course_name.lower()).first()
@@ -78,11 +78,11 @@ def departments():
 
 @bp.route('/departments/edit/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin')
+@role_required('principal')
 def edit_department(id):
     department = db.get_or_404(Department, id)
     branch, course_name, error = _department_form()
-    if error:
+    if error or not course_name:
         flash(error, "danger")
         return redirect(url_for('academics.departments'))
     existing = Department.query.filter(
@@ -101,11 +101,11 @@ def edit_department(id):
 
 @bp.route('/departments/delete/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin')
+@role_required('principal')
 def delete_department(id):
     department = db.get_or_404(Department, id)
     counts = {
-        'admins': Admin.query.filter(Admin.department_id == id, Admin.role != 'super_admin').count(),
+        'staff accounts': User.query.filter(User.department_id == id, User.role != 'principal').count(),
         'teachers': Teacher.query.filter_by(department_id=id).count(),
         'students': Student.query.filter_by(department_id=id).count(),
         'subjects': Subject.query.filter_by(department_id=id).count(),
@@ -127,7 +127,7 @@ def delete_department(id):
 
 @bp.route('/semesters', methods=['GET', 'POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def semesters():
     if request.method == 'POST':
         department_id = scoped_department_id_from_form()
@@ -166,7 +166,7 @@ def semesters():
 
 @bp.route('/semesters/edit/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def edit_semester(id):
     semester = db.get_or_404(Semester, id)
     if not can_access_department(semester.department_id):
@@ -203,7 +203,7 @@ def edit_semester(id):
 
 @bp.route('/semesters/delete/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def delete_semester(id):
     semester = db.get_or_404(Semester, id)
     if not can_access_department(semester.department_id):
@@ -270,13 +270,14 @@ def _subject_form(subject=None):
 
 @bp.route('/subjects', methods=['GET', 'POST'])
 @login_required
-@role_required('super_admin', 'hod', 'teacher')
+@role_required('principal', 'hod', 'teacher')
 def subjects():
     if request.method == 'POST':
         if user_role() == 'teacher':
             abort(403)
         values, error = _subject_form()
-        if error:
+        if error or values is None:
+            error = error or "Check the subject details and try again."
             flash(error, "warning" if "already exists" in error else "danger")
             return redirect(url_for('academics.subjects'))
         subject = Subject(**values)
@@ -302,13 +303,14 @@ def subjects():
 
 @bp.route('/subjects/edit/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def edit_subject(id):
     subject = db.get_or_404(Subject, id)
     if not can_access_department(subject.department_id):
         abort(403)
     values, error = _subject_form(subject)
-    if error:
+    if error or values is None:
+        error = error or "Check the subject details and try again."
         flash(error, "warning" if "already exists" in error else "danger")
         return redirect(url_for('academics.subjects'))
     moving = (values['department_id'], values['semester_id']) != (subject.department_id, subject.semester_id)
@@ -337,7 +339,7 @@ def edit_subject(id):
 
 @bp.route('/subjects/delete/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def delete_subject(id):
     subject = db.get_or_404(Subject, id)
     if not can_access_department(subject.department_id):
@@ -359,7 +361,7 @@ def delete_subject(id):
 
 @bp.route('/teachers')
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def teachers():
     return render_template(
         'teachers.html',
@@ -378,7 +380,7 @@ def _teacher_links_block(teacher, label):
 
 @bp.route('/teachers/edit/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def edit_teacher(id):
     teacher = db.get_or_404(Teacher, id)
     if not can_access_teacher(teacher):
@@ -400,9 +402,9 @@ def edit_teacher(id):
     if Teacher.query.filter(Teacher.id != teacher.id, db.func.lower(Teacher.email) == email).first():
         flash(f"Teacher email '{email}' already exists.", "warning")
         return redirect(url_for('academics.teachers'))
-    if Admin.query.filter(
-        db.func.lower(Admin.username) == email,
-        or_(Admin.teacher_id.is_(None), Admin.teacher_id != teacher.id),
+    if User.query.filter(
+        db.func.lower(User.username) == email,
+        or_(User.teacher_id.is_(None), User.teacher_id != teacher.id),
     ).first():
         flash(f"Account email '{email}' already exists.", "warning")
         return redirect(url_for('academics.teachers'))
@@ -414,10 +416,10 @@ def edit_teacher(id):
     teacher.name = name
     teacher.email = email
     teacher.department_id = department_id
-    linked_admin = Admin.query.filter_by(teacher_id=teacher.id).first()
-    if linked_admin:
-        linked_admin.username = email
-        linked_admin.department_id = department_id
+    linked_account = User.query.filter_by(teacher_id=teacher.id).first()
+    if linked_account:
+        linked_account.username = email
+        linked_account.department_id = department_id
     log_activity('teacher_updated', f"Updated teacher profile '{teacher.name}'.", 'teacher', teacher.id, department_id)
     db.session.commit()
     return redirect(url_for('academics.teachers'))
@@ -425,7 +427,7 @@ def edit_teacher(id):
 
 @bp.route('/teachers/delete/<int:id>', methods=['POST'])
 @login_required
-@role_required('super_admin', 'hod')
+@role_required('principal', 'hod')
 def delete_teacher(id):
     teacher = db.get_or_404(Teacher, id)
     if not can_access_teacher(teacher):
@@ -435,7 +437,7 @@ def delete_teacher(id):
         flash(block, 'warning')
         return redirect(url_for('academics.teachers'))
     log_activity('teacher_deleted', f"Deleted teacher profile '{teacher.name}'.", 'teacher', teacher.id, teacher.department_id)
-    Admin.query.filter_by(teacher_id=teacher.id).delete()
+    User.query.filter_by(teacher_id=teacher.id).delete()
     db.session.delete(teacher)
     db.session.commit()
     return redirect(url_for('academics.teachers'))

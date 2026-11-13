@@ -6,7 +6,7 @@ from sqlalchemy.orm import joinedload
 
 from ..access import (
     department_filter,
-    is_super_admin,
+    is_principal,
     role_required,
     session_display_name,
     user_role,
@@ -19,9 +19,9 @@ from ..access import (
     visible_teachers_query,
 )
 from ..extensions import db
-from ..models import ActivityLog, Admin, ClassSession, Subject
+from ..models import ActivityLog, ClassSession, Subject, User
 from ..services.reports import attendance_counts, build_student_attendance_summary, total_attendance
-from ..utils import ist_now
+from ..utils import utc_now
 
 bp = Blueprint('main', __name__)
 
@@ -50,7 +50,7 @@ def dashboard():
     if user_role() == 'student':
         return render_student_dashboard()
 
-    now = ist_now()
+    now = utc_now()
     recent_sessions = (
         visible_sessions_query()
         .options(
@@ -75,13 +75,13 @@ def dashboard():
         'attendance_count': counts.get(s.id, 0),
     } for s in recent_sessions]
 
-    if is_super_admin():
-        principals = Admin.query.filter_by(role='super_admin').count()
-        hods = Admin.query.filter_by(role='hod').count()
-        teachers = Admin.query.filter_by(role='teacher').count()
+    if is_principal():
+        principals = User.query.filter_by(role='principal').count()
+        hods = User.query.filter_by(role='hod').count()
+        teachers = User.query.filter_by(role='teacher').count()
         accounts = {'total': principals + hods + teachers, 'principals': principals, 'hods': hods, 'teachers': teachers}
     else:
-        teachers = Admin.query.filter(Admin.role == 'teacher', department_filter(Admin.department_id)).count()
+        teachers = User.query.filter(User.role == 'teacher', department_filter(User.department_id)).count()
         accounts = {'total': teachers, 'principals': None, 'hods': None, 'teachers': teachers}
 
     return render_template(
