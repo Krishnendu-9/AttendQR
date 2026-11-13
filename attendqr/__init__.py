@@ -3,6 +3,7 @@ import mimetypes
 import os
 import re
 import secrets
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import click
 from flask import Flask, current_app, flash, jsonify, redirect, render_template, request, url_for
@@ -24,7 +25,7 @@ from .access import (
 )
 from .config import Config
 from .extensions import db, login_manager, migrate
-from .models import Admin
+from .models import User
 from .security import (
     apply_security_headers,
     configure_secret_key,
@@ -36,7 +37,7 @@ from .security import (
 )
 from .services.network import describe_scan_networks, parse_scan_networks
 from .services.retention import purge_expired_scan_ips, register_scan_ip_purge
-from .utils import format_12h, ist_now
+from .utils import format_12h, to_local, utc_now
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -90,6 +91,8 @@ def create_app(overrides=None):
     for blueprint in ALL_BLUEPRINTS:
         app.register_blueprint(blueprint)
 
+    from . import observability
+    observability.init_app(app)
     _register_request_hooks(app)
     _register_error_pages(app)
     register_scan_ip_purge(app)
@@ -121,6 +124,10 @@ def _check_settings(app):
         )
     if grant < 30:
         problems.append(f"SCAN_GRANT_SECONDS must be at least 30 seconds, time to log in after scanning (got {grant}).")
+    try:
+        ZoneInfo(cfg['TIMEZONE'])
+    except (ZoneInfoNotFoundError, ValueError):
+        problems.append(f"TIMEZONE {cfg['TIMEZONE']!r} is not a known time zone; use a name such as Asia/Kolkata.")
     idle = cfg['SESSION_IDLE_MINUTES']
     if idle and idle < 5:
         problems.append(f"SESSION_IDLE_MINUTES must be 0 (never sign out) or at least 5 (got {idle}).")
@@ -160,13 +167,13 @@ def _check_scan_networks(app):
 
 @login_manager.user_loader
 def load_user(user_id):
-    admin_id, _, token = (user_id or '').partition(':')
-    if not admin_id.isdigit() or not token:
+    user_id, _, token = (user_id or '').partition(':')
+    if not user_id.isdigit() or not token:
         return None
-    admin = db.session.get(Admin, int(admin_id))
-    if admin is None or not admin.session_token or not secrets.compare_digest(admin.session_token, token):
+    user = db.session.get(User, int(user_id))
+    if user is None or not user.session_token or not secrets.compare_digest(user.session_token, token):
         return None
-    return admin
+    return user
 
 
 def _register_request_hooks(app):
@@ -272,10 +279,13 @@ def static_url(filename):
 
 
 def _register_template_helpers(app):
+    # Stored timestamps are UTC; `value|local` gives the college's local time for formatting.
+    app.jinja_env.filters['local'] = to_local
+
     @app.context_processor
     def inject_helpers():
         return {
-            'now': ist_now,
+            'now': utc_now,
             'role_label': role_label,
             'user_role': user_role,
             'department_scope_label': department_scope_label,
@@ -321,6 +331,32 @@ def _register_cli(app):
         click.echo(f"Backed up the database to {path}")
         for removed in prune_backups(keep):
             click.echo(f"Removed old backup {removed}")
+
+    @app.cli.command('seed-demo')
+    @click.option('--reset', is_flag=True, help='Delete ALL existing data first (asks for confirmation).')
+    @click.option('--yes', is_flag=True, help='With --reset, do not ask for confirmation.')
+    @click.option('--password', default=None, help='Password for every demo account (default: AttendQR@demo1).')
+    @click.option('--weeks', type=click.IntRange(1, 26), default=6, show_default=True,
+                  help='Weeks of past classes to create.')
+    @click.option('--seed', type=int, default=2026, show_default=True,
+                  help='Random seed; the same seed gives the same attendance pattern.')
+    def seed_demo_command(reset, yes, password, weeks, seed):
+        """Load a sample college with weeks of attendance history, for demonstrations."""
+        from .services.demo import DEFAULT_DEMO_PASSWORD, DemoSeedError, seed_demo
+        if reset and not yes:
+            click.confirm(
+                f"This deletes every record in {db.engine.url.render_as_string(hide_password=True)}. Continue?",
+                abort=True,
+            )
+        try:
+            summary = seed_demo(password or DEFAULT_DEMO_PASSWORD, weeks=weeks, seed=seed, reset=reset)
+        except DemoSeedError as exc:
+            raise click.ClickException(str(exc)) from None
+        click.echo("Loaded demo data: " + ", ".join(f"{n} {label}" for label, n in summary.counts.items()) + ".")
+        click.echo(f"\nEvery account below uses the password: {summary.password}\n")
+        width = max(len(username) for _, username, _ in summary.logins)
+        for role, username, hint in summary.logins:
+            click.echo(f"  {role:<10} {username:<{width}}  {hint}")
 
     @app.cli.command('purge-scan-ips')
     def purge_scan_ips_command():
