@@ -11,6 +11,8 @@ from ..access import (
 )
 from ..extensions import db
 from ..models import ClassSession, Department, Semester, Student, Subject
+from ..services.analytics import PERIODS, build_class_trends, parse_weeks
+from ..services.leave import LEAVE_LEGEND, ON_LEAVE
 from ..services.reports import (
     MANUAL_MARK_LEGEND,
     MOVED_LEGEND,
@@ -29,11 +31,11 @@ from ..services.reports import (
     report_sessions_query,
     total_attendance,
 )
-from ..utils import ist_now, normalize_paper_code, sort_semesters
+from ..utils import local_now, normalize_paper_code, sort_semesters
 
 bp = Blueprint('reports', __name__)
 
-STAFF = ('super_admin', 'hod', 'teacher')
+STAFF = ('principal', 'hod', 'teacher')
 
 
 def _load_class(department_id, semester_id):
@@ -65,7 +67,7 @@ def _filter_choices(filters):
         'departments': ordered_departments_query().all(),
         'semesters': semesters,
         'subjects': subjects,
-        'today': ist_now().date().isoformat(),
+        'today': local_now().date().isoformat(),
     }
 
 
@@ -121,6 +123,23 @@ def index():
     )
 
 
+@bp.route('/reports/analytics')
+@login_required
+@role_required(*STAFF)
+def analytics():
+    """Weekly attendance trend, per-subject attendance and students at risk for one class."""
+    filters = parse_report_filters(request.args)
+    weeks = parse_weeks(request.args.get('weeks'))
+    trends = department = semester = None
+    if filters.department_id and filters.semester_id:
+        department, semester = _load_class(filters.department_id, filters.semester_id)
+        trends = build_class_trends(filters.department_id, filters.semester_id, weeks)
+    return render_template(
+        'analytics.html', trends=trends, filters=filters, weeks=weeks, periods=PERIODS,
+        department=department, semester=semester, **_filter_choices(filters),
+    )
+
+
 @bp.route('/reports/detailed')
 @login_required
 @role_required(*STAFF)
@@ -157,6 +176,8 @@ def export(department_id, semester_id, fmt):
         notes.append(SPECIAL_CLASS_LEGEND)
     if any(row['left_at'] for row in rows):
         notes.append(MOVED_LEGEND)
+    if any(ON_LEAVE in row['attendance'].values() for row in rows):
+        notes.append(LEAVE_LEGEND)
 
     if fmt == 'excel':
         return send_file(render_excel(headers, data, notes), download_name=f'{filename}.xlsx', as_attachment=True)
@@ -168,7 +189,7 @@ def export(department_id, semester_id, fmt):
         title_subject = department.display_name
     title = (
         f"Attendance Report — {title_subject} | {semester.name} | "
-        f"Exported on {ist_now().strftime('%d/%m/%Y')}"
+        f"Exported on {local_now().strftime('%d/%m/%Y')}"
     )
     return send_file(render_pdf(headers, data, title, notes), download_name=f'{filename}.pdf', as_attachment=True)
 
@@ -227,7 +248,7 @@ def shortage_export():
             f"Students below {threshold}% overall or in any subject, out of {report['class_size']} in "
             f"{department.display_name} - {semester.name}. Classes held: {report['classes_held']}."
         ),
-        f"Exported on {ist_now().strftime('%d/%m/%Y %I:%M %p')}. Void sessions and special classes are not counted.",
+        f"Exported on {local_now().strftime('%d/%m/%Y %I:%M %p')}. Void sessions and special classes are not counted.",
     ]
     base = department.branch_name or department.course_name
     filename = ''.join(ch if ch.isalnum() or ch in '-_.' else '_' for ch in f'{base}_{semester.name}_shortage')
