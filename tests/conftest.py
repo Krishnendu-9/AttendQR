@@ -86,6 +86,8 @@ def app(tmp_path):
         'APP_BASE_URL': 'http://attendqr.test',
         # The test client connects from 127.0.0.1, which the default (private ranges) excludes.
         'SCAN_ALLOWED_NETWORKS': '127.0.0.0/8',
+        # Two-step sign-in has its own tests (test_two_factor.py); elsewhere staff sign in with a password.
+        'TOTP_REQUIRED_ROLES': (),
     })
     app.test_client_class = IsolatedClient
     with app.app_context():
