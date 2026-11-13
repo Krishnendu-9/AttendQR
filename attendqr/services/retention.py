@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ..extensions import db
 from ..models import Attendance
-from ..utils import ist_now
+from ..utils import utc_now
 
 PURGE_INTERVAL_SECONDS = 3600
 
@@ -27,7 +27,7 @@ def purge_expired_scan_ips():
     days = current_app.config['SCAN_IP_RETENTION_DAYS']
     stmt = update(Attendance).where(Attendance.scan_ip.is_not(None))
     if days > 0:
-        cutoff = ist_now() - timedelta(days=days)
+        cutoff = utc_now() - timedelta(days=days)
         stmt = stmt.where(or_(Attendance.timestamp.is_(None), Attendance.timestamp < cutoff))
     # Its own connection, so it never commits whatever the request's session holds.
     with db.engine.begin() as connection:

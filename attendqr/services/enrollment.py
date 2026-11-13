@@ -8,7 +8,7 @@ from sqlalchemy import func
 
 from ..extensions import db
 from ..models import Student, StudentClassHistory
-from ..utils import ist_now
+from ..utils import utc_now
 
 
 def record_class_change(student, old_department_id, old_semester_id):
@@ -19,7 +19,7 @@ def record_class_change(student, old_department_id, old_semester_id):
         student_id=student.id,
         department_id=old_department_id,
         semester_id=old_semester_id,
-        left_at=ist_now(),
+        left_at=utc_now(),
     ))
 
 

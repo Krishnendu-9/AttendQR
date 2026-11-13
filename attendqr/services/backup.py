@@ -11,7 +11,7 @@ import sqlite3
 from flask import current_app
 
 from ..extensions import db
-from ..utils import ist_now
+from ..utils import local_now
 
 BACKUP_DIRNAME = 'backups'
 _BACKUP_NAME = re.compile(r'^attendance-\d{8}-\d{6}\.db$')
@@ -37,7 +37,7 @@ def backup_database(destination=None):
         raise BackupError("The database is in memory; there is nothing on disk to back up.")
 
     if destination is None:
-        destination = os.path.join(default_backup_dir(), f"attendance-{ist_now():%Y%m%d-%H%M%S}.db")
+        destination = os.path.join(default_backup_dir(), f"attendance-{local_now():%Y%m%d-%H%M%S}.db")
     destination = os.path.abspath(destination)
     # Backups hold password hashes and personal data: only the server's account may read
     # them, like the secret key. (On Windows the file inherits the folder's permissions.)
@@ -52,7 +52,10 @@ def backup_database(destination=None):
         # SQLite accepts the empty file just created and keeps its permissions.
         target = sqlite3.connect(destination)
         try:
-            source.driver_connection.backup(target)
+            driver_connection = source.driver_connection
+            if driver_connection is None:
+                raise BackupError("The database connection is closed.")
+            driver_connection.backup(target)
         finally:
             target.close()
     except Exception:

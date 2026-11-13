@@ -10,7 +10,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from .access import SPECIAL_CLASS_SUBJECT_NAME
 from .extensions import db
-from .models import Admin, ClassSession, Department, Student, Subject
+from .models import ClassSession, Department, Student, Subject, User
 from .utils import infer_department_branch, normalize_course_name, normalize_email
 
 BASELINE_REVISION = '0001_baseline'
@@ -109,9 +109,9 @@ def _legacy_data_fixups():
         )
 
     principal_email = normalize_email(current_app.config['DEFAULT_PRINCIPAL_EMAIL'])
-    old_default = Admin.query.filter_by(username='admin', role='super_admin').first()
+    old_default = User.query.filter_by(username='admin', role='principal').first()
     new_password = write_file = None
-    if old_default and not Admin.query.filter(db.func.lower(Admin.username) == principal_email).first():
+    if old_default and not User.query.filter(db.func.lower(User.username) == principal_email).first():
         new_password, write_file = initial_principal_password()
         old_default.username = principal_email
         old_default.password = generate_password_hash(new_password)
@@ -125,7 +125,7 @@ def _legacy_data_fixups():
 
 
 def _has_accounts():
-    return db.session.query(Admin.query.exists()).scalar()
+    return db.session.query(User.query.exists()).scalar()
 
 
 def ensure_default_principal():
@@ -133,10 +133,10 @@ def ensure_default_principal():
         return
     email = normalize_email(current_app.config['DEFAULT_PRINCIPAL_EMAIL'])
     password, write_file = initial_principal_password()
-    account = Admin(
+    account = User(
         username=email,
         password=generate_password_hash(password),
-        role='super_admin',
+        role='principal',
         is_active=True,
         # Whoever set up the server knows this password, so the Principal must replace it.
         must_change_password=True,
@@ -218,7 +218,7 @@ def discard_used_initial_password():
             password = handle.read().strip()
     except FileNotFoundError:
         return False
-    waiting = Admin.query.filter_by(role='super_admin', must_change_password=True).all()
+    waiting = User.query.filter_by(role='principal', must_change_password=True).all()
     if password and any(check_password_hash(account.password, password) for account in waiting):
         return False
     os.remove(path)

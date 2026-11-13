@@ -13,7 +13,7 @@ from werkzeug.security import generate_password_hash
 from .extensions import db
 from .models import LoginThrottle
 from .services.network import client_ip as network_client_ip
-from .utils import ist_now
+from .utils import utc_now
 
 # Values that have been published in this repository or are common placeholders.
 INSECURE_SECRET_KEYS = frozenset({
@@ -301,7 +301,7 @@ def _throttle_rules(username, ip):
 def is_login_locked(username, ip):
     keys = [rule[0] for rule in _throttle_rules(username, ip)]
     return db.session.query(
-        LoginThrottle.query.filter(LoginThrottle.key.in_(keys), LoginThrottle.locked_until > ist_now()).exists()
+        LoginThrottle.query.filter(LoginThrottle.key.in_(keys), LoginThrottle.locked_until > utc_now()).exists()
     ).scalar()
 
 
@@ -331,7 +331,7 @@ def register_login_failure(username, ip):
 
 def record_login_failure(username, ip):
     """Count a failed login against each throttle rule. Returns True if one of them now locks."""
-    now = ist_now()
+    now = utc_now()
     locked = False
     for key, row_username, limit, window, lock in _throttle_rules(username, ip):
         row = _throttle_row(key)
@@ -365,6 +365,6 @@ def locked_usernames(usernames):
         return set()
     rows = db.session.query(LoginThrottle.username).filter(
         LoginThrottle.username.in_(list(usernames)),
-        LoginThrottle.locked_until > ist_now(),
+        LoginThrottle.locked_until > utc_now(),
     ).distinct()
     return {username for (username,) in rows}
