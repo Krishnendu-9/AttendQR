@@ -4,8 +4,8 @@
     `match`: parts of endpoint names that mark the item as the current page. -#}
 {% set role = user_role() %}
 {% set endpoint = request.endpoint or '' %}
-{% set staff = role in ['super_admin', 'hod', 'teacher'] %}
-{% set managers = role in ['super_admin', 'hod'] %}
+{% set staff = role in ['principal', 'hod', 'teacher'] %}
+{% set managers = role in ['principal', 'hod'] %}
 
 {% set nav_spec = [
   {'id': 'overview', 'label': 'Overview', 'items': [
@@ -15,7 +15,9 @@
   {'id': 'attendance', 'label': 'Attendance', 'items': [
     {'label': 'Generate QR', 'icon': 'qr-code', 'endpoint': 'attendance.generate_qr', 'show': staff, 'match': ['attendance.'], 'keywords': 'session class scan'},
     {'label': 'Attendance report', 'icon': 'chart-column', 'endpoint': 'reports.index', 'show': staff, 'match': ['reports.index', 'reports.detailed', 'reports.export'], 'keywords': 'export excel pdf'},
+    {'label': 'Analytics', 'icon': 'activity', 'endpoint': 'reports.analytics', 'show': staff, 'match': ['reports.analytics'], 'keywords': 'trend chart weekly at risk'},
     {'label': 'Shortage list', 'icon': 'triangle-alert', 'endpoint': 'reports.shortage', 'show': staff, 'match': ['reports.shortage'], 'keywords': 'below target defaulters'},
+    {'label': 'Leave' if role == 'student' else 'Leave requests', 'icon': 'calendar-clock', 'endpoint': 'leave.index', 'show': role in ['student', 'principal', 'hod'], 'match': ['leave.'], 'keywords': 'medical absence excuse approve'},
   ]},
   {'id': 'people', 'label': 'People', 'items': [
     {'label': 'Students', 'icon': 'graduation-cap', 'endpoint': 'students.index', 'show': staff, 'match': ['students.'], 'keywords': 'roll'},

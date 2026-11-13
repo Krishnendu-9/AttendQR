@@ -1,0 +1,201 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, percent_badge, page_header, card, empty_state, submit_button with context %}
+{% from 'components/forms.html' import field, select_control %}
+{% set page_title = 'Analytics' %}
+
+{% macro stat(label, value, icon_name, meta=None) -%}
+<div class="card flex items-start justify-between gap-4 p-5">
+  <div class="min-w-0">
+    <p class="text-label-md text-muted-foreground">{{ label }}</p>
+    <p class="mt-2 text-headline-lg text-foreground">{{ value }}</p>
+    {% if meta %}<p class="mt-1 text-body-sm text-muted-foreground">{{ meta }}</p>{% endif %}
+  </div>
+  <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-ink">{{ icon(icon_name, 'size-5') }}</span>
+</div>
+{%- endmacro %}
+
+{% macro pct(value) -%}{{ '–' if value is none else (value ~ '%') }}{%- endmacro %}
+
+{% block content %}
+{{ page_header('Analytics', 'How a class attends week by week, which subjects lag, and who needs attention. Leave, moved students and special classes count as in the reports.') }}
+
+{# Filters: one row above everything they scope. #}
+<form method="GET" action="{{ url_for('reports.analytics') }}" id="analyticsForm" class="card mb-6 p-6" novalidate>
+  <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+    {% call field('dept_select', 'Department', required=True) %}
+      {{ select_control('department_id', 'dept_select', departments, selected=filters.department_id, placeholder='Select department',
+                        required=True, value_attr='id', label_attr='display_name') }}
+    {% endcall %}
+    {% call field('sem_select', 'Semester', required=True) %}
+      {{ select_control('semester_id', 'sem_select', semesters, selected=filters.semester_id, placeholder='Select semester',
+                        required=True, value_attr='id', label_attr='name') }}
+    {% endcall %}
+    {% call field('weeks_select', 'Period') %}
+      {% call select_control('weeks', 'weeks_select') %}
+        {% for n in periods %}<option value="{{ n }}"{% if n == weeks %} selected{% endif %}>Last {{ n }} weeks</option>{% endfor %}
+      {% endcall %}
+    {% endcall %}
+    <div class="flex items-end">{{ submit_button('Show', 'Loading...', icon_name='activity', extra='w-full sm:w-auto') }}</div>
+  </div>
+</form>
+
+{% if not trends %}
+<section class="card">
+  {{ empty_state('activity', 'Choose a class', 'Select a department and semester to see its attendance trend.') }}
+</section>
+{% elif not trends.overall.expected %}
+<section class="card">
+  {{ empty_state('calendar-range', 'No classes in this period', 'No counted classes were held for ' ~ department.display_name ~ ' ' ~ semester.name ~ ' in the last ' ~ weeks ~ ' weeks.') }}
+</section>
+{% else %}
+{% set target = trends.target %}
+{% set chart = trends.chart %}
+
+<section aria-label="Totals" class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+  {{ stat('Class attendance', pct(trends.overall.rate), 'percent', 'last ' ~ weeks ~ ' weeks') }}
+  {{ stat('Classes held', trends.sessions, 'calendar-check', 'special classes not counted') }}
+  {{ stat('Below ' ~ target ~ '%', trends.below_target, 'triangle-alert', 'of ' ~ trends.class_size ~ ' students') }}
+  {{ stat('At risk', trends.at_risk|length, 'users', 'below ' ~ target ~ '% now or in the last 2 weeks') }}
+</section>
+
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-5">
+  {# ── Weekly trend: one series, so the title names it and there is no legend box. ── #}
+  <div class="xl:col-span-3">
+  {% call card('Weekly attendance', 'Share of expected attendances that were present, per week. The line breaks over weeks without classes.') %}
+    <div class="chart relative" data-chart>
+      <svg viewBox="0 0 {{ chart.width }} {{ chart.height }}" class="h-auto w-full overflow-visible" role="img"
+           aria-label="Weekly attendance for {{ department.display_name }} {{ semester.name }}; values in the table below">
+        {% for tick in chart.ticks %}
+        <line x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ tick.y }}" y2="{{ tick.y }}" class="stroke-border" stroke-width="1" />
+        <text x="{{ chart.left - 8 }}" y="{{ tick.y }}" dy="0.32em" text-anchor="end" class="fill-muted-foreground text-[11px] tabular-nums">{{ tick.value }}%</text>
+        {% endfor %}
+        {# Target: a recessive reference, labelled at its right end. #}
+        <line x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ chart.target_y }}" y2="{{ chart.target_y }}" class="stroke-muted-foreground" stroke-width="1" />
+        <text x="{{ chart.right + 10 }}" y="{{ chart.target_y }}" dy="0.32em" class="fill-muted-foreground text-[11px]">Target {{ target }}%</text>
+
+        {% for point in chart.points %}
+          {% if loop.index0 % chart.label_every == 0 or loop.last %}
+          <text x="{{ point.x }}" y="{{ chart.bottom + 20 }}" text-anchor="middle" class="fill-muted-foreground text-[11px]">{{ point.label }}</text>
+          {% endif %}
+        {% endfor %}
+
+        <line data-crosshair x1="0" x2="0" y1="{{ chart.top }}" y2="{{ chart.bottom }}" class="stroke-muted-foreground opacity-0 transition-opacity" stroke-width="1" />
+        {% for segment in chart.segments %}
+        <polyline points="{{ segment }}" fill="none" class="stroke-primary" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+        {% endfor %}
+        {% for point in chart.points if point.y is not none %}
+        <circle cx="{{ point.x }}" cy="{{ point.y }}" r="4" class="fill-primary stroke-card" stroke-width="2" />
+        {% endfor %}
+        {% if chart.last %}
+        {% if chart.last_label_above %}
+        <text x="{{ chart.last.x }}" y="{{ chart.last.y - 12 }}" text-anchor="middle" class="fill-foreground text-[12px] font-semibold tabular-nums">{{ chart.last.rate }}%</text>
+        {% else %}
+        <text x="{{ chart.last.x + 10 }}" y="{{ chart.last.y }}" dy="0.32em" class="fill-foreground text-[12px] font-semibold tabular-nums">{{ chart.last.rate }}%</text>
+        {% endif %}
+        {% endif %}
+
+        {# Hit areas: the whole column of each week, bigger than the mark; keyboard reachable. #}
+        {% for point in chart.points %}
+        <rect x="{{ point.x - chart.hit_width / 2 }}" y="{{ chart.top }}" width="{{ chart.hit_width }}" height="{{ chart.bottom - chart.top }}"
+              fill="transparent" tabindex="0" data-tip data-x="{{ point.x }}"
+              data-tip-value="{{ pct(point.rate) }}"
+              data-tip-label="Week of {{ point.label }} · {{ point.sessions }} class{{ '' if point.sessions == 1 else 'es' }}{% if point.expected %} · {{ point.present }} of {{ point.expected }} present{% endif %}"
+              aria-label="Week of {{ point.label }}: {{ pct(point.rate) }}" />
+        {% endfor %}
+      </svg>
+      <div class="chart-tip" data-chart-tip hidden><p class="chart-tip-value"></p><p class="chart-tip-label"></p></div>
+    </div>
+    <details class="mt-4 text-body-sm">
+      <summary class="cursor-pointer text-label-md text-muted-foreground">Show as table</summary>
+      <div class="mt-3 overflow-x-auto">
+        <table class="data-table">
+          <thead><tr><th scope="col">Week of</th><th scope="col" class="text-right">Classes</th><th scope="col" class="text-right">Present</th><th scope="col" class="text-right">Attendance</th></tr></thead>
+          <tbody>
+            {% for week in trends.weeks %}
+            <tr><td>{{ week.label }}</td><td class="text-right tabular-nums">{{ week.sessions }}</td>
+                <td class="text-right tabular-nums">{{ week.present }} / {{ week.expected }}</td><td class="text-right tabular-nums">{{ pct(week.rate) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% endcall %}
+  </div>
+
+  {# ── Per subject: one hue; below-target subjects carry an icon and a label, not just a colour. ── #}
+  <div class="xl:col-span-2">
+  {% call card('By subject', 'Lowest first. The tick on each track marks the ' ~ target ~ '% target.') %}
+    <div class="relative" data-chart>
+    <ul class="grid gap-4">
+      {% for item in trends.subjects %}
+      {% set short = item.rate < target %}
+      <li>
+        <div class="mb-1.5 flex items-baseline justify-between gap-3">
+          <span class="min-w-0 truncate text-label-md text-foreground">{{ subject_display_name(item.subject) }}</span>
+          <span class="flex shrink-0 items-center gap-1.5 text-label-md tabular-nums text-foreground">
+            {% if short %}<span class="flex items-center gap-1 text-body-sm text-muted-foreground">{{ icon('triangle-alert', 'size-3.5 text-warning') }}Below target</span>{% endif %}
+            {{ item.rate }}%
+          </span>
+        </div>
+        <svg class="block h-4 w-full overflow-visible" role="img" aria-label="{{ subject_display_name(item.subject) }}: {{ item.rate }}%, {{ item.present }} of {{ item.expected }}"
+             tabindex="0" data-tip data-tip-value="{{ item.rate }}%" data-tip-label="{{ subject_display_name(item.subject) }} · {{ item.present }} of {{ item.expected }} present">
+          <rect x="0" y="0" width="100%" height="16" rx="4" class="fill-muted" />
+          {% if item.rate > 0 %}
+          <rect x="0" y="0" width="{{ item.rate }}%" height="16" rx="4" class="fill-primary" />
+          <rect x="0" y="0" width="4" height="16" class="fill-primary" />
+          {% endif %}
+          <line x1="{{ target }}%" x2="{{ target }}%" y1="-3" y2="19" class="stroke-foreground" stroke-width="2" />
+        </svg>
+      </li>
+      {% endfor %}
+    </ul>
+    <div class="chart-tip" data-chart-tip hidden><p class="chart-tip-value"></p><p class="chart-tip-label"></p></div>
+    </div>
+  {% endcall %}
+  </div>
+</div>
+
+<div class="mt-6">
+{% call card('Students at risk', 'Below ' ~ target ~ '% over the period, or in the last 2 weeks. Worst first.', flush=True) %}
+  {% if trends.at_risk %}
+  <div class="overflow-x-auto">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Student</th>
+          <th scope="col">Last {{ weeks }} weeks</th>
+          <th scope="col">Last 2 weeks</th>
+          <th scope="col" class="text-right">Change</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in trends.at_risk %}
+        <tr>
+          <td><a href="{{ url_for('students.view', id=row.student.id) }}" class="block truncate rounded text-label-lg text-foreground hover:text-primary focus-visible:shadow-focus focus-visible:outline-none">{{ row.student.name }}</a>
+              <p class="font-mono text-body-sm text-muted-foreground">{{ row.student.roll_no }}</p></td>
+          <td>{{ percent_badge(row.percentage, target) }}</td>
+          <td>{% if row.recent is none %}<span class="text-muted-foreground">No classes</span>{% else %}{{ percent_badge(row.recent, target) }}{% endif %}</td>
+          <td class="text-right tabular-nums text-body-md {{ 'text-muted-foreground' if row.change is none }}">
+            {%- if row.change is none %}–{% elif row.change < 0 %}<span class="sr-only">down </span>&minus;{{ -row.change }} pts{% elif row.change > 0 %}<span class="sr-only">up </span>+{{ row.change }} pts{% else %}0 pts{% endif -%}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {{ empty_state('circle-check', 'Nobody at risk', 'Every student is at or above ' ~ target ~ '% over the period and in the last 2 weeks.', compact=True) }}
+  {% endif %}
+{% endcall %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('js/charts.js') }}" defer></script>
+<script nonce="{{ csp_nonce() }}">
+document.getElementById('dept_select').addEventListener('change', function (event) {
+  AttendQR.loadSemesters(document.getElementById('sem_select'), event.target.value);
+});
+</script>
+{% endblock %}
