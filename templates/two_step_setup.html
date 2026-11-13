@@ -1,0 +1,90 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, submit_button with context %}
+{% from 'components/forms.html' import text_input, password_input with context %}
+{% set page_title = 'Two-step sign-in' %}
+{% set breadcrumbs = [('Account and password', url_for('auth.account')), ('Two-step sign-in', None)] %}
+
+{% block content %}
+{{ page_header('Two-step sign-in', 'After your password, AttendQR asks for a 6-digit code from an authenticator app on your phone, so a stolen password alone cannot open your account.',
+               badge('On', 'success') if enabled else badge('Off', 'neutral')) }}
+
+{% if required and not enabled %}
+<div class="mb-6">
+  {% call callout('Required for your role', 'warning', 'shield-check') %}
+    {{ role_label(current_user.role) }} accounts must use two-step sign-in. Set it up below to continue using AttendQR.
+  {% endcall %}
+</div>
+{% endif %}
+{% if error %}<div class="mb-6">{% call callout(tone='danger') %}{{ error }}{% endcall %}</div>{% endif %}
+
+{% if codes %}
+<div class="mb-6">
+{% call card('Your recovery codes', 'Each one signs you in once if your phone is lost. Save or print them now: they are not shown again.', icon_name='key-round') %}
+  <ul class="grid grid-cols-2 gap-x-6 gap-y-2 font-mono text-body-md text-foreground sm:grid-cols-5">
+    {% for code in codes %}<li>{{ code }}</li>{% endfor %}
+  </ul>
+  <div class="mt-5 flex flex-wrap gap-2">
+    <button type="button" class="{{ btn('outline') }}" data-print>{{ icon('printer') }}<span>Print</span></button>
+    <a href="{{ url_for('main.dashboard') }}" class="{{ btn('primary') }}">{{ icon('check') }}<span>I have saved them</span></a>
+  </div>
+{% endcall %}
+</div>
+{% endif %}
+
+{% if not enabled %}
+{% call card('Set up', 'Works with any authenticator app: Google, Microsoft, Zoho, 2FAS, Aegis, or a password manager.', icon_name='smartphone') %}
+  <ol class="grid gap-6 lg:grid-cols-3">
+    <li>
+      <p class="text-label-lg text-foreground">1. Scan this code with your app</p>
+      <img src="{{ qr_image }}" alt="QR code to add AttendQR to your authenticator app" class="mt-3 size-44 rounded-lg border border-border bg-white p-2">
+    </li>
+    <li>
+      <p class="text-label-lg text-foreground">2. Or type this key</p>
+      <p class="mt-1 text-body-sm text-muted-foreground">If you cannot scan: add an account by hand, time-based.</p>
+      <p class="mt-3 break-all rounded-lg border border-border bg-muted px-3 py-2 font-mono text-body-md text-foreground" data-two-step-key>{{ key }}</p>
+    </li>
+    <li>
+      <p class="text-label-lg text-foreground">3. Type the code your app shows</p>
+      <form method="POST" action="{{ url_for('auth.two_step_setup') }}" class="mt-3 grid gap-4">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="enable">
+        {{ text_input('code', 'Code', required=True, placeholder='123456', attrs={'autocomplete': 'one-time-code', 'inputmode': 'numeric', 'maxlength': 7}) }}
+        {{ submit_button('Turn on', 'Checking...', icon_name='shield-check') }}
+      </form>
+    </li>
+  </ol>
+{% endcall %}
+{% else %}
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+  {% call card('Recovery codes', codes_left ~ ' of 10 left. Making new ones replaces all the old ones.', icon_name='key-round') %}
+    <form method="POST" action="{{ url_for('auth.two_step_setup') }}" class="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="recovery">
+      {{ text_input('code', 'Current code from your app', id='recovery_code_input', required=True, placeholder='123456', attrs={'autocomplete': 'one-time-code', 'inputmode': 'numeric', 'maxlength': 7}) }}
+      {{ submit_button('New recovery codes', 'Making...', variant='outline') }}
+    </form>
+  {% endcall %}
+  {% call card('Turn off', 'Not possible for roles that require it.' if required else 'Your password alone will open your account again.', icon_name='lock') %}
+    {% if required %}
+    <p class="text-body-md text-muted-foreground">{{ role_label(current_user.role) }} accounts must keep two-step sign-in on. If your phone is lost, sign in with a recovery code, or ask the Principal to reset it.</p>
+    {% else %}
+    <form method="POST" action="{{ url_for('auth.two_step_setup') }}" class="grid gap-4">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="disable">
+      {{ password_input('password', 'Password', id='disable_password', required=True) }}
+      {{ text_input('code', 'Current code from your app', id='disable_code', required=True, placeholder='123456', attrs={'autocomplete': 'one-time-code', 'inputmode': 'numeric', 'maxlength': 7}) }}
+      {{ submit_button('Turn off two-step sign-in', 'Turning off...', variant='outline') }}
+    </form>
+    {% endif %}
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce() }}">
+document.querySelectorAll('[data-print]').forEach(function (button) {
+  button.addEventListener('click', function () { window.print(); });
+});
+</script>
+{% endblock %}

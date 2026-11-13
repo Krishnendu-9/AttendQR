@@ -1,0 +1,29 @@
+{% extends 'layouts/auth.html' %}
+{% from 'components/ui.html' import icon, callout, submit_button with context %}
+{% from 'components/forms.html' import text_input with context %}
+{% block title %}Two-step sign-in | AttendQR{% endblock %}
+{% block content %}
+<div class="card p-6 shadow-popover sm:p-8">
+  <h1 class="text-headline-lg text-foreground">Enter your code</h1>
+  <p class="mt-1 text-body-md text-muted-foreground">Open your authenticator app and type the 6-digit code for <span class="text-foreground">AttendQR ({{ username }})</span>.</p>
+
+  {% set messages = get_flashed_messages(with_categories=True) %}
+  {% if messages or error %}
+  <div class="mt-6 space-y-3">
+    {% for category, message in messages %}
+      {% call callout(tone=category if category in ['success', 'warning', 'danger'] else 'info') %}{{ message }}{% endcall %}
+    {% endfor %}
+    {% if error %}{% call callout(tone='danger') %}{{ error }}{% endcall %}{% endif %}
+  </div>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('auth.two_step') }}" class="mt-6 space-y-5">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    {{ text_input('code', 'Code', required=True, placeholder='123456',
+                  hint='Lost your phone? Type one of your recovery codes instead.',
+                  attrs={'autocomplete': 'one-time-code', 'autofocus': True, 'maxlength': 20, 'spellcheck': 'false'}) }}
+    {{ submit_button('Continue', 'Checking...', icon_name='shield-check', extra='w-full') }}
+  </form>
+</div>
+<p class="mt-6 text-center text-body-sm text-muted-foreground"><a class="rounded text-primary underline-offset-2 hover:underline focus-visible:shadow-focus focus-visible:outline-none" href="{{ url_for('auth.login') }}">Start again</a> &middot; No phone and no recovery code? Ask the Principal to reset your two-step sign-in.</p>
+{% endblock %}

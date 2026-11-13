@@ -1,7 +1,9 @@
+import secrets
+import time
 from functools import lru_cache
 from typing import cast
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -26,7 +28,8 @@ from ..security import (
     password_policy_error,
     register_login_failure,
 )
-from ..services.qr import clear_scan_grant
+from ..services import two_factor
+from ..services.qr import clear_scan_grant, qr_data_uri
 from ..utils import normalize_email
 
 bp = Blueprint('auth', __name__)
@@ -40,14 +43,14 @@ def _dummy_password_hash():
     return generate_password_hash('attendqr-timing-equaliser')
 
 
-def _log_failed_login(user, locked):
+def _log_failed_login(user, locked, reason='wrong password'):
     """Audit failed sign-ins to real accounts (unknown usernames are not logged, so they cannot flood it).
 
     The throttle bounds how many can be recorded: once an account is paused,
     further attempts are refused before the password is checked.
     """
     log_activity(
-        'login_failed', f"Failed sign-in attempt for '{user.username}' (wrong password).",
+        'login_failed', f"Failed sign-in attempt for '{user.username}' ({reason}).",
         'user', user.id, user.department_id, anonymous_actor=SIGN_IN_ATTEMPT_ACTOR,
     )
     if locked:
@@ -88,20 +91,13 @@ def login():
                     # Only revealed once the password is proven correct.
                     count_login('inactive')
                     error = "This account is inactive. Please contact the Principal or HOD."
+                elif two_factor.is_enabled(user):
+                    # The password is right; the account is only signed in once the code is too.
+                    session['two_step'] = {'id': user.id, 'token': user.session_token,
+                                           'expires': int(time.time()) + TWO_STEP_SECONDS, 'next': next_url}
+                    return redirect(url_for('auth.two_step'))
                 else:
-                    clear_login_failures(username)
-                    session.pop('_flashes', None)
-                    login_user(user)
-                    mark_session_active()
-                    if user.role != 'student':
-                        # Staff sign-ins are audited; students sign in daily, which would flood the log.
-                        log_activity(
-                            'login_succeeded', f"{role_label(user.role)} account '{user.username}' signed in.",
-                            'user', user.id, user.department_id,
-                        )
-                    db.session.commit()
-                    count_login('success')
-                    return redirect(next_url or url_for('main.dashboard'))
+                    return _complete_login(user, next_url)
             else:
                 locked = register_login_failure(username, ip)
                 count_login('locked' if locked else 'failed')
@@ -110,6 +106,140 @@ def login():
                 error = INVALID_LOGIN_MESSAGE
 
     return render_template('login.html', error=error, next_url=next_url)
+
+
+def _complete_login(user, next_url, how=None):
+    clear_login_failures(normalize_email(user.username))
+    session.pop('_flashes', None)
+    login_user(user)
+    mark_session_active()
+    if user.role != 'student':
+        # Staff sign-ins are audited; students sign in daily, which would flood the log.
+        log_activity(
+            'login_succeeded', f"{role_label(user.role)} account '{user.username}' signed in{how or ''}.",
+            'user', user.id, user.department_id,
+        )
+    db.session.commit()
+    count_login('success')
+    return redirect(next_url or url_for('main.dashboard'))
+
+
+# ── Two-step sign-in ─────────────────────────────────────────
+
+# Time between a correct password and the code before the password must be entered again.
+TWO_STEP_SECONDS = 300
+
+
+def _two_step_user():
+    """The account waiting for its code after a correct password, and where to go next."""
+    pending = session.get('two_step')
+    if not isinstance(pending, dict) or not isinstance(pending.get('id'), int) \
+            or not isinstance(pending.get('expires'), int) or pending['expires'] < time.time():
+        return None, None
+    user = db.session.get(User, pending['id'])
+    if user is None or not user.is_active or not two_factor.is_enabled(user) \
+            or not secrets.compare_digest(user.session_token, str(pending.get('token', ''))):
+        return None, None
+    next_url = pending.get('next')
+    return user, next_url if is_safe_redirect_target(next_url) else None
+
+
+@bp.route('/login/two-step', methods=['GET', 'POST'])
+def two_step():
+    user, next_url = _two_step_user()
+    if user is None:
+        session.pop('two_step', None)
+        flash("Sign in again to continue.", 'warning')
+        return redirect(url_for('auth.login'))
+
+    error = None
+    if request.method == 'POST':
+        code = request.form.get('code', '')
+        username, ip = normalize_email(user.username), client_ip()
+        if is_login_locked(username, ip):
+            count_login('locked')
+            error = LOCKED_LOGIN_MESSAGE
+        elif two_factor.verify_code(user, code):
+            session.pop('two_step', None)
+            return _complete_login(user, next_url, ' with two-step sign-in')
+        elif two_factor.use_recovery_code(user, code):
+            session.pop('two_step', None)
+            left = two_factor.recovery_codes_left(user)
+            log_activity('recovery_code_used', f"'{user.username}' signed in with a recovery code ({left} left).",
+                         'user', user.id, user.department_id)
+            response = _complete_login(user, next_url, ' with a recovery code')
+            flash(f"You signed in with a recovery code; {left} left. If your phone is lost, set up two-step "
+                  "sign-in again from your account page.", 'warning')
+            return response
+        else:
+            locked = register_login_failure(username, ip)
+            count_login('locked' if locked else 'failed_code')
+            _log_failed_login(user, locked, 'wrong two-step code')
+            error = "That code is not right. Use the newest code in your authenticator app, or a recovery code."
+    return render_template('two_step.html', error=error, username=user.username)
+
+
+@bp.route('/account/two-step', methods=['GET', 'POST'])
+@login_required
+def two_step_setup():
+    """Turn on two-step sign-in, make new recovery codes, or turn it off."""
+    user = cast(User, current_user._get_current_object())  # @login_required: never anonymous
+    if not two_factor.can_use(user):
+        abort(404)
+    error, codes, action = None, None, None
+    if request.method == 'POST':
+        action = request.form.get('action')
+        code = request.form.get('code', '')
+        throttle_name, ip = normalize_email(user.username), client_ip()
+        if is_login_locked(throttle_name, ip):
+            error = LOCKED_LOGIN_MESSAGE
+        elif action == 'enable' and not two_factor.is_enabled(user):
+            codes = two_factor.enable(user, code)
+            if codes is None:
+                error = ("That code did not match. Check that your phone sets its time automatically, "
+                         "and type the newest code.")
+            else:
+                log_activity('two_factor_enabled', f"'{user.username}' turned on two-step sign-in.",
+                             'user', user.id, current_department_id())
+        elif action == 'recovery' and two_factor.is_enabled(user):
+            if two_factor.verify_code(user, code):
+                codes = two_factor.new_recovery_codes(user)
+                log_activity('recovery_codes_replaced', f"'{user.username}' made new recovery codes.",
+                             'user', user.id, current_department_id())
+            else:
+                error = "That code is not right."
+                register_login_failure(throttle_name, ip)
+        elif action == 'disable' and two_factor.is_enabled(user):
+            if two_factor.is_required(user):
+                error = f"{role_label(user.role)} accounts must keep two-step sign-in on."
+            elif not check_password_hash(user.password, request.form.get('password', '')) \
+                    or not two_factor.verify_code(user, code):
+                error = "Your password or code is not right."
+                register_login_failure(throttle_name, ip)
+            else:
+                two_factor.disable(user)
+                log_activity('two_factor_disabled', f"'{user.username}' turned off two-step sign-in.",
+                             'user', user.id, current_department_id())
+                db.session.commit()
+                flash("Two-step sign-in is off.", 'success')
+                return redirect(url_for('auth.account'))
+        else:
+            abort(400)
+
+    secret = None if two_factor.is_enabled(user) else two_factor.pending_secret(user)
+    db.session.commit()  # keeps the pending secret, a used code, and new recovery codes
+    if codes:
+        flash("Two-step sign-in is on." if action == 'enable' else "New recovery codes made.", 'success')
+    return render_template(
+        'two_step_setup.html',
+        enabled=two_factor.is_enabled(user),
+        required=two_factor.is_required(user),
+        qr_image=qr_data_uri(two_factor.provisioning_uri(user, secret)) if secret else None,
+        key=two_factor.grouped(secret) if secret else None,
+        codes=codes,
+        codes_left=two_factor.recovery_codes_left(user),
+        error=error,
+    )
 
 
 @bp.route('/logout', methods=['POST'])

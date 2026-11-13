@@ -73,6 +73,14 @@
       {% endif %}
     {% endcall %}
   </div>
+  {% if current_user.role != 'student' %}
+  {% call card('Two-step sign-in', 'A code from an authenticator app after your password.', icon_name='shield-check', cls='xl:self-start') %}
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="text-body-md text-muted-foreground">{% if current_user.totp_secret %}{{ badge('On', 'success') }} since {{ format_12h(current_user.totp_enabled_at) }}{% else %}{{ badge('Off', 'neutral') }}{% endif %}</p>
+      <a href="{{ url_for('auth.two_step_setup') }}" class="{{ btn('outline') }}">{{ icon('settings') }}<span>{{ 'Manage' if current_user.totp_secret else 'Set up' }}</span></a>
+    </div>
+  {% endcall %}
+  {% endif %}
   {% call card('Security notes', icon_name='info', cls='xl:self-start') %}
     <ul class="space-y-3 text-body-md text-muted-foreground">
       <li>Do not share your password with other staff or students.</li>
