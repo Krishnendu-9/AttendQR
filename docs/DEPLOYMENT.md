@@ -177,6 +177,8 @@ After that, glance at the scan IPs in the first few session views. They should b
 
 Locality is only as tight as the network. If campus Wi-Fi also covers hostels or the library, a student there can still scan a forwarded code.
 
+On a public deployment, every phone on the campus network usually reaches the app from the same public address. Scans still work, but the integrity report's **buddy pairs** (two students scanning seconds apart from one address) then match almost every pair, so treat that flag as noise there. The other flags, and spot checks, are unaffected.
+
 ### Scan IP addresses
 
 An IP address is personal data, so AttendQR keeps as little of it as it can, for as short a time as it can, and shows it to as few people as it can.
@@ -190,9 +192,15 @@ The limit is built in rather than left to a scheduled job, because attendance en
 
 Outside the app, copies remain in database backups until those expire, and web server or proxy access logs record every client's IP address anyway. Give those the same limit. Failed-login throttling also stores an IP address with the username, and those rows are deleted on a later failed login once they are a day old. Mention the scan IP in the institution's privacy notice for students.
 
+## Settings in the app
+
+The Principal changes some options on the **Settings** page instead of in the environment: the institution's name, the attendance target, the exam eligibility and condonation percentages, the time zone, the working days, the first day of the week, whether teachers may change their own routine classes, and the words the app uses. Where an environment variable exists (`TIMEZONE`, `ELIGIBILITY_PERCENT`, `CONDONATION_PERCENT`), it is only the **starting value**: a value saved on the page replaces it, and *Reset to default* on the page goes back to it. An untouched installation behaves exactly as the environment says. Saved values are stored in the database (`institution_setting`), so they are in every backup, and each change is in the activity log.
+
+Security and deployment settings never move to the page: the scan networks, proxies, QR timings, two-step sign-in, idle sign-out, cookies, the database, logs and metrics stay with whoever runs the server.
+
 ## Time zone
 
-Times are stored in UTC and shown in the college's time zone, `TIMEZONE` (an IANA name, default `Asia/Kolkata`). Report date filters, "today" and the leave calendar use that zone's days. An unknown name stops the app at startup.
+Times are stored in UTC and shown in the college's time zone: the one chosen on the Settings page, which starts from `TIMEZONE` (an IANA name, default `Asia/Kolkata`). Report date filters, "today" and the leave calendar use that zone's days. An unknown name in `TIMEZONE` stops the app at startup.
 
 ## PostgreSQL
 
@@ -225,7 +233,7 @@ The README lists the results and what limits them.
 
 ## Exam eligibility
 
-`ELIGIBILITY_PERCENT` (default 75) and `CONDONATION_PERCENT` (default 65) set the limits of the eligibility report. The app refuses to start unless `0 < CONDONATION_PERCENT <= ELIGIBILITY_PERCENT <= 100`.
+`ELIGIBILITY_PERCENT` (default 75) and `CONDONATION_PERCENT` (default 65) are the starting limits of the eligibility report; the Principal can change both on the Settings page. The app refuses to start unless `0 < CONDONATION_PERCENT <= ELIGIBILITY_PERCENT <= 100`, and the page refuses a condonation limit above the eligibility percentage.
 
 ## The tamper-evident activity log
 
