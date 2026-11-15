@@ -32,6 +32,8 @@ static/qrcodes/
 
 # Local notes / chat exports
 chat_*.md
+# Private interview and working notes, never committed
+dev_docs/
 
 # OS Files
 .DS_Store
