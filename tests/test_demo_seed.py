@@ -94,3 +94,59 @@ def test_same_seed_gives_the_same_data(app):
     seed_demo(DEFAULT_DEMO_PASSWORD, seed=7, reset=True)
 
     assert _attendance_fingerprint() == first
+
+
+def test_demo_has_a_lab_split_into_two_batches(app):
+    """Each batch's lab sessions count only for its own members, so nobody is absent for the other batch."""
+    from attendqr.models import ClassGroup, ClassGroupMember
+    from attendqr.services.reports import NOT_IN_GROUP, ReportFilters, build_attendance_matrix
+
+    seed_demo(DEMO_PASSWORD)
+    groups = ClassGroup.query.order_by(ClassGroup.name).all()
+    assert [g.name for g in groups] == ['Gr-1', 'Gr-2']
+    assert ClassGroupMember.query.count() == 18
+    lab_sessions = ClassSession.query.filter(ClassSession.group_id.isnot(None)).all()
+    assert lab_sessions and all(s.subject.paper_code == 'CS591' for s in lab_sessions)
+
+    semester = groups[0].semester
+    filters = ReportFilters(department_id=semester.department_id, semester_id=semester.id, subject_id=None,
+                            parsed_from=None, parsed_to=None, date_from='', date_to='', error=None)
+    with app.test_request_context():
+        sessions, rows = build_attendance_matrix(filters)
+    gr1_lab = next(s for s in sessions if s.group_id == groups[0].id)
+    marks = [row['attendance'][gr1_lab.id] for row in rows]
+    assert marks.count(NOT_IN_GROUP) == 9
+
+
+def test_demo_has_a_co_taught_lab_and_a_course_that_does_not_count(app):
+    from attendqr.models import Subject
+
+    seed_demo(DEMO_PASSWORD)
+    lab = Subject.query.filter_by(paper_code='CS591').one()
+    assert lab.teacher and len(lab.co_teachers) == 1
+    course = Subject.query.filter_by(paper_code='CS580').one()
+    assert course.counts_towards_attendance is False and course.sessions
+
+
+def test_demo_has_a_published_routine_its_sessions_hold(app, client_for):
+    from datetime import timedelta
+
+    from attendqr.models import RoutineChange, Timetable
+    from attendqr.services.occurrences import HELD, NOT_RECORDED, occurrences
+    from attendqr.utils import local_now
+
+    seed_demo(DEMO_PASSWORD)
+    routine = Timetable.query.filter_by(status='published').one()
+    linked = ClassSession.query.filter(ClassSession.timetable_entry_id.isnot(None)).count()
+    assert routine.entries and linked > 20
+    assert RoutineChange.query.count() == 2
+    today = local_now().date()
+    found = occurrences(today - timedelta(days=21), today, semester_ids=[routine.semester_id])
+    statuses = {o.status for o in found}
+    assert HELD in statuses and NOT_RECORDED in statuses  # the seminar, rarely recorded
+
+    hod = client_for('hod.partha.sarkar@college.example', DEMO_PASSWORD)
+    assert hod.get(f'/routine/class/{routine.semester_id}').status_code == 200
+    assert hod.get(f'/reports/routine?semester_id={routine.semester_id}').status_code == 200
+    teacher = client_for('ananya.mukherjee@college.example', DEMO_PASSWORD)
+    assert teacher.get('/routine/me').status_code == 200
