@@ -1,5 +1,5 @@
 {% extends 'layouts/app.html' %}
-{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state, action_form, submit_button with context %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state, action_form, submit_button, record_opener, record_dialog with context %}
 {% from 'components/forms.html' import text_input, select_input, textarea_input with context %}
 {% set page_title = 'Leave' %}
 
@@ -110,6 +110,7 @@
           <th scope="col">Leave</th>
           <th scope="col">Decision</th>
           <th scope="col">By</th>
+          <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody>
@@ -119,6 +120,12 @@
           <td class="text-body-md"><p>{{ leave.kind_label }}</p><p class="text-body-sm text-muted-foreground">{{ dates(leave) }}</p></td>
           <td>{{ status_badge(leave) }}{% if leave.decision_note %}<p class="mt-1 text-body-sm text-muted-foreground">{{ leave.decision_note }}</p>{% endif %}</td>
           <td class="text-body-sm text-muted-foreground"><p>{{ leave.decided_by.username if leave.decided_by else 'Deleted account' }}</p><p>{{ format_12h(leave.decided_at) }}</p></td>
+          <td class="col-actions">
+            {% if not leave.student.semester.attendance_locked %}
+              {{ record_opener('Reopen', 'reopen-dialog', url_for('leave.reopen', id=leave.id),
+                               'Reopen leave for ' ~ leave.student.name, 'Reopen', {}, 'rotate-cw', as_button=True, variant='ghost') }}
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -129,5 +136,11 @@
   {% endif %}
 {% endcall %}
 </div>
+
+{% call record_dialog('reopen-dialog', 'Reopen leave', 'Reopen') %}
+  <p class="text-body-md text-muted-foreground sm:col-span-2">The decision is undone and the request waits for a decision again. Until then, the student's classes on those days count as usual.</p>
+  {{ text_input('note', 'Reason', id='reopen_note', required=True, placeholder='e.g. Approved by mistake; certificate not received',
+                hint='Recorded in the activity log.', attrs={'maxlength': max_note, 'autocomplete': 'off'}, cls='sm:col-span-2') }}
+{% endcall %}
 {% endif %}
 {% endblock %}
