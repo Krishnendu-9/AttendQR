@@ -2,7 +2,7 @@
 import re
 from functools import wraps
 
-from flask import abort, current_app
+from flask import abort, current_app, g
 from flask_login import current_user
 from sqlalchemy import and_, false, or_
 
@@ -137,6 +137,34 @@ def can_access_student(student):
     if user_role() == 'student':
         return current_user.student_id == student.id
     return can_access_department(student.department_id)
+
+
+def taught_classes():
+    """For teachers: the classes, as (department_id, semester_id), they have a subject assigned in.
+
+    Worked out once per request, since a student list asks for every row.
+    """
+    if 'taught_classes' not in g:
+        teacher_id = current_teacher_id()
+        g.taught_classes = {
+            (department_id, semester_id) for department_id, semester_id in
+            db.session.query(Subject.department_id, Subject.semester_id).filter(Subject.teacher_id == teacher_id).distinct()
+        } if teacher_id else set()
+    return g.taught_classes
+
+
+def can_reset_student_access(student):
+    """Whether the current user may reset a student's password or registered phone.
+
+    Either reset hands over the account: a password reset shows the staff member a
+    working one-time password, and a device reset lets the next phone the student scans
+    from become theirs. So a teacher may do them only for classes they teach; the HOD
+    and the Principal for every student they can see.
+    """
+    role = user_role()
+    if role == 'teacher':
+        return can_access_student(student) and (student.department_id, student.semester_id) in taught_classes()
+    return role in ('principal', 'hod') and can_access_student(student)
 
 
 def can_access_teacher(teacher):
