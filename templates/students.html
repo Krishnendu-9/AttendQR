@@ -12,12 +12,14 @@
 {% call dropdown('Actions for ' ~ s.name) %}
   {{ menu_link('View details', url_for('students.view', id=s.id), 'user-round') }}
   {% if can_manage %}{{ menu_link('Edit', url_for('students.edit_form', id=s.id, return_to=list_url), 'pencil') }}{% endif %}
+  {% if can_reset_student_access(s) %}
   {{ menu_form('Reset password', url_for('students.reset_password', id=s.id), 'key-round',
                confirm='A new temporary password is created and shown once. The student must change it at next sign-in.',
                confirm_title='Reset password for ' ~ s.name ~ '?', confirm_label='Reset password', hidden={'return_to': list_url}) }}
   {{ menu_form('Reset device', url_for('students.reset_device', id=s.id), 'smartphone',
                confirm='The registered phone is released. The next phone the student marks attendance from becomes their device.',
                confirm_title='Reset device for ' ~ s.name ~ '?', confirm_label='Reset device', hidden={'return_to': list_url}) }}
+  {% endif %}
   {% if can_manage %}
   {{ menu_separator() }}
   {{ menu_form('Delete', url_for('students.delete', id=s.id), 'trash-2', danger=True,
