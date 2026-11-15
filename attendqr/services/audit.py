@@ -78,7 +78,11 @@ def init_app(app):
     @app.after_request
     def seal_audit_log(response):
         session = db.session
-        if g.pop('audit_pending', False) and not g.get('audit_uncommitted')                 and not (session.new or session.dirty or session.deleted):
+        if (
+            g.pop('audit_pending', False)
+            and not g.get('audit_uncommitted')
+            and not (session.new or session.dirty or session.deleted)
+        ):
             try:
                 seal_pending()
             except SQLAlchemyError:
