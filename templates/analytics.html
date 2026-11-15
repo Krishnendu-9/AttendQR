@@ -22,11 +22,11 @@
 {# Filters: one row above everything they scope. #}
 <form method="GET" action="{{ url_for('reports.analytics') }}" id="analyticsForm" class="card mb-6 p-6" novalidate>
   <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-    {% call field('dept_select', 'Department', required=True) %}
+    {% call field('dept_select', term('department'), required=True) %}
       {{ select_control('department_id', 'dept_select', departments, selected=filters.department_id, placeholder='Select department',
                         required=True, value_attr='id', label_attr='display_name') }}
     {% endcall %}
-    {% call field('sem_select', 'Semester', required=True) %}
+    {% call field('sem_select', term('semester'), required=True) %}
       {{ select_control('semester_id', 'sem_select', semesters, selected=filters.semester_id, placeholder='Select semester',
                         required=True, value_attr='id', label_attr='name') }}
     {% endcall %}

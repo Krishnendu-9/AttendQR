@@ -11,6 +11,7 @@ from ..access import (
     is_principal,
     log_activity,
     ordered_departments_query,
+    role_label,
     role_required,
     staff_email_rule_message,
     subject_display_name,
@@ -20,7 +21,19 @@ from ..access import (
     visible_teachers_query,
 )
 from ..extensions import db
-from ..models import Attendance, ClassSession, Department, Semester, Student, Subject, Teacher, User
+from ..models import (
+    Attendance,
+    ClassGroup,
+    ClassSession,
+    Department,
+    Semester,
+    Student,
+    Subject,
+    Teacher,
+    TimetableEntry,
+    User,
+)
+from ..services.settings import get_setting, term, terms
 from ..utils import (
     natural_key,
     normalize_branch,
@@ -66,7 +79,7 @@ def departments():
             return redirect(url_for('academics.departments'))
         existing = Department.query.filter(db.func.lower(Department.name) == course_name.lower()).first()
         if existing:
-            flash(f"Department '{existing.display_name}' already exists.", "warning")
+            flash(f"{term('department')} '{existing.display_name}' already exists.", "warning")
             return redirect(url_for('academics.departments'))
         department = Department(branch=branch, name=course_name)
         db.session.add(department)
@@ -91,7 +104,7 @@ def edit_department(id):
         Department.id != department.id,
     ).first()
     if existing:
-        flash(f"Department '{existing.display_name}' already exists.", "warning")
+        flash(f"{term('department')} '{existing.display_name}' already exists.", "warning")
         return redirect(url_for('academics.departments'))
     department.branch = branch
     department.name = course_name
@@ -134,10 +147,10 @@ def semesters():
         department_id = scoped_department_id_from_form()
         name = normalize_text(request.form.get('name'))
         if not name or len(name) > 50:
-            flash("Semester name is required (at most 50 characters).", "danger")
+            flash(f"{term('semester')} name is required (at most 50 characters).", "danger")
             return redirect(url_for('academics.semesters'))
         if not department_id or not db.session.get(Department, department_id):
-            flash("Valid department is required.", "danger")
+            flash(f"Valid {term('department').lower()} is required.", "danger")
             return redirect(url_for('academics.semesters'))
         if not can_access_department(department_id):
             abort(403)
@@ -145,7 +158,7 @@ def semesters():
             Semester.department_id == department_id,
             db.func.lower(Semester.name) == name.lower(),
         ).first():
-            flash(f"Semester '{name}' already exists for this department.", "warning")
+            flash(f"{term('semester')} '{name}' already exists for this {term('department').lower()}.", "warning")
             return redirect(url_for('academics.semesters'))
         semester = Semester(name=name, department_id=department_id)
         db.session.add(semester)
@@ -174,11 +187,11 @@ def edit_semester(id):
         abort(403)
     name = normalize_text(request.form.get('name'))
     if not name or len(name) > 50:
-        flash("Semester name is required (at most 50 characters).", "danger")
+        flash(f"{term('semester')} name is required (at most 50 characters).", "danger")
         return redirect(url_for('academics.semesters'))
     department_id = scoped_department_id_from_form()
     if not department_id or not db.session.get(Department, department_id):
-        flash("Valid department is required.", "danger")
+        flash(f"Valid {term('department').lower()} is required.", "danger")
         return redirect(url_for('academics.semesters'))
     if not can_access_department(department_id):
         abort(403)
@@ -187,13 +200,14 @@ def edit_semester(id):
         Semester.department_id == department_id,
         db.func.lower(Semester.name) == name.lower(),
     ).first():
-        flash(f"Semester '{name}' already exists for this department.", "warning")
+        flash(f"{term('semester')} '{name}' already exists for this {term('department').lower()}.", "warning")
         return redirect(url_for('academics.semesters'))
     if department_id != semester.department_id and (
         Student.query.filter_by(semester_id=semester.id).count()
         or Subject.query.filter_by(semester_id=semester.id).count()
     ):
-        flash("Move or remove this semester's students and subjects before changing its department.", "warning")
+        flash(f"Move or remove this {term('semester').lower()}'s students and {terms('subject').lower()} before "
+              f"changing its {term('department').lower()}.", "warning")
         return redirect(url_for('academics.semesters'))
     semester.name = name
     semester.department_id = department_id
@@ -215,10 +229,14 @@ def lock_semester(id):
         return redirect(url_for('academics.semesters'))
     semester.attendance_locked_at = utc_now()
     semester.attendance_locked_by_user_id = current_user.id
-    log_activity('attendance_locked', f"Locked attendance for {semester.department.display_name} {semester.name}.",
-                 'semester', semester.id, semester.department_id)
+    # The eligibility report of a final semester keeps the rules it was locked under.
+    semester.locked_eligibility_percent = get_setting('eligibility_percent')
+    semester.locked_condonation_percent = get_setting('condonation_percent')
+    log_activity('attendance_locked', f"Locked attendance for {semester.department.display_name} {semester.name} "
+                 f"(eligibility {semester.locked_eligibility_percent}%, condonation from "
+                 f"{semester.locked_condonation_percent}%).", 'semester', semester.id, semester.department_id)
     db.session.commit()
-    flash(f"Attendance for {semester.name} is locked. Only the Principal can unlock it.", 'success')
+    flash(f"Attendance for {semester.name} is locked. Only the {role_label('principal')} can unlock it.", 'success')
     return redirect(url_for('academics.semesters'))
 
 
@@ -236,6 +254,7 @@ def unlock_semester(id):
         return redirect(url_for('academics.semesters'))
     semester.attendance_locked_at = None
     semester.attendance_locked_by_user_id = None
+    semester.locked_eligibility_percent = semester.locked_condonation_percent = None
     log_activity('attendance_unlocked', f"Unlocked attendance for {semester.department.display_name} "
                  f"{semester.name}. Reason: {reason}", 'semester', semester.id, semester.department_id)
     db.session.commit()
@@ -275,16 +294,22 @@ def _subject_form(subject=None):
     teacher_id = parse_int_value(request.form.get('teacher_id'))
     paper_code = normalize_paper_code(request.form.get('paper_code'))
     name = normalize_text(request.form.get('name'))
+    group_id = parse_int_value(request.form.get('group_id'))
+    co_teacher_ids = {parse_int_value(value) for value in request.form.getlist('co_teacher_ids')} - {None, teacher_id}
+    # The page sends "0" before the checkbox, so an unticked box is "off"; a form without the field keeps it on.
+    counts_values = request.form.getlist('counts_towards_attendance')
+    counts = '1' in counts_values if counts_values else True
 
     if not paper_code or not name:
-        return None, "Paper code and subject name are required."
+        return None, f"{term('paper_code')} and {term('subject').lower()} name are required."
     if len(paper_code) > 50 or len(name) > 100:
-        return None, "Paper code must be at most 50 characters and subject name at most 100."
+        return None, (f"{term('paper_code')} must be at most 50 characters and {term('subject').lower()} name at "
+                      "most 100.")
     if not department_id or not semester_id:
-        return None, "Valid department and semester are required."
+        return None, f"Valid {term('department').lower()} and {term('semester').lower()} are required."
     semester = db.session.get(Semester, semester_id)
     if not semester:
-        return None, "Valid department and semester are required."
+        return None, f"Valid {term('department').lower()} and {term('semester').lower()} are required."
     if not can_access_department(department_id) or semester.department_id != department_id:
         abort(403)
 
@@ -300,6 +325,14 @@ def _subject_form(subject=None):
         teacher = db.get_or_404(Teacher, teacher_id)
         if teacher.department_id != department_id or not can_access_teacher(teacher):
             abort(403)
+    co_teachers = Teacher.query.filter(Teacher.id.in_(sorted(co_teacher_ids))).order_by(Teacher.name).all()
+    if len(co_teachers) != len(co_teacher_ids) or any(
+            t.department_id != department_id or not can_access_teacher(t) for t in co_teachers):
+        return None, "Co-teachers must be teachers of the subject's department."
+    if group_id:
+        group = db.session.get(ClassGroup, group_id)
+        if not group or group.semester_id != semester_id:
+            return None, "The group must belong to the subject's semester."
 
     return {
         'name': name,
@@ -307,7 +340,22 @@ def _subject_form(subject=None):
         'department_id': department_id,
         'semester_id': semester_id,
         'teacher_id': teacher_id,
+        'group_id': group_id,
+        'counts_towards_attendance': counts,
+        'co_teachers': co_teachers,
     }, None
+
+
+def _subject_details(subject):
+    """What the activity log says about a subject's options besides its name."""
+    parts = []
+    if subject.co_teachers:
+        parts.append("co-teachers: " + ', '.join(t.name for t in subject.co_teachers))
+    if subject.group:
+        parts.append(f"only for {subject.group.name}")
+    if not subject.counts_towards_attendance:
+        parts.append("does not count towards attendance")
+    return f" ({'; '.join(parts)})" if parts else ""
 
 
 @bp.route('/subjects', methods=['GET', 'POST'])
@@ -328,7 +376,7 @@ def subjects():
         teacher_suffix = f" and assigned to {subject.teacher.name}" if subject.teacher else ""
         log_activity(
             'subject_created',
-            f"Created subject '{subject_display_name(subject)}'{teacher_suffix}.",
+            f"Created subject '{subject_display_name(subject)}'{teacher_suffix}{_subject_details(subject)}.",
             'subject', subject.id, subject.department_id,
         )
         db.session.commit()
@@ -357,6 +405,10 @@ def edit_subject(id):
         return redirect(url_for('academics.subjects'))
     moving = (values['department_id'], values['semester_id']) != (subject.department_id, subject.semester_id)
     sessions_count = ClassSession.query.filter_by(subject_id=subject.id).count() if moving else 0
+    if moving and TimetableEntry.query.filter_by(subject_id=subject.id).count():
+        flash(f"Subject '{subject_display_name(subject)}' is in this class's routine, so it cannot move to another "
+              "class. Remove it from the routine first.", "warning")
+        return redirect(url_for('academics.subjects'))
     if sessions_count:
         # Its sessions and attendance belong to the students of the current class;
         # moving it would put them in another class's reports.
@@ -372,7 +424,7 @@ def edit_subject(id):
     teacher_suffix = f" Assigned teacher: {subject.teacher.name}." if subject.teacher else " No teacher assigned."
     log_activity(
         'subject_updated',
-        f"Updated subject '{subject_display_name(subject)}'.{teacher_suffix}",
+        f"Updated subject '{subject_display_name(subject)}'.{teacher_suffix}{_subject_details(subject)}",
         'subject', subject.id, subject.department_id,
     )
     db.session.commit()
@@ -389,6 +441,7 @@ def delete_subject(id):
     counts = {
         'sessions': ClassSession.query.filter_by(subject_id=id).count(),
         'attendance': Attendance.query.join(ClassSession).filter(ClassSession.subject_id == id).count(),
+        'routine classes': TimetableEntry.query.filter_by(subject_id=id).count(),
     }
     if any(counts.values()):
         flash(describe_delete_block(f"subject '{subject.name}'", counts), 'warning')
@@ -429,14 +482,18 @@ def edit_teacher(id):
         abort(403)
     department_id = scoped_department_id_from_form()
     if not department_id or not db.session.get(Department, department_id):
-        flash("Valid department is required.", "danger")
+        flash(f"Valid {term('department').lower()} is required.", "danger")
         return redirect(url_for('academics.teachers'))
     if not can_access_department(department_id):
         abort(403)
     name = normalize_text(request.form.get('name'))
     email = normalize_email(request.form.get('email'))
+    short_name = normalize_text(request.form.get('short_name')) or None
     if not name:
         flash("Teacher name is required.", "danger")
+        return redirect(url_for('academics.teachers'))
+    if short_name and len(short_name) > 10:
+        flash("Keep the short name to 10 characters, such as SC or MG.", "danger")
         return redirect(url_for('academics.teachers'))
     if not is_allowed_staff_email(email):
         flash(staff_email_rule_message(), "danger")
@@ -458,6 +515,8 @@ def edit_teacher(id):
     teacher.name = name
     teacher.email = email
     teacher.department_id = department_id
+    if 'short_name' in request.form:  # older forms without the field leave it alone
+        teacher.short_name = short_name
     linked_account = User.query.filter_by(teacher_id=teacher.id).first()
     if linked_account:
         linked_account.username = email

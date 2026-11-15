@@ -1,0 +1,46 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, page_header, callout with context %}
+{% from 'components/forms.html' import text_input, form_section, form_actions, checkbox_input with context %}
+{% set page_title = schedule.name %}
+{% set breadcrumbs = [('Calendar', url_for('routine.calendar')), (schedule.name, None)] %}
+
+{% block content %}
+{{ page_header(schedule.name, (schedule.department.display_name ~ ' only' if schedule.department else 'For the whole institution') ~ '. Empty rows are ignored.') }}
+
+{% if error %}<div class="mb-6">{% call callout('Not saved', 'danger') %}{{ error }}{% endcall %}</div>{% endif %}
+
+<form method="POST" action="{{ url_for('routine.edit_schedule', id=schedule.id) }}" class="card">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  {% call form_section('Name') %}
+    {{ text_input('name', 'Name', schedule.name, required=True, attrs={'maxlength': 60}, cls='sm:col-span-2') }}
+  {% endcall %}
+
+  {% call form_section('Periods', 'In time order. Tick Break for a gap with no classes, such as lunch.') %}
+    <div class="sm:col-span-2 overflow-x-auto">
+      <table class="data-table">
+        <thead><tr><th scope="col">Label</th><th scope="col">Starts</th><th scope="col">Ends</th><th scope="col">Break</th></tr></thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td><input class="input" name="label" value="{{ row.label }}" maxlength="20" aria-label="Label of row {{ loop.index }}" placeholder="{{ loop.index }}"></td>
+            <td><input class="input" type="time" name="start" value="{{ row.start }}" aria-label="Start of row {{ loop.index }}"></td>
+            <td><input class="input" type="time" name="end" value="{{ row.end }}" aria-label="End of row {{ loop.index }}"></td>
+            <td><input class="checkbox" type="checkbox" name="is_break" value="{{ loop.index0 }}"{% if row.is_break %} checked{% endif %} aria-label="Row {{ loop.index }} is a break"></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+
+  {% call form_section('Days', 'The days that use this schedule. A day ticked here stops using any other schedule of the same scope.') %}
+    <div class="sm:col-span-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {% for day in weekdays %}
+      {{ checkbox_input('weekday', day, checked=loop.index0 in used, id='weekday_' ~ loop.index0, value=loop.index0) }}
+      {% endfor %}
+    </div>
+  {% endcall %}
+
+  {{ form_actions(url_for('routine.calendar'), 'Save schedule') }}
+</form>
+{% endblock %}

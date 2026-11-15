@@ -1,5 +1,6 @@
 {% extends 'layouts/app.html' %}
 {% from 'components/ui.html' import icon, btn, badge, attendance_badge, percent_badge, page_header, card, callout, empty_state with context %}
+{% from 'components/routine.html' import occurrence_row with context %}
 {% set page_title = 'My attendance' %}
 {% set target = summary.target %}
 
@@ -39,6 +40,18 @@
   {% endif %}
 </div>
 
+{% if today_classes %}
+<section class="card mb-6" aria-labelledby="today-title">
+  <header class="flex items-start justify-between gap-3 px-6 pt-6">
+    <h2 id="today-title" class="text-headline-sm text-foreground">Today</h2>
+    <a href="{{ url_for('routine.mine') }}" class="{{ btn('ghost', 'sm') }}">My routine {{ icon('chevron-right') }}</a>
+  </header>
+  <ul class="divide-y divide-border px-6 pb-2">
+    {% for o in today_classes %}{{ occurrence_row(o, actions=False) }}{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
   <div class="xl:col-span-2">
     {% call card('Subject-wise attendance', 'Your percentage in each subject, and how many classes in a row reach ' ~ target ~ '%.', flush=True) %}
@@ -47,7 +60,7 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col">Subject</th>
+              <th scope="col">{{ term('subject') }}</th>
               <th scope="col" class="text-right">Attended</th>
               <th scope="col">Percentage</th>
               <th scope="col">Status</th>

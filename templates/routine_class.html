@@ -1,0 +1,228 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state, action_form, submit_button, record_dialog with context %}
+{% from 'components/forms.html' import field, text_input, select_input, select_control, checkbox_input, textarea_input with context %}
+{% from 'components/routine.html' import routine_grid, routine_list with context %}
+{% set page_title = 'Routine' %}
+{% set breadcrumbs = [('Class routines', url_for('routine.classes')), (class_label, None)] %}
+
+{% macro version_text(v) -%}
+{%- if v.is_draft %}Draft, not published
+{%- elif v.effective_to %}{{ v.effective_from.strftime('%d %b %Y') }} to {{ v.effective_to.strftime('%d %b %Y') }}
+{%- else %}From {{ v.effective_from.strftime('%d %b %Y') }}{% endif -%}
+{%- endmacro %}
+
+{% block content %}
+{% set description = (version_text(timetable) if timetable else 'No routine published yet.') %}
+{% call page_header(class_label, ('Editing the draft. Nothing changes for anyone until it is published.' if editing else description),
+                    badge('Draft', 'warning') if timetable and timetable.is_draft else None) %}
+  {% if not editing %}
+  <a href="{{ url_for('routine.class_week', semester_id=semester.id) }}" class="{{ btn('outline') }}">{{ icon('calendar-check') }}<span>This week</span></a>
+  {% endif %}
+  {% if timetable and not editing %}
+  <a href="{{ url_for('routine.print_view', semester_id=semester.id, version=timetable.id) }}" class="{{ btn('outline') }}" target="_blank" rel="noopener">{{ icon('printer') }}<span>Print</span></a>
+  {% endif %}
+  {% if can_edit and not editing %}
+  <form method="POST" action="{{ url_for('routine.editor', semester_id=semester.id) }}" class="contents">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="{{ btn('primary') }}">{{ icon('pencil') }}<span>{{ 'Continue the draft' if draft else ('Edit routine' if versions else 'Create routine') }}</span></button>
+  </form>
+  {% endif %}
+  {% if editing %}
+  <a href="{{ url_for('routine.view', semester_id=semester.id) }}" class="{{ btn('outline') }}">{{ icon('arrow-left') }}<span>Published routine</span></a>
+  <button type="button" class="{{ btn('primary') }}" data-record-dialog="entry-dialog" data-action="{{ add_entry_url }}"
+    data-title="Add a class" data-submit="Add class" data-mode="create" data-values='{}'>{{ icon('plus') }}<span>Add class</span></button>
+  {% endif %}
+{% endcall %}
+
+{% if lock_error %}
+<div class="mb-6">{% call callout('This semester is locked', 'warning', 'lock') %}{{ lock_error }} Its routine can be viewed but not changed.{% endcall %}</div>
+{% endif %}
+
+{% if editing %}
+{% if unassigned %}
+<div class="mb-6">{% call callout('Classes to assign', 'warning') %}
+  {{ unassigned }} class{{ 'es' if unassigned != 1 }} came from another class's routine without a matching subject here (shown in amber).
+  Open each one and choose a subject or a title, or delete it. The draft cannot be published until then.
+{% endcall %}</div>
+{% endif %}
+
+<div class="mb-6 grid gap-6 lg:grid-cols-2 2xl:grid-cols-4">
+  {% call card('Publish', 'From this date the draft becomes the routine. The current one ends the day before.', icon_name='calendar-check') %}
+  <form method="POST" action="{{ url_for('routine.publish_view', id=timetable.id) }}" class="space-y-4">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    {{ text_input('effective_from', 'Starts on', ((earliest_start if earliest_start and earliest_start > today else today)).isoformat(),
+                  id='effective_from', type='date', required=True,
+                  hint=('The current routine started on ' ~ versions[0].effective_from.strftime('%d %b %Y') ~ '.') if versions else None,
+                  attrs={'min': earliest_start.isoformat() if earliest_start else None}) }}
+    <div class="flex flex-wrap justify-between gap-2">
+      {{ submit_button('Publish', 'Publishing...', icon_name='calendar-check') }}
+    </div>
+  </form>
+  {% endcall %}
+
+  {% call card('Copy a day', 'Repeat one day on another; classes that would clash are skipped.', icon_name='copy') %}
+  <form method="POST" action="{{ url_for('routine.copy_day_view', id=timetable.id) }}" class="grid gap-4 sm:grid-cols-2">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    {{ select_input('from_day', 'From', day_choices, id='copy_from_day', selected=0) }}
+    {{ select_input('to_day', 'To', day_choices, id='copy_to_day', selected=1) }}
+    <div class="sm:col-span-2"><button type="submit" class="{{ btn('outline') }}">{{ icon('copy') }}<span>Copy day</span></button></div>
+  </form>
+  {% endcall %}
+
+  {% call card('Import from a spreadsheet', 'Optional. One row per class; the rows go into this draft and are checked like the dialog.', icon_name='file-spreadsheet') %}
+  <form method="POST" action="{{ url_for('routine.import_draft', id=timetable.id) }}" enctype="multipart/form-data" class="space-y-4">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <input class="input" type="file" name="file" accept=".xlsx,.csv" required aria-label="Spreadsheet to import">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <button type="submit" class="{{ btn('outline') }}">{{ icon('upload') }}<span>Import</span></button>
+      <a class="text-body-sm text-primary hover:underline" href="{{ url_for('routine.import_template', semester_id=semester.id) }}">Download the template</a>
+    </div>
+  </form>
+  {% endcall %}
+
+  {% call card('Copy a routine', 'Replaces the draft. From another class, subjects are matched by paper code; the rest stay to assign.', icon_name='calendar-range') %}
+  <form method="POST" action="{{ url_for('routine.copy_from_view', id=timetable.id) }}" class="space-y-4"
+    data-confirm="Every class in the draft is replaced by the copy." data-confirm-title="Replace the draft?" data-confirm-label="Replace">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    {% call field('source_id', 'Routine') %}
+      {% call select_control('source_id', 'source_id', placeholder='Choose a published routine', required=True) %}
+        {% for v in other_versions %}<option value="{{ v.id }}">{{ v.semester.name }} · {{ version_text(v) }}</option>{% endfor %}
+      {% endcall %}
+    {% endcall %}
+    <div class="flex flex-wrap justify-between gap-2">
+      <button type="submit" class="{{ btn('outline') }}">{{ icon('copy') }}<span>Copy</span></button>
+    </div>
+  </form>
+  {% endcall %}
+</div>
+{% endif %}
+
+<section class="card overflow-hidden p-4 md:p-6" aria-label="Routine">
+  {% if entries %}
+    {{ routine_grid(grid, editing=editing, highlight_day=today.weekday()) }}
+    {{ routine_list(grid, editing=editing) }}
+  {% elif editing %}
+    {{ empty_state('calendar-range', 'No classes in the draft', 'Click a period in the grid below, or use Add class. Copy a routine to start from another class.', compact=True) }}
+    {{ routine_grid(grid, editing=True) }}
+  {% else %}
+    {% call empty_state('calendar-range', 'No routine yet', 'The HOD creates the routine here: the subjects, groups, teachers and rooms of each week.') %}{% endcall %}
+  {% endif %}
+</section>
+
+{% if editing %}
+<div class="mt-6 flex justify-end">
+  {{ action_form('Discard draft', url_for('routine.discard', id=timetable.id), variant='destructive-outline', icon_name='trash-2', danger=True,
+                 confirm='Every change in the draft is lost. The published routine stays as it is.', confirm_title='Discard the draft?', confirm_label='Discard') }}
+</div>
+{% elif versions|length > 1 or (versions and timetable and timetable.id != versions[0].id) %}
+<section class="card mt-6 overflow-hidden" aria-label="Earlier versions">
+  <header class="px-6 pb-3 pt-6"><h2 class="text-headline-sm text-foreground">Versions</h2>
+    <p class="mt-0.5 text-body-sm text-muted-foreground">Every published routine is kept, so past weeks show the classes they really had.</p></header>
+  <ul class="divide-y divide-border border-t border-border">
+    {% for v in versions %}
+    <li class="flex items-center justify-between gap-3 px-6 py-3">
+      <span class="text-body-md">{{ version_text(v) }} · {{ v.entries|length }} classes</span>
+      {% if timetable and v.id == timetable.id %}{{ badge('Shown', 'info') }}{% else %}<a class="text-body-sm text-primary hover:underline" href="{{ url_for('routine.view', semester_id=semester.id, version=v.id) }}">Show</a>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if editing %}
+<script id="routine-periods" type="application/json">{{ periods|tojson }}</script>
+{% call record_dialog('entry-dialog', 'Add a class', 'Add class') %}
+  {{ select_input('weekday', 'Day', day_choices, id='entry_weekday', required=True) }}
+  <div class="grid grid-cols-2 gap-3">
+    {% call field('entry_period', 'Period') %}{{ select_control('', 'entry_period', placeholder='Custom time') }}{% endcall %}
+    {% call field('entry_length', 'Length') %}{{ select_control('', 'entry_length', [(1, '1 period'), (2, '2 periods'), (3, '3 periods'), (4, '4 periods')]) }}{% endcall %}
+  </div>
+  {{ text_input('start_time', 'Starts', id='entry_start', type='time', required=True) }}
+  {{ text_input('end_time', 'Ends', id='entry_end', type='time', required=True) }}
+  {% call field('entry_subject', term('subject'), hint='Or leave it and enter a title below.') %}
+    {% call select_control('subject_id', 'entry_subject', placeholder='No subject') %}
+      {% for s in subjects %}<option value="{{ s.id }}">{{ subject_display_name(s) }}</option>{% endfor %}
+    {% endcall %}
+  {% endcall %}
+  {{ text_input('title', 'Title', id='entry_title', placeholder='Special Tutorial Class', hint='For something that is not a subject.',
+                attrs={'maxlength': 100, 'autocomplete': 'off'}) }}
+  {% call field('entry_group', term('group')) %}
+    {% call select_control('group_id', 'entry_group', placeholder='Whole class') %}
+      {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+    {% endcall %}
+  {% endcall %}
+  {{ select_input('week_pattern', 'Repeats', patterns.items()|list, id='entry_pattern') }}
+  {% call field('entry_teachers', 'Teachers', hint="Empty: the subject's teachers.", cls='sm:col-span-2') %}
+    <select class="input h-auto py-2" id="entry_teachers" name="teacher_ids" multiple size="3" aria-describedby="entry_teachers-hint">
+      {% for t in teachers %}<option value="{{ t.id }}">{{ t.name }} ({{ teacher_short_name(t) }})</option>{% endfor %}
+    </select>
+  {% endcall %}
+  {{ text_input('room', 'Room', id='entry_room', placeholder='416', attrs={'maxlength': 40, 'autocomplete': 'off'}) }}
+  {{ text_input('note', 'Note', id='entry_note', attrs={'maxlength': 200, 'autocomplete': 'off'}) }}
+  {{ text_input('valid_from', 'Only from', id='entry_valid_from', type='date', hint='Optional.') }}
+  {{ text_input('valid_to', 'Only until', id='entry_valid_to', type='date', hint='Optional.') }}
+  <div class="sm:col-span-2">
+    {{ checkbox_input('confirm_overlap', 'Save anyway', id='entry_confirm_overlap',
+                      description='Only needed when two groups that share students are at the same time and you know they never attend both.') }}
+  </div>
+  <div class="sm:col-span-2" data-record-mode="edit">
+    <button type="submit" class="{{ btn('destructive-outline') }}" formnovalidate data-entry-delete>{{ icon('trash-2') }}<span>Delete this class</span></button>
+  </div>
+{% endcall %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if editing %}
+<script nonce="{{ csp_nonce() }}">
+(function () {
+  var periods = JSON.parse(document.getElementById('routine-periods').textContent);
+  var form = document.querySelector('#entry-dialog form');
+  var weekday = form.elements.weekday;
+  var start = form.elements.start_time;
+  var end = form.elements.end_time;
+  var period = document.getElementById('entry_period');
+  var length = document.getElementById('entry_length');
+  var teachers = document.getElementById('entry_teachers');
+  var remove = form.querySelector('[data-entry-delete]');
+
+  function classPeriods() {
+    return (periods[weekday.value] || []).filter(function (p) { return !p['break']; });
+  }
+  function fillPeriods(selectedStart) {
+    var list = classPeriods();
+    AttendQR.fillSelect(period, list.map(function (p, i) {
+      return { id: i, name: p.label + ' \u00b7 ' + p.start };
+    }), { placeholder: 'Custom time' });
+    var match = list.findIndex(function (p) { return p.start === selectedStart; });
+    period.value = match === -1 ? '' : String(match);
+    length.value = '1';
+  }
+  function applyPeriod() {
+    var list = classPeriods();
+    if (period.value === '') return;
+    var first = Number(period.value);
+    var last = Math.min(first + Number(length.value || 1) - 1, list.length - 1);
+    start.value = list[first].start;
+    end.value = list[last].end;
+  }
+  weekday.addEventListener('change', function () { fillPeriods(start.value); });
+  period.addEventListener('change', applyPeriod);
+  length.addEventListener('change', applyPeriod);
+  form.addEventListener('record:filled', function (event) {
+    var values = event.detail;
+    var chosen = (values.teacher_ids || []).map(String);
+    Array.prototype.forEach.call(teachers.options, function (option) { option.selected = chosen.indexOf(option.value) !== -1; });
+    fillPeriods(values.start_time || '');
+    if (values.start_time && values.end_time && period.value !== '') {
+      // Show the length that matches a saved multi-period class.
+      var list = classPeriods();
+      var count = list.slice(Number(period.value)).findIndex(function (p) { return p.end === values.end_time; });
+      if (count >= 0 && count < 4) length.value = String(count + 1);
+    }
+    remove.formAction = values.delete_url || '';
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -21,19 +21,29 @@ from ..extensions import db
 from ..models import (
     ActivityLog,
     Attendance,
+    BellPeriod,
+    BellSchedule,
+    BellScheduleDay,
+    ClassGroup,
+    ClassGroupMember,
     ClassSession,
     Department,
+    Holiday,
     LeaveRequest,
+    RoutineChange,
     Semester,
     SpotCheck,
     Student,
     Subject,
     Teacher,
+    Timetable,
+    TimetableEntry,
     User,
 )
 from ..schema import discard_used_initial_password
-from ..utils import local_now, local_to_utc, normalize_email, utc_now
+from ..utils import local_now, local_to_utc, normalize_email, to_local, utc_now
 from .audit import seal_pending
+from .settings import forget_cached
 
 DEFAULT_DEMO_PASSWORD = 'AttendQR@demo1'  # noqa: S105 - published on purpose; demo accounts only
 STAFF_DOMAIN = 'college.example'  # .example is reserved (RFC 2606), so no real address is ever used
@@ -125,6 +135,7 @@ def clear_all_data():
     for table in reversed(tables):
         db.session.execute(table.delete())
     db.session.flush()
+    forget_cached()  # saved settings went too: back to the server defaults
 
 
 def seed_demo(password=DEFAULT_DEMO_PASSWORD, weeks=6, seed=2026, reset=False):
@@ -202,6 +213,11 @@ def seed_demo(password=DEFAULT_DEMO_PASSWORD, weeks=6, seed=2026, reset=False):
 
             _add_sessions(rng, subjects, students, first_day, today, totals)
             if dept_index == 0 and class_index == 0:
+                totals['groups'] = _add_lab_groups(rng, department, semester, teachers, students, first_day, today,
+                                                   totals)
+                _add_uncounted_course(rng, department, semester, teachers, students, first_day, today, totals)
+                totals['routine classes'] = _add_routine(rng, department, semester, subjects, teachers, hod, first_day,
+                                                         today)
                 _add_special_and_void_sessions(rng, department, semester, subjects, students, today, totals)
                 totals['leave'] = _add_leave_requests(students, hod, today)
                 totals['spot checks'] = _add_integrity_story(rng, subjects, students, today)
@@ -222,6 +238,8 @@ def seed_demo(password=DEFAULT_DEMO_PASSWORD, weeks=6, seed=2026, reset=False):
         'manual corrections': totals['manual'],
         'leave requests': totals.get('leave', 0),
         'spot checks': totals.get('spot checks', 0),
+        'lab groups': totals.get('groups', 0),
+        'classes in the routine': totals.get('routine classes', 0),
     }
     return summary
 
@@ -297,12 +315,12 @@ def _add_sessions(rng, subjects, students, first_day, today, totals):
 
 
 def _add_session(rng, subject, teacher, account, start, students, totals,
-                 special_title=None, turnout=None, active=True):
+                 special_title=None, turnout=None, active=True, group_id=None):
     start = local_to_utc(start)  # the timetable is in local time; timestamps are stored in UTC
     session = ClassSession(
         subject_id=subject.id, teacher_id=teacher.id if teacher else None, special_title=special_title,
         created_at=start,
-        expires_at=start + timedelta(minutes=SESSION_MINUTES), is_active=active,
+        expires_at=start + timedelta(minutes=SESSION_MINUTES), is_active=active, group_id=group_id,
     )
     db.session.add(session)
     db.session.flush()
@@ -337,6 +355,49 @@ def _add_session(rng, subject, teacher, account, start, students, totals,
             ))
         totals['attendance'] += 1
     return session
+
+
+# The lab of the first class runs in two batches, each once a week: (weekday, start time).
+# Two teachers share it, like "MG + SC" on a printed routine.
+LAB_CODE, LAB_NAME, LAB_TEACHER, LAB_CO_TEACHER = 'CS591', 'Computer Networks Lab', 1, 3
+# A non-credit course taught weekly that never counts towards attendance.
+EXTRA_CODE, EXTRA_NAME, EXTRA_TEACHER, EXTRA_DAY = 'CS580', 'Industry Readiness (non-credit)', 2, 4  # Fridays
+LAB_BATCHES = (('Gr-1', 1, time(14, 30)), ('Gr-2', 3, time(14, 30)))  # Tuesday and Thursday afternoons
+
+
+def _add_lab_groups(rng, department, semester, teachers, students, first_day, today, totals):
+    """A lab subject taken in two roll-number batches. Each batch's sessions count only for its members."""
+    teacher, account = teachers[LAB_TEACHER]
+    lab = Subject(name=LAB_NAME, paper_code=LAB_CODE, department_id=department.id, semester_id=semester.id,
+                  teacher_id=teacher.id, co_teachers=[teachers[LAB_CO_TEACHER][0]])
+    db.session.add(lab)
+    db.session.flush()
+    half = (len(students) + 1) // 2
+    joined = local_to_utc(datetime.combine(first_day - timedelta(days=1), time(9, 0)))
+    for (name, weekday, start_time), batch in zip(LAB_BATCHES, (students[:half], students[half:]), strict=True):
+        group = ClassGroup(department_id=department.id, semester_id=semester.id, name=name, created_at=joined)
+        db.session.add(group)
+        db.session.flush()
+        for student, _ in batch:
+            db.session.add(ClassGroupMember(group_id=group.id, student_id=student.id, joined_at=joined))
+        for day in _class_days(first_day, today):
+            if day.weekday() == weekday:
+                _add_session(rng, lab, teacher, account, datetime.combine(day, start_time), batch, totals,
+                             group_id=group.id)
+    return len(LAB_BATCHES)
+
+
+def _add_uncounted_course(rng, department, semester, teachers, students, first_day, today, totals):
+    """A weekly non-credit course: listed in reports, counted in nobody's percentage."""
+    teacher, account = teachers[EXTRA_TEACHER]
+    course = Subject(name=EXTRA_NAME, paper_code=EXTRA_CODE, department_id=department.id, semester_id=semester.id,
+                     teacher_id=teacher.id, counts_towards_attendance=False)
+    db.session.add(course)
+    db.session.flush()
+    for day in _class_days(first_day, today):
+        if day.weekday() == EXTRA_DAY:
+            _add_session(rng, course, teacher, account, datetime.combine(day, time(16, 32)), students, totals,
+                         turnout=0.6)
 
 
 def _add_leave_requests(students, hod, today):
@@ -424,3 +485,99 @@ def _add_special_and_void_sessions(rng, department, semester, subjects, students
     void_day = today - timedelta(days=(today.weekday() - 1) % 7 or 7)  # last Tuesday
     _add_session(rng, subject, teacher, account, datetime.combine(void_day, time(16, 0)), students, totals,
                  turnout=0.0, active=False)
+
+
+# ── The routine of the first class ───────────────────────────
+
+# The bell schedule: (label, start, end, is_break). Sessions above start inside these periods.
+BELL_PERIODS = (
+    ('1', time(9, 30), time(10, 20), False), ('2', time(10, 30), time(11, 20), False),
+    ('3', time(11, 30), time(12, 20), False), ('Lunch', time(12, 20), time(13, 30), True),
+    ('4', time(13, 30), time(14, 20), False), ('5', time(14, 30), time(15, 20), False),
+    ('6', time(15, 30), time(16, 20), False), ('7', time(16, 30), time(17, 20), False),
+)
+
+
+def _add_routine(rng, department, semester, subjects, teachers, hod, first_day, today):
+    """A bell schedule, the class's published routine (matching the sessions above, which are then
+    linked to it), a weekly seminar that is rarely recorded, and a few one-date changes."""
+    schedule = BellSchedule(name='Weekday')
+    schedule.periods = [BellPeriod(position=i + 1, label=label, start_time=start, end_time=end, is_break=is_break)
+                        for i, (label, start, end, is_break) in enumerate(BELL_PERIODS)]
+    schedule.days = [BellScheduleDay(weekday=day) for day in range(5)]
+    db.session.add(schedule)
+    starts_on = first_day - timedelta(days=first_day.weekday())
+    routine = Timetable(department_id=department.id, semester_id=semester.id, status=Timetable.PUBLISHED,
+                        effective_from=starts_on, published_at=utc_now(), created_by_user_id=hod.id,
+                        published_by_user_id=hod.id)
+    db.session.add(routine)
+
+    def entry(weekday, start, end, room, subject=None, title=None, group=None, entry_teachers=()):
+        added = TimetableEntry(timetable=routine, weekday=weekday, start_time=start, end_time=end, subject=subject,
+                               title=title, group=group, room=room)
+        db.session.add(added)
+        added.teachers = list(entry_teachers)
+        return added
+
+    for index, (subject, teacher, _) in enumerate(subjects):
+        start = PERIODS[index % len(PERIODS)]
+        end = (datetime.combine(today, start) + timedelta(minutes=50)).time()
+        for weekday in range(5):
+            if (weekday + index) % 2 == 0:
+                entry(weekday, start, end, 'Room 301', subject=subject, entry_teachers=[teacher])
+    lab = Subject.query.filter_by(semester_id=semester.id, paper_code=LAB_CODE).one()
+    lab_teachers = [lab.teacher, *list(lab.co_teachers)]
+    for (_, weekday, start_time), group in zip(LAB_BATCHES, ClassGroup.query.filter_by(semester_id=semester.id)
+                                                  .order_by(ClassGroup.name), strict=True):
+        entry(weekday, start_time, time(16, 20), 'Lab 2', subject=lab, group=group, entry_teachers=lab_teachers)
+    course = Subject.query.filter_by(semester_id=semester.id, paper_code=EXTRA_CODE).one()
+    entry(EXTRA_DAY, time(16, 30), time(17, 20), 'Room 301', subject=course, entry_teachers=[course.teacher])
+    seminar = entry(2, time(15, 30), time(16, 20), 'Seminar hall', title='Department seminar',
+                    entry_teachers=[teachers[0][0]])
+    db.session.flush()
+
+    # Link each session held to the routine class it was.
+    entries = list(routine.entries)
+    for session in ClassSession.query.join(Subject).filter(Subject.semester_id == semester.id,
+                                                            ClassSession.special_title.is_(None)):
+        local = to_local(session.created_at)
+        match = next((e for e in entries if e.subject_id == session.subject_id and e.group_id == session.group_id
+                      and e.weekday == local.weekday() and e.start_time <= local.time() < e.end_time), None)
+        if match is not None:
+            session.timetable_entry_id, session.occurrence_date = match.id, local.date()
+
+    # The seminar was recorded once (last week); the other weeks show as not recorded.
+    last_wednesday = today - timedelta(days=(today.weekday() - 2) % 7 or 7)
+    seminar_session = _add_session(rng, _special_subject(department, semester), teachers[0][0], teachers[0][1],
+                                   datetime.combine(last_wednesday, time(15, 32)), [], {'sessions': 0, 'attendance': 0,
+                                                                                         'manual': 0},
+                                   special_title='Department seminar', turnout=0)
+    seminar_session.timetable_entry_id, seminar_session.occurrence_date = seminar.id, last_wednesday
+
+    # Coming changes: a class cancelled, one taken by a substitute, a holiday.
+    def next_day(weekday, after=1):
+        return today + timedelta(days=(weekday - today.weekday()) % 7 or 7) + timedelta(days=7 * (after - 1))
+    first_entry = next(e for e in entries if e.subject_id == subjects[0][0].id)
+    second_entry = next(e for e in entries if e.subject_id == subjects[1][0].id)
+    db.session.add_all([
+        RoutineChange(kind=RoutineChange.CANCEL, timetable_entry_id=first_entry.id, date=next_day(first_entry.weekday),
+                      department_id=department.id, semester_id=semester.id, subject_id=first_entry.subject_id,
+                      reason='Teacher at a university meeting', created_by_user_id=hod.id),
+        RoutineChange(kind=RoutineChange.SUBSTITUTE, timetable_entry_id=second_entry.id,
+                      date=next_day(second_entry.weekday, 2), substitute_teacher_id=teachers[3][0].id,
+                      department_id=department.id, semester_id=semester.id, subject_id=second_entry.subject_id,
+                      reason='Teacher on leave', created_by_user_id=hod.id),
+        Holiday(start_date=today + timedelta(days=17), end_date=today + timedelta(days=18), title='College foundation day'),
+    ])
+    return len(entries)
+
+
+def _special_subject(department, semester):
+    special = Subject.query.filter_by(department_id=department.id, semester_id=semester.id,
+                                      name=SPECIAL_CLASS_SUBJECT_NAME).first()
+    if special is None:
+        special = Subject(name=SPECIAL_CLASS_SUBJECT_NAME, paper_code=None, department_id=department.id,
+                          semester_id=semester.id)
+        db.session.add(special)
+        db.session.flush()
+    return special

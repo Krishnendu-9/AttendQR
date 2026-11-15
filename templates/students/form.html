@@ -28,7 +28,7 @@
 
   {% call form_section('Class', 'The department and semester the student attends.') %}
     {% if current_user.role == 'principal' %}
-      {% call field('department_id', 'Department', required=True) %}
+      {% call field('department_id', term('department'), required=True) %}
         <div class="relative">
           <select class="input" id="department_id" name="department_id" required>
             {% if departments|length != 1 %}<option value="">Select department</option>{% endif %}
@@ -38,11 +38,11 @@
         </div>
       {% endcall %}
     {% else %}
-      {% call field('department_display', 'Department', hint='Students are added to your department.') %}
+      {% call field('department_display', term('department'), hint='Students are added to your department.') %}
         <input class="input" id="department_display" value="{{ departments[0].display_name if departments else 'No department assigned' }}" readonly aria-describedby="department_display-hint">
       {% endcall %}
     {% endif %}
-    {% call field('semester_id', 'Semester', required=True, error=errors.semester_id) %}
+    {% call field('semester_id', term('semester'), required=True, error=errors.semester_id) %}
       <div class="relative">
         <select class="input" id="semester_id" name="semester_id" required{% if errors.semester_id %} aria-invalid="true" aria-describedby="semester_id-error"{% endif %}>
           <option value="">Select semester</option>

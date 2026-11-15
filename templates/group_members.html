@@ -1,0 +1,37 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, page_header, client_toolbar, search_empty, empty_state with context %}
+{% from 'components/forms.html' import form_actions with context %}
+{% set class_name = semester.department.display_name ~ ' - ' ~ semester.name %}
+{% set page_title = group.name ~ ' members' %}
+{% set breadcrumbs = [(terms('semester'), url_for('academics.semesters')), (terms('group'), url_for('groups.index', semester_id=semester.id)), (group.name, None)] %}
+
+{% block content %}
+{{ page_header(group.name ~ ' members', class_name ~ '. Tick the students in this group. Sessions already held keep counting for whoever was a member then.') }}
+
+<section class="card overflow-hidden">
+  {{ client_toolbar('member-filter', '#member-list', 'Search by name or roll number', 'Search students') }}
+  <form method="POST" action="{{ url_for('groups.members', id=group.id) }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <div id="member-list">
+      {% if students %}
+      <p class="px-6 pt-4 text-body-sm text-muted-foreground" data-search-count data-noun="students"></p>
+      <ul class="grid gap-x-6 gap-y-1 px-6 py-4 sm:grid-cols-2 lg:grid-cols-3" data-search-results>
+        {% for student in students %}
+        <li data-search="{{ (student.roll_no ~ ' ' ~ student.name)|lower }}">
+          <label class="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted">
+            <input type="checkbox" class="checkbox" name="student_id" value="{{ student.id }}"{% if student.id in member_ids %} checked{% endif %}>
+            <span class="min-w-0"><span class="font-mono text-body-sm text-muted-foreground">{{ student.roll_no }}</span>
+              <span class="text-label-lg text-foreground">{{ student.name }}</span></span>
+          </label>
+        </li>
+        {% endfor %}
+      </ul>
+      {{ search_empty() }}
+      {% else %}
+      {{ empty_state('users', 'No students in this class', 'Add students to ' ~ class_name ~ ' first.') }}
+      {% endif %}
+    </div>
+    {{ form_actions(url_for('groups.index', semester_id=semester.id), 'Save members') }}
+  </form>
+</section>
+{% endblock %}

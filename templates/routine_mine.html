@@ -1,0 +1,38 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, empty_state with context %}
+{% from 'components/routine.html' import routine_grid, occurrence_row, change_dialog with context %}
+{% set page_title = 'My routine' %}
+{% set this_page = url_for('routine.mine', week=start.isoformat()) %}
+
+{% block content %}
+{% call page_header('My routine', 'Week of ' ~ start.strftime('%d %b %Y') ~ (' · your classes, with your groups only' if current_user.role == 'student' else ' · every class you teach, as a substitute too')) %}
+  <a href="{{ url_for('routine.mine', week=previous_week.isoformat()) }}" class="{{ btn('outline') }}" aria-label="Previous week">{{ icon('chevron-left') }}</a>
+  <a href="{{ url_for('routine.mine') }}" class="{{ btn('outline') }}">This week</a>
+  <a href="{{ url_for('routine.mine', week=next_week.isoformat()) }}" class="{{ btn('outline') }}" aria-label="Next week">{{ icon('chevron-right') }}</a>
+{% endcall %}
+
+{% if found %}
+<section class="card mb-6 hidden overflow-hidden p-6 md:block" aria-label="Week">
+  {{ routine_grid(grid, show_class=show_class, highlight_day=today.weekday() if start <= today <= end else None) }}
+  <p class="mt-3 hidden text-body-sm text-muted-foreground md:block">Cancelled classes are crossed out. "Not recorded" means the class passed without a QR session; it does not count against anyone.</p>
+</section>
+{% endif %}
+
+<div class="space-y-6">
+  {% for day in found|groupby('day') %}
+  <section class="card" aria-label="{{ day.grouper.strftime('%A %d %B') }}">
+    <header class="flex items-center justify-between gap-3 px-6 pt-5">
+      <h2 class="text-headline-sm text-foreground">{{ day.grouper.strftime('%A %d %B') }}</h2>
+      {% if day.grouper == today %}{{ badge('Today', 'info') }}{% endif %}
+    </header>
+    <ul class="divide-y divide-border px-6 pb-2">
+      {% for o in day.list %}{{ occurrence_row(o, show_class=show_class, next_url=this_page, actions=current_user.role != 'student') }}{% endfor %}
+    </ul>
+  </section>
+  {% else %}
+  <section class="card">{{ empty_state('calendar-range', 'No classes this week', 'Either no routine is published for your class yet, or every day this week is a holiday or off.') }}</section>
+  {% endfor %}
+</div>
+
+{% if current_user.role != 'student' %}{{ change_dialog() }}{% endif %}
+{% endblock %}

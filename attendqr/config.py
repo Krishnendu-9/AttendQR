@@ -1,4 +1,5 @@
 import os
+from typing import ClassVar
 
 try:
     from dotenv import load_dotenv
@@ -98,6 +99,25 @@ class Config:
     # report date filters and "today" use its calendar days.
     TIMEZONE = os.environ.get('TIMEZONE', '').strip() or 'Asia/Kolkata'
 
+    # The Principal can change the options below on the Settings page (services/settings.py);
+    # these values, and TIMEZONE above, are only the starting point.
+    # Shown in the sidebar, page titles and exports; empty shows only "AttendQR".
+    INSTITUTION_NAME = ''
+    # Days classes can be held, 0 = Monday ... 6 = Sunday.
+    WORKING_DAYS = (0, 1, 2, 3, 4, 5)
+    # The day weeks start on in analytics, 0 = Monday ... 6 = Sunday.
+    WEEK_STARTS_ON = 0
+    # Whether teachers may cancel or move their own routine classes for one date (with a reason).
+    TEACHERS_CHANGE_OWN_CLASSES = True
+    # The words the app uses (singular, plural), for institutions that say "Course" or "Batch".
+    TERMS: ClassVar[dict] = {
+        'department': ('Department', 'Departments'),
+        'semester': ('Semester', 'Semesters'),
+        'subject': ('Subject', 'Subjects'),
+        'group': ('Group', 'Groups'),
+        'paper_code': ('Paper code', 'Paper codes'),
+    }
+    ROLE_NAMES: ClassVar[dict] = {'principal': 'Principal', 'hod': 'HOD', 'teacher': 'Teacher', 'student': 'Student'}
     ATTENDANCE_TARGET = 80
     # Exam eligibility (the eligibility report): at or above ELIGIBILITY_PERCENT a student may sit
     # the exams; between CONDONATION_PERCENT and it, only if the HOD or Principal condones it with a

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
@@ -7,11 +9,12 @@ from ..access import (
     log_activity,
     ordered_departments_query,
     role_required,
+    user_role,
     visible_semesters_query,
     visible_subjects_query,
 )
 from ..extensions import db
-from ..models import ClassSession, Condonation, Department, Semester, Student, Subject
+from ..models import ClassSession, Condonation, Department, Semester, Student, Subject, Teacher
 from ..services.analytics import PERIODS, build_class_trends, parse_weeks
 from ..services.eligibility import LABELS, NEEDS_CONDONATION, build_eligibility, export_rows
 from ..services.integrity import (
@@ -21,9 +24,16 @@ from ..services.integrity import (
     build_integrity_report,
 )
 from ..services.leave import LEAVE_LEGEND, ON_LEAVE
+from ..services.occurrences import occurrences
+from ..services.planned import by_day, summarise
+from ..services.planned import export_rows as routine_export_rows
 from ..services.reports import (
+    GROUP_LEGEND,
     MANUAL_MARK_LEGEND,
     MOVED_LEGEND,
+    NOT_COUNTED_LEGEND,
+    NOT_IN_CLASS,
+    NOT_IN_GROUP,
     SPECIAL_CLASS_LEGEND,
     attendance_counts,
     build_attendance_matrix,
@@ -37,9 +47,11 @@ from ..services.reports import (
     render_excel,
     render_pdf,
     report_sessions_query,
+    session_counts,
     total_attendance,
 )
-from ..utils import local_now, normalize_paper_code, normalize_text, sort_semesters
+from ..services.settings import get_setting, institution_name
+from ..utils import local_now, natural_key, normalize_paper_code, normalize_text, parse_date_range, sort_semesters
 
 bp = Blueprint('reports', __name__)
 
@@ -244,7 +256,7 @@ def eligibility_export():
              f"are not counted. Exported on {local_now().strftime('%d/%m/%Y %I:%M %p')}.")]
     name = ''.join(ch if ch.isalnum() else '_' for ch in f"{department.branch_name or department.course_name}_"
                    f"{semester.name}_eligibility")
-    return send_file(render_excel(headers, data, notes, title='Exam eligibility'), download_name=f'{name}.xlsx',
+    return send_file(render_excel(headers, data, notes, title='Exam eligibility', institution=institution_name()), download_name=f'{name}.xlsx',
                      as_attachment=True)
 
 
@@ -282,13 +294,17 @@ def export(department_id, semester_id, fmt):
     notes = [MANUAL_MARK_LEGEND]
     if any(is_special_session(s) for s in sessions):
         notes.append(SPECIAL_CLASS_LEGEND)
-    if any(row['left_at'] for row in rows):
+    if any(not session_counts(s) and not is_special_session(s) for s in sessions):
+        notes.append(NOT_COUNTED_LEGEND)
+    if any(row['left_at'] or NOT_IN_CLASS in row['attendance'].values() for row in rows):
         notes.append(MOVED_LEGEND)
+    if any(NOT_IN_GROUP in row['attendance'].values() for row in rows):
+        notes.append(GROUP_LEGEND)
     if any(ON_LEAVE in row['attendance'].values() for row in rows):
         notes.append(LEAVE_LEGEND)
 
     if fmt == 'excel':
-        return send_file(render_excel(headers, data, notes), download_name=f'{filename}.xlsx', as_attachment=True)
+        return send_file(render_excel(headers, data, notes, institution=institution_name()), download_name=f'{filename}.xlsx', as_attachment=True)
 
     if filters.subject_id and sessions and sessions[0].subject:
         subject = sessions[0].subject
@@ -299,20 +315,20 @@ def export(department_id, semester_id, fmt):
         f"Attendance Report — {title_subject} | {semester.name} | "
         f"Exported on {local_now().strftime('%d/%m/%Y')}"
     )
-    return send_file(render_pdf(headers, data, title, notes), download_name=f'{filename}.pdf', as_attachment=True)
+    return send_file(render_pdf(headers, data, title, notes, institution=institution_name()), download_name=f'{filename}.pdf', as_attachment=True)
 
 
 # ── Shortage list ────────────────────────────────────────────
 
 def _shortage_request():
     filters = parse_report_filters(request.args)
-    threshold = parse_threshold(request.args.get('threshold'), current_app.config['ATTENDANCE_TARGET'])
+    threshold = parse_threshold(request.args.get('threshold'), get_setting('attendance_target'))
     return filters, threshold
 
 
 def _shortage_args(filters, threshold):
     args = {'department_id': filters.department_id, 'semester_id': filters.semester_id, **filters.query_args()}
-    if threshold != current_app.config['ATTENDANCE_TARGET']:
+    if threshold != get_setting('attendance_target'):
         args['threshold'] = threshold
     return args
 
@@ -361,7 +377,85 @@ def shortage_export():
     base = department.branch_name or department.course_name
     filename = ''.join(ch if ch.isalnum() or ch in '-_.' else '_' for ch in f'{base}_{semester.name}_shortage')
     return send_file(
-        render_excel(headers, data, notes, title="Shortage List"),
+        render_excel(headers, data, notes, title="Shortage List", institution=institution_name()),
         download_name=f'{filename}.xlsx',
         as_attachment=True,
     )
+
+
+# ── Planned and held (the routine against the sessions) ──────
+
+def _routine_report_request():
+    """(semester, teacher, date_from, date_to, error) from the query string, scoped to the user."""
+    today = local_now().date()
+    parsed_from, parsed_to, _, _, error = parse_date_range(request.args.get('date_from'), request.args.get('date_to'),
+                                                           today)
+    date_from = parsed_from or today.replace(day=1)
+    date_to = parsed_to or today
+    if (date_to - date_from).days > 186:
+        date_from, error = date_to - timedelta(days=186), "Showing at most six months."
+    semester = teacher = None
+    if user_role() == 'teacher':
+        teacher = current_user.teacher
+        if teacher is None:
+            abort(403)
+    else:
+        semester_id = request.args.get('semester_id', type=int)
+        if semester_id:
+            semester = db.get_or_404(Semester, semester_id)
+            if not can_access_department(semester.department_id):
+                abort(403)
+        teacher_id = request.args.get('teacher_id', type=int)
+        if teacher_id:
+            teacher = db.get_or_404(Teacher, teacher_id)
+            if not can_access_department(teacher.department_id):
+                abort(403)
+    return semester, teacher, date_from, date_to, error
+
+
+def _routine_report_rows(semester, teacher, date_from, date_to):
+    if semester is None and teacher is None:
+        return []
+    return occurrences(date_from, date_to, semester_ids=[semester.id] if semester else None,
+                       teacher_id=teacher.id if teacher else None)
+
+
+@bp.route('/reports/routine')
+@login_required
+@role_required(*STAFF)
+def routine_report():
+    semester, teacher, date_from, date_to, error = _routine_report_request()
+    found = _routine_report_rows(semester, teacher, date_from, date_to)
+    overall, subjects, teachers = summarise(found)
+    teacher_choices = (Teacher.query.filter(Teacher.department_id.in_(
+        [d.id for d in ordered_departments_query()])).order_by(Teacher.name).all()
+        if user_role() != 'teacher' else [])
+    return render_template(
+        'routine_report.html', found=found, days=by_day(found), overall=overall, subjects=subjects, teachers=teachers,
+        semester=semester, teacher=teacher, date_from=date_from, date_to=date_to, error=error,
+        semesters=sorted(visible_semesters_query().all(),
+                         key=lambda s: (natural_key(s.department.display_name), natural_key(s.name))),
+        teacher_choices=teacher_choices, today=local_now().date(),
+        export_args={k: v for k, v in {'semester_id': semester.id if semester else None,
+                                       'teacher_id': teacher.id if teacher and user_role() != 'teacher' else None,
+                                       'date_from': date_from.isoformat(), 'date_to': date_to.isoformat()}.items() if v},
+    )
+
+
+@bp.route('/reports/routine/export')
+@login_required
+@role_required(*STAFF)
+def routine_report_export():
+    semester, teacher, date_from, date_to, _ = _routine_report_request()
+    found = _routine_report_rows(semester, teacher, date_from, date_to)
+    if semester is None and teacher is None:
+        abort(400)
+    headers, data = routine_export_rows(found)
+    overall, _, _ = summarise(found)
+    scope = semester.name if semester is not None else teacher.name if teacher is not None else ''
+    totals = (f"{date_from:%d %b %Y} to {date_to:%d %b %Y}. Planned {overall.planned}, held {overall.held}, "
+              f"not recorded {overall.not_recorded}, cancelled {overall.cancelled}, still to come {overall.to_come}.")
+    notes = [totals, "Classes not recorded count for no student either way."]
+    name = ''.join(ch if ch.isalnum() else '_' for ch in f"planned_held_{scope}_{date_from:%Y%m%d}")
+    return send_file(render_excel(headers, data, notes, title='Planned and held', institution=institution_name()),
+                     download_name=f'{name}.xlsx', as_attachment=True)

@@ -11,15 +11,15 @@
   <div class="mb-5">{% call callout('Invalid date range', 'danger') %}{{ filters.error }}{% endcall %}</div>
   {% endif %}
   <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-    {% call field('dept_select', 'Department', required=True) %}
+    {% call field('dept_select', term('department'), required=True) %}
       {{ select_control('department_id', 'dept_select', departments, selected=filters.department_id, placeholder='Select department',
                         required=True, value_attr='id', label_attr='display_name') }}
     {% endcall %}
-    {% call field('sem_select', 'Semester', required=True) %}
+    {% call field('sem_select', term('semester'), required=True) %}
       {{ select_control('semester_id', 'sem_select', semesters, selected=filters.semester_id, placeholder='Select semester',
                         required=True, value_attr='id', label_attr='name') }}
     {% endcall %}
-    {% call field('subject_select', 'Subject') %}
+    {% call field('subject_select', term('subject')) %}
       {% call select_control('subject_id', 'subject_select', placeholder='All subjects') %}
         {% for sub in subjects %}<option value="{{ sub.id }}"{% if filters.subject_id == sub.id %} selected{% endif %}>{{ subject_display_name(sub) }}</option>{% endfor %}
       {% endcall %}

@@ -1,0 +1,65 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, empty_state, record_dialog with context %}
+{% from 'components/forms.html' import field, text_input, select_control with context %}
+{% from 'components/routine.html' import occurrence_row, change_dialog with context %}
+{% set page_title = 'Routine' %}
+{% set breadcrumbs = [('Class routines', url_for('routine.classes')), (class_label, url_for('routine.view', semester_id=semester.id)), ('Week of ' ~ start.strftime('%d %b'), None)] %}
+{% set this_page = url_for('routine.class_week', semester_id=semester.id, week=start.isoformat()) %}
+
+{% block content %}
+{% call page_header(class_label, 'Week of ' ~ start.strftime('%d %b %Y') ~ ': what happened to each class, and changes for one date.') %}
+  <a href="{{ url_for('routine.class_week', semester_id=semester.id, week=previous_week.isoformat()) }}" class="{{ btn('outline') }}" aria-label="Previous week">{{ icon('chevron-left') }}</a>
+  <a href="{{ url_for('routine.class_week', semester_id=semester.id) }}" class="{{ btn('outline') }}">This week</a>
+  <a href="{{ url_for('routine.class_week', semester_id=semester.id, week=next_week.isoformat()) }}" class="{{ btn('outline') }}" aria-label="Next week">{{ icon('chevron-right') }}</a>
+  {% if is_manager %}
+  <button type="button" class="{{ btn('primary') }}" data-record-dialog="extra-dialog" data-action="{{ url_for('routine.add_extra', semester_id=semester.id) }}"
+    data-title="Add an extra class" data-submit="Add class" data-mode="create" data-values='{{ {"date": (today if start <= today <= end else start).isoformat()}|tojson }}'>{{ icon('plus') }}<span>Extra class</span></button>
+  {% endif %}
+{% endcall %}
+
+<div class="space-y-6">
+  {% for day in found|groupby('day') %}
+  <section class="card" aria-label="{{ day.grouper.strftime('%A %d %B') }}">
+    <header class="flex items-center justify-between gap-3 px-6 pt-5">
+      <h2 class="text-headline-sm text-foreground">{{ day.grouper.strftime('%A %d %B') }}</h2>
+      {% if day.grouper == today %}{{ badge('Today', 'info') }}{% endif %}
+    </header>
+    <ul class="divide-y divide-border px-6 pb-2">
+      {% for o in day.list %}{{ occurrence_row(o, next_url=this_page) }}{% endfor %}
+    </ul>
+  </section>
+  {% else %}
+  <section class="card">{{ empty_state('calendar-range', 'No classes this week', 'No published routine covers this week, or every day is a holiday or off.') }}</section>
+  {% endfor %}
+</div>
+
+{{ change_dialog(teachers) }}
+
+{% if is_manager %}
+{% call record_dialog('extra-dialog', 'Add an extra class', 'Add class') %}
+  {{ text_input('date', 'Date', id='extra_date', type='date', required=True) }}
+  <div class="grid grid-cols-2 gap-3">
+    {{ text_input('start_time', 'Starts', id='extra_start', type='time', required=True) }}
+    {{ text_input('end_time', 'Ends', id='extra_end', type='time', required=True) }}
+  </div>
+  {% call field('extra_subject', term('subject'), hint='Or leave it and enter a title.') %}
+    {% call select_control('subject_id', 'extra_subject', placeholder='No subject') %}
+      {% for s in subjects %}<option value="{{ s.id }}">{{ subject_display_name(s) }}</option>{% endfor %}
+    {% endcall %}
+  {% endcall %}
+  {{ text_input('title', 'Title', id='extra_title', placeholder='Revision class', attrs={'maxlength': 100}) }}
+  {% call field('extra_group', term('group')) %}
+    {% call select_control('group_id', 'extra_group', placeholder='Whole class') %}
+      {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+    {% endcall %}
+  {% endcall %}
+  {% call field('extra_teacher', 'Teacher', hint="Empty: the subject's teachers.") %}
+    {% call select_control('teacher_id', 'extra_teacher', placeholder="The subject's teachers") %}
+      {% for t in teachers %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+    {% endcall %}
+  {% endcall %}
+  {{ text_input('room', 'Room', id='extra_room', attrs={'maxlength': 40}) }}
+  {{ text_input('reason', 'Reason', id='extra_reason', required=True, placeholder='e.g. Make-up for the cancelled class', attrs={'maxlength': 200}) }}
+{% endcall %}
+{% endif %}
+{% endblock %}

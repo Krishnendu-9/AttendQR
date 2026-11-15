@@ -183,6 +183,7 @@ def edit(id):
 
     username = normalize_email(request.form.get('username', ''))
     teacher_name = normalize_text(request.form.get('teacher_name'))
+    short_name = normalize_text(request.form.get('teacher_short_name')) or None
     raw_department_id = request.form.get('department_id')
     subject_id = parse_int_value(request.form.get('subject_id'))
 
@@ -212,6 +213,8 @@ def edit(id):
             department_id = parse_int_value(raw_department_id) if is_principal() else current_department_id()
             if not teacher_name:
                 raise AccountError("Teacher name is required for Teacher accounts")
+            if short_name and len(short_name) > 10:
+                raise AccountError("Keep the short name to 10 characters, such as SC or MG.")
             if not department_id:
                 raise AccountError("Valid department is required for Teacher accounts")
             if not can_access_department(department_id):
@@ -233,6 +236,8 @@ def edit(id):
             teacher.name = teacher_name
             teacher.email = username
             teacher.department_id = department_id
+            if 'teacher_short_name' in request.form:  # older forms without the field leave it alone
+                teacher.short_name = short_name
             account.username = username
             account.department_id = department_id
             _assign_subject(subject_id, department_id, teacher)

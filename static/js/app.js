@@ -122,7 +122,12 @@
     return loadOptions(select, 'subjects', semesterId, Object.assign({
       placeholder: 'Select subject',
       label: function (s) { return s.display_name; },
-      data: function (s) { return { teacherId: s.teacher_id || '', teacherName: s.teacher_name || '' }; }
+      data: function (s) {
+        return {
+          teacherId: s.teacher_id || '', teacherName: s.teacher_name || '',
+          coTeachers: JSON.stringify(s.co_teachers || []), groupId: s.group_id || ''
+        };
+      }
     }, options));
   }
 
@@ -132,6 +137,14 @@
       label: function (s) {
         return s.display_name + ' (' + s.semester + ')' + (s.teacher_name ? ' - assigned to ' + s.teacher_name : '');
       }
+    }, options));
+  }
+
+  /* A class's groups (lab batches, electives); the first choice is the whole class. */
+  function loadGroups(select, semesterId, options) {
+    return loadOptions(select, 'groups', semesterId, Object.assign({
+      placeholder: 'Whole class',
+      label: function (g) { return g.name + ' (' + g.members + ' student' + (g.members === 1 ? '' : 's') + ')'; }
     }, options));
   }
 
@@ -217,6 +230,26 @@
     update();
   }
 
+  /*
+   * Position blocks drawn on a time axis (the routine grid). The CSP forbids style="" attributes,
+   * so the server writes percentages as data-top/-height/-left/-width and this applies them.
+   * [data-span-minutes] containers get a height in proportion to the minutes they cover.
+   */
+  function placeBlocks(root) {
+    var scope = root || document;
+    scope.querySelectorAll('[data-span-minutes]').forEach(function (el) {
+      el.style.height = Math.max(320, Number(el.getAttribute('data-span-minutes')) * 1.15) + 'px';
+    });
+    scope.querySelectorAll('[data-place]').forEach(function (el) {
+      var d = el.dataset;
+      if (d.top) el.style.top = d.top + '%';
+      if (d.height) el.style.height = d.height + '%';
+      if (d.left) el.style.left = d.left + '%';
+      if (d.width) el.style.width = d.width + '%';
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () { placeBlocks(); });
+
   window.AttendQR = {
     config: config,
     url: url,
@@ -227,6 +260,8 @@
     loadSemesters: loadSemesters,
     loadSubjects: loadSubjects,
     loadDepartmentSubjects: loadDepartmentSubjects,
+    loadGroups: loadGroups,
+    placeBlocks: placeBlocks,
     loadTeachers: loadTeachers,
     evaluatePassword: evaluatePassword,
     bindPasswordMeter: bindPasswordMeter

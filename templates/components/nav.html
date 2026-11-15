@@ -11,6 +11,7 @@
   {'id': 'overview', 'label': 'Overview', 'items': [
     {'label': 'Dashboard', 'icon': 'layout-dashboard', 'endpoint': 'main.dashboard', 'show': staff, 'match': ['main.dashboard'], 'keywords': 'home overview'},
     {'label': 'My attendance', 'icon': 'calendar-check', 'endpoint': 'main.student_attendance', 'show': role == 'student', 'match': ['main.'], 'keywords': 'home percentage'},
+    {'label': 'My routine', 'icon': 'calendar-range', 'endpoint': 'routine.mine', 'show': role in ['student', 'teacher'], 'match': ['routine.mine'], 'keywords': 'timetable week schedule today classes'},
   ]},
   {'id': 'attendance', 'label': 'Attendance', 'items': [
     {'label': 'Generate QR', 'icon': 'qr-code', 'endpoint': 'attendance.generate_qr', 'show': staff, 'match': ['attendance.'], 'keywords': 'session class scan'},
@@ -19,6 +20,8 @@
     {'label': 'Shortage list', 'icon': 'triangle-alert', 'endpoint': 'reports.shortage', 'show': staff, 'match': ['reports.shortage'], 'keywords': 'below target defaulters'},
     {'label': 'Integrity', 'icon': 'shield-check', 'endpoint': 'reports.integrity', 'show': managers, 'match': ['reports.integrity'], 'keywords': 'proxy suspicious spot check buddy'},
     {'label': 'Exam eligibility', 'icon': 'list-checks', 'endpoint': 'reports.eligibility', 'show': managers, 'match': ['reports.eligibility'], 'keywords': 'condonation detained exam 75'},
+    {'label': 'Class routines', 'icon': 'calendar-range', 'endpoint': 'routine.classes', 'show': staff, 'match': ['routine.classes', 'routine.view', 'routine.editor', 'routine.print', 'routine.class_week'], 'keywords': 'timetable schedule period class routine'},
+    {'label': 'Planned and held', 'icon': 'list-checks', 'endpoint': 'reports.routine_report', 'show': staff, 'match': ['reports.routine_report'], 'keywords': 'routine not recorded missed classes held cancelled'},
     {'label': 'Leave' if role == 'student' else 'Leave requests', 'icon': 'calendar-clock', 'endpoint': 'leave.index', 'show': role in ['student', 'principal', 'hod'], 'match': ['leave.'], 'keywords': 'medical absence excuse approve'},
   ]},
   {'id': 'people', 'label': 'People', 'items': [
@@ -27,9 +30,13 @@
     {'label': 'Accounts', 'icon': 'shield-user', 'endpoint': 'accounts.index', 'show': managers, 'match': ['accounts.'], 'keywords': 'users logins hod principal'},
   ]},
   {'id': 'academics', 'label': 'Academics', 'items': [
-    {'label': 'Departments', 'icon': 'building-2', 'endpoint': 'academics.departments', 'show': managers, 'match': ['department'], 'keywords': 'branch course'},
-    {'label': 'Semesters', 'icon': 'calendar-range', 'endpoint': 'academics.semesters', 'show': managers, 'match': ['semester'], 'keywords': 'class'},
-    {'label': 'Subjects', 'icon': 'book-open', 'endpoint': 'academics.subjects', 'show': staff, 'match': ['subject'], 'keywords': 'paper code'},
+    {'label': terms('department'), 'icon': 'building-2', 'endpoint': 'academics.departments', 'show': managers, 'match': ['department'], 'keywords': 'branch course'},
+    {'label': terms('semester'), 'icon': 'calendar-range', 'endpoint': 'academics.semesters', 'show': managers, 'match': ['semester'], 'keywords': 'class'},
+    {'label': terms('subject'), 'icon': 'book-open', 'endpoint': 'academics.subjects', 'show': staff, 'match': ['subject'], 'keywords': 'paper code'},
+  ]},
+  {'id': 'institution', 'label': 'Institution', 'items': [
+    {'label': 'Calendar', 'icon': 'calendar-clock', 'endpoint': 'routine.calendar', 'show': managers, 'match': ['routine.calendar', 'schedule', 'holiday'], 'keywords': 'bell schedule periods holidays'},
+    {'label': 'Settings', 'icon': 'settings', 'endpoint': 'settings.index', 'show': role == 'principal', 'match': ['settings.'], 'keywords': 'institution name target eligibility condonation time zone working days week'},
   ]},
 ] %}
 

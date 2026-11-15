@@ -8,12 +8,11 @@ same way, and special classes are left out, as in every percentage.
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from flask import current_app
-
 from ..utils import local_now, to_local
+from .counting import NOT_COUNTED_MARKS
 from .enrollment import class_roster
-from .leave import ON_LEAVE
-from .reports import NOT_IN_CLASS, ReportFilters, build_attendance_matrix, is_special_session
+from .reports import ReportFilters, build_attendance_matrix, session_counts
+from .settings import get_setting
 
 PERIODS = (4, 8, 12, 16)  # weeks
 DEFAULT_WEEKS = 8
@@ -56,18 +55,19 @@ def parse_weeks(value):
 
 
 def week_start(day):
-    return day - timedelta(days=day.weekday())  # Monday
+    """The first day of the week holding `day`; weeks start on the "First day of the week" setting."""
+    return day - timedelta(days=(day.weekday() - get_setting('week_starts_on')) % 7)
 
 
 def build_class_trends(department_id, semester_id, weeks=DEFAULT_WEEKS):
-    target = current_app.config['ATTENDANCE_TARGET']
+    target = get_setting('attendance_target')
     today = local_now().date()
     first_week = week_start(today) - timedelta(weeks=weeks - 1)
     filters = ReportFilters(department_id=department_id, semester_id=semester_id, subject_id=None,
                             parsed_from=first_week, parsed_to=today, date_from=first_week.isoformat(),
                             date_to=today.isoformat(), error=None)
     sessions, rows = build_attendance_matrix(filters)
-    sessions = [s for s in sessions if not is_special_session(s)]
+    sessions = [s for s in sessions if session_counts(s)]
 
     weekly = {first_week + timedelta(weeks=i): Tally() for i in range(weeks)}
     sessions_per_week = dict.fromkeys(weekly, 0)
@@ -85,8 +85,8 @@ def build_class_trends(department_id, semester_id, weeks=DEFAULT_WEEKS):
         subject = subjects.setdefault(s.subject_id, (s.subject, Tally()))[1]
         for row in rows:
             mark = row['attendance'][s.id]
-            if mark in (NOT_IN_CLASS, ON_LEAVE):
-                continue  # not one of this student's classes
+            if mark in NOT_COUNTED_MARKS:
+                continue  # not one of this student's classes (not in the class then, another group, or on leave)
             present = 1 if mark else 0
             for tally in (week, subject, overall, per_student[row['student'].id][0]):
                 tally.present += present
@@ -123,7 +123,7 @@ def build_class_trends(department_id, semester_id, weeks=DEFAULT_WEEKS):
             trends.at_risk.append({'student': row['student'], 'percentage': whole.rate,
                                    'recent': recent.rate, 'change': change})
     trends.at_risk.sort(key=lambda item: (item['percentage'], item['student'].roll_no))
-    trends.class_size = sum(1 for _, left_at in class_roster(department_id, semester_id) if left_at is None)
+    trends.class_size = sum(1 for member in class_roster(department_id, semester_id) if member.is_current)
     trends.chart = _line_chart(trends.weeks, target)
     return trends
 

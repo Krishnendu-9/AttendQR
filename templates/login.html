@@ -1,7 +1,7 @@
 {% extends 'layouts/auth.html' %}
 {% from 'components/ui.html' import icon, callout, submit_button with context %}
 {% from 'components/forms.html' import text_input, password_input with context %}
-{% block title %}Sign in | AttendQR{% endblock %}
+{% block title %}Sign in | {{ institution_name or 'AttendQR' }}{% endblock %}
 {% block content %}
 <div class="card p-6 shadow-popover sm:p-8">
   <h1 class="text-headline-lg text-foreground">Sign in</h1>

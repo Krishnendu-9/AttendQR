@@ -22,6 +22,7 @@ from .access import (
     session_display_name,
     staff_email_html_pattern,
     subject_display_name,
+    teacher_short_name,
     user_role,
 )
 from .config import Config
@@ -39,7 +40,8 @@ from .security import (
 from .services import two_factor
 from .services.network import describe_scan_networks, parse_scan_networks
 from .services.retention import purge_expired_scan_ips, register_scan_ip_purge
-from .utils import format_12h, to_local, utc_now
+from .services.settings import get_setting, institution_name, term, terms
+from .utils import compact_number, format_12h, full_number, to_local, utc_now
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -114,7 +116,11 @@ def create_app(overrides=None):
 
 
 def _check_settings(app):
-    """Refuse to start with timing settings that would break scanning."""
+    """Refuse to start with timing settings that would break scanning.
+
+    TIMEZONE and the eligibility percentages are only starting values for the Settings
+    page (services/settings.py), which checks what the Principal saves; they are checked here too.
+    """
     cfg = app.config
     max_age, refresh, grant = cfg['QR_TOKEN_MAX_AGE'], cfg['QR_REFRESH_SECONDS'], cfg['SCAN_GRANT_SECONDS']
     problems = []
@@ -280,6 +286,7 @@ def build_js_config():
         'urls': {
             'semesters': url_for('api.semesters', department_id=p),
             'subjects': url_for('api.subjects', semester_id=p),
+            'groups': url_for('api.groups', semester_id=p),
             'departmentSubjects': url_for('api.department_subjects', department_id=p),
             'teachers': url_for('api.teachers', department_id=p),
             'sessionQr': url_for('api.session_qr', id=p),
@@ -300,6 +307,9 @@ def static_url(filename):
 def _register_template_helpers(app):
     # Stored timestamps are UTC; `value|local` gives the college's local time for formatting.
     app.jinja_env.filters['local'] = to_local
+    # Counts: `n|full_number` is "6,000,000"; `n|compact_number` is "6M" for a small space.
+    app.jinja_env.filters['full_number'] = full_number
+    app.jinja_env.filters['compact_number'] = compact_number
 
     @app.context_processor
     def inject_helpers():
@@ -311,6 +321,10 @@ def _register_template_helpers(app):
             'subject_display_name': subject_display_name,
             'is_hidden_special_subject': is_hidden_special_subject,
             'session_display_name': session_display_name,
+            'teacher_short_name': teacher_short_name,
+            # The institution's words: term('semester') is "Semester", or "Batch" where set.
+            'term': term,
+            'terms': terms,
             'format_12h': format_12h,
             'csrf_token': get_csrf_token,
             'csp_nonce': csp_nonce,
@@ -319,7 +333,9 @@ def _register_template_helpers(app):
             'can_toggle_account_status': can_manage_account,
             'can_reset_staff_account': can_reset_staff_account,
             'can_reset_student_access': can_reset_student_access,
-            'attendance_target': app.config['ATTENDANCE_TARGET'],
+            'attendance_target': get_setting('attendance_target'),
+            # Empty unless the Principal names the institution; pages then show only "AttendQR".
+            'institution_name': institution_name(),
             'min_password_length': app.config['MIN_PASSWORD_LENGTH'],
             'staff_email_pattern': staff_email_html_pattern,
             'staff_domains': app.config['ALLOWED_STAFF_DOMAINS'],

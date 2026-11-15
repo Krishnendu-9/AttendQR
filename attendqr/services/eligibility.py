@@ -4,19 +4,23 @@ Each current student of the class is placed by their overall percentage for the
 semester, computed exactly as in the reports (approved leave, void sessions and
 special classes are left out):
 
-- eligible: at least ELIGIBILITY_PERCENT
-- condoned: between CONDONATION_PERCENT and ELIGIBILITY_PERCENT, and the HOD or the
-  Principal has condoned it, with a reason
+- eligible: at least the eligibility percentage
+- condoned: between the condonation limit and the eligibility percentage, and the HOD
+  or the Principal has condoned it, with a reason
 - needs condonation: in that band, not condoned yet
-- detained: below CONDONATION_PERCENT (cannot be condoned)
+- detained: below the condonation limit (cannot be condoned)
+
+Both percentages are settings (services/settings.py): the Principal sets them in the
+app, starting from ELIGIBILITY_PERCENT and CONDONATION_PERCENT. A locked semester uses
+the percentages saved when it was locked.
 """
 from collections import Counter
 from dataclasses import dataclass, field
 
-from flask import current_app
-
-from ..models import Condonation
+from ..extensions import db
+from ..models import Condonation, Semester
 from .reports import ReportFilters, build_attendance_matrix
+from .settings import get_setting
 
 ELIGIBLE = 'eligible'
 CONDONED = 'condoned'
@@ -35,6 +39,7 @@ class EligibilityReport:
     counts: Counter = field(default_factory=Counter)
     eligible_at: int = 75
     condonable_at: int = 65
+    limits_from_lock: bool = False  # the percentages saved when the semester was locked
 
 
 def status_for(percentage, held, condoned, eligible_at, condonable_at):
@@ -47,9 +52,17 @@ def status_for(percentage, held, condoned, eligible_at, condonable_at):
     return DETAINED
 
 
+def eligibility_limits(semester):
+    """(eligible_at, condonable_at, from_lock): the percentages saved when the semester was
+    locked, else the current settings."""
+    if semester is not None and semester.attendance_locked and semester.locked_eligibility_percent is not None:
+        return semester.locked_eligibility_percent, semester.locked_condonation_percent, True
+    return get_setting('eligibility_percent'), get_setting('condonation_percent'), False
+
+
 def build_eligibility(department_id, semester_id):
-    cfg = current_app.config
-    report = EligibilityReport(eligible_at=cfg['ELIGIBILITY_PERCENT'], condonable_at=cfg['CONDONATION_PERCENT'])
+    eligible_at, condonable_at, from_lock = eligibility_limits(db.session.get(Semester, semester_id))
+    report = EligibilityReport(eligible_at=eligible_at, condonable_at=condonable_at, limits_from_lock=from_lock)
     filters = ReportFilters(department_id=department_id, semester_id=semester_id, subject_id=None, parsed_from=None,
                             parsed_to=None, date_from='', date_to='', error=None)
     _, rows = build_attendance_matrix(filters)

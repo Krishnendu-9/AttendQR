@@ -1,14 +1,14 @@
 {% extends 'layouts/app.html' %}
 {% from 'components/ui.html' import icon, btn, badge, page_header, empty_state, dropdown, menu_form, menu_separator, record_opener, record_dialog, client_toolbar, search_empty with context %}
-{% from 'components/forms.html' import text_input, select_input, select_control with context %}
-{% set page_title = 'Subjects' %}
+{% from 'components/forms.html' import field, text_input, select_input, select_control, checkbox_input with context %}
+{% set page_title = terms('subject') %}
 {% set can_manage = current_user.role != 'teacher' %}
 {% set principal = current_user.role == 'principal' %}
 {% set show_department = departments|length > 1 %}
 {% set default_department = departments[0].id if departments|length == 1 else '' %}
 
 {% block content %}
-{% call page_header('Subjects', 'Subjects of each semester, with their paper code and assigned teacher.' if can_manage else 'Subjects you can run QR sessions for.') %}
+{% call page_header(terms('subject'), 'Subjects of each semester, with their paper code and assigned teacher.' if can_manage else 'Subjects you can run QR sessions for.') %}
   {% if can_manage %}
   {{ record_opener('New subject', 'subject-dialog', url_for('academics.subjects'), 'New subject', 'Create subject',
                    {'department_id': default_department}, icon_name='plus', mode='create', as_button=True) }}
@@ -20,12 +20,12 @@
   {% call client_toolbar('subjects-filter', '#subjects-list', 'Search code, subject or teacher', 'Search subjects', filters=True) %}
     {% if show_department %}
     <div>
-      <label for="filter-subject-department" class="mb-1.5 block text-label-md text-muted-foreground">Department</label>
+      <label for="filter-subject-department" class="mb-1.5 block text-label-md text-muted-foreground">{{ term('department') }}</label>
       {{ select_control('department', 'filter-subject-department', departments, placeholder='All departments', value_attr='id', label_attr='display_name') }}
     </div>
     {% endif %}
     <div>
-      <label for="filter-subject-semester" class="mb-1.5 block text-label-md text-muted-foreground">Semester</label>
+      <label for="filter-subject-semester" class="mb-1.5 block text-label-md text-muted-foreground">{{ term('semester') }}</label>
       {% call select_control('semester', 'filter-subject-semester', placeholder='All semesters') %}
         {% for s in semesters %}<option value="{{ s.id }}">{{ s.name }}{% if show_department %} ({{ s.department.display_name }}){% endif %}</option>{% endfor %}
       {% endcall %}
@@ -36,10 +36,10 @@
       <table class="data-table">
         <thead>
           <tr>
-            <th scope="col">Subject</th>
+            <th scope="col">{{ term('subject') }}</th>
             {% if can_manage %}<th scope="col">Teacher</th>{% endif %}
-            {% if show_department %}<th scope="col">Department</th>{% endif %}
-            <th scope="col">Semester</th>
+            {% if show_department %}<th scope="col">{{ term('department') }}</th>{% endif %}
+            <th scope="col">{{ term('semester') }}</th>
             {% if can_manage %}<th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>{% endif %}
           </tr>
         </thead>
@@ -52,23 +52,28 @@
                 <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-ink">{{ icon('book-open') }}</span>
                 <div class="min-w-0">
                   <p class="truncate text-label-lg text-foreground">{{ s.name }}</p>
-                  <p class="font-mono text-body-sm text-muted-foreground">{{ s.paper_code or 'No paper code' }}</p>
+                  <p class="flex flex-wrap items-center gap-1.5 text-body-sm text-muted-foreground"><span class="font-mono">{{ s.paper_code or 'No paper code' }}</span>
+                    {%- if s.group %} {{ badge('Only ' ~ s.group.name, 'info') }}{% endif %}
+                    {%- if not s.counts_towards_attendance %} {{ badge('Not counted', 'neutral', 'Its sessions do not count towards attendance') }}{% endif %}</p>
                 </div>
               </div>
             </td>
             {% if can_manage %}
             <td class="whitespace-nowrap text-body-md">
               {% if s.teacher %}<span class="text-foreground">{{ s.teacher.name }}</span>{% else %}{{ badge('Not assigned', 'neutral') }}{% endif %}
+              {%- if s.co_teachers %}<span class="block text-body-sm text-muted-foreground">with {{ s.co_teachers|map(attribute='name')|join(', ') }}</span>{% endif %}
             </td>
             {% endif %}
             {% if show_department %}<td class="whitespace-nowrap text-body-md text-muted-foreground">{{ s.department.display_name }}</td>{% endif %}
-            <td class="whitespace-nowrap text-body-md text-muted-foreground">{{ s.semester.name }}</td>
+            <td class="whitespace-nowrap text-body-md text-muted-foreground">{{ s.semester.name }}
+              <a href="{{ url_for('groups.index', semester_id=s.semester_id) }}" class="ml-1 text-body-sm text-primary hover:underline">Groups</a></td>
             {% if can_manage %}
             <td class="col-actions">
               {% call dropdown('Actions for ' ~ s.name) %}
                 {{ record_opener('Edit', 'subject-dialog', url_for('academics.edit_subject', id=s.id), 'Edit subject', 'Save changes',
                                  {'paper_code': s.paper_code or '', 'name': s.name, 'department_id': s.department_id,
-                                  'semester_id': s.semester_id, 'teacher_id': s.teacher_id or ''}, 'pencil') }}
+                                  'semester_id': s.semester_id, 'teacher_id': s.teacher_id or '', 'group_id': s.group_id or '',
+                                  'counts': s.counts_towards_attendance, 'co_teacher_ids': s.co_teachers|map(attribute='id')|list}, 'pencil') }}
                 {{ menu_separator() }}
                 {{ menu_form('Delete', url_for('academics.delete_subject', id=s.id), 'trash-2', danger=True,
                              confirm='Subjects that already have QR sessions cannot be deleted.',
@@ -96,43 +101,79 @@
 
 {% if can_manage %}
 {% call record_dialog('subject-dialog', 'New subject', 'Create subject') %}
-  {{ text_input('paper_code', 'Paper code', id='subject_paper_code', required=True, placeholder='RCC-MCA C102',
+  {{ text_input('paper_code', term('paper_code'), id='subject_paper_code', required=True, placeholder='RCC-MCA C102',
                 hint='Unique within the department.', attrs={'maxlength': 50, 'autocomplete': 'off'}, cls='uppercase-input') }}
   {{ text_input('name', 'Subject name', id='subject_name', required=True, placeholder='Database Management Systems',
                 attrs={'maxlength': 100, 'autocomplete': 'off'}) }}
   {% if principal %}
-    {{ select_input('department_id', 'Department', departments, id='subject_department', placeholder='Select department',
+    {{ select_input('department_id', term('department'), departments, id='subject_department', placeholder='Select department',
                     required=True, value_attr='id', label_attr='display_name') }}
   {% else %}
-    {{ text_input('department_display', 'Department', departments[0].display_name if departments else 'Not assigned',
+    {{ text_input('department_display', term('department'), departments[0].display_name if departments else 'Not assigned',
                   id='subject_department_display', attrs={'readonly': True}) }}
   {% endif %}
-  {{ select_input('semester_id', 'Semester', [] if principal else semesters, id='subject_semester', placeholder='Select semester',
+  {{ select_input('semester_id', term('semester'), [] if principal else semesters, id='subject_semester', placeholder='Select semester',
                   required=True, value_attr='id', label_attr='name') }}
   {{ select_input('teacher_id', 'Assigned teacher', [] if principal else teachers, id='subject_teacher', placeholder='Assign later',
                   hint='The teacher can start QR sessions for this subject.', value_attr='id', label_attr='name', cls='sm:col-span-2') }}
+  {% call field('subject_co_teachers', 'Co-teachers', hint='Optional. They can also start and correct its sessions, such as the second teacher of a lab.', cls='sm:col-span-2') %}
+    <select class="input h-auto py-2" id="subject_co_teachers" name="co_teacher_ids" multiple size="3" aria-describedby="subject_co_teachers-hint">
+      {% if not principal %}{% for t in teachers %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}{% endif %}
+    </select>
+  {% endcall %}
+  {{ select_input('group_id', 'Only for group', [], id='subject_group', placeholder='Whole class',
+                  hint='For an elective or a lab one batch takes. New sessions start for this group.') }}
+  <div class="sm:col-span-2">
+    {#- Sent before the checkbox, so an unticked box arrives as "off". -#}
+    <input type="hidden" name="counts_towards_attendance" value="0">
+    {{ checkbox_input('counts_towards_attendance', 'Counts towards attendance', checked=True, id='subject_counts',
+                      description='Untick for something taught but never counted, such as a non-credit course. Its sessions are still listed in reports.') }}
+  </div>
 {% endcall %}
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
-{% if can_manage and principal %}
+{% if can_manage %}
 <script nonce="{{ csp_nonce() }}">
 (function () {
-  // Semesters and teachers follow the chosen department.
   var form = document.querySelector('#subject-dialog form');
   var department = form.elements.department_id;
   var semester = form.elements.semester_id;
   var teacher = form.elements.teacher_id;
+  var coTeachers = document.getElementById('subject_co_teachers');
+  var group = document.getElementById('subject_group');
+  var counts = document.getElementById('subject_counts');
+  var principal = {{ 'true' if principal else 'false' }};
   var teacherOptions = { placeholder: 'Assign later' };
-  department.addEventListener('change', function () {
-    AttendQR.loadSemesters(semester, department.value);
-    AttendQR.loadTeachers(teacher, department.value, teacherOptions);
-  });
+
+  function chooseCoTeachers(ids) {
+    var wanted = (ids || []).map(String);
+    Array.prototype.forEach.call(coTeachers.options, function (option) { option.selected = wanted.indexOf(option.value) !== -1; });
+  }
+
+  // The groups follow the semester; semesters and teachers follow the department (Principal only).
+  semester.addEventListener('change', function () { AttendQR.loadGroups(group, semester.value); });
+  if (principal) {
+    department.addEventListener('change', function () {
+      AttendQR.loadSemesters(semester, department.value);
+      AttendQR.loadTeachers(teacher, department.value, teacherOptions);
+      AttendQR.loadTeachers(coTeachers, department.value, { placeholder: null });
+      AttendQR.fillSelect(group, [], { placeholder: 'Whole class' });
+    });
+  }
   form.addEventListener('record:filled', function (event) {
     var values = event.detail;
-    AttendQR.loadSemesters(semester, values.department_id || '', { selected: values.semester_id });
-    AttendQR.loadTeachers(teacher, values.department_id || '', Object.assign({ selected: values.teacher_id }, teacherOptions));
+    counts.checked = values.counts !== false;
+    if (principal) {
+      AttendQR.loadSemesters(semester, values.department_id || '', { selected: values.semester_id });
+      AttendQR.loadTeachers(teacher, values.department_id || '', Object.assign({ selected: values.teacher_id }, teacherOptions));
+      AttendQR.loadTeachers(coTeachers, values.department_id || '', { placeholder: null })
+        .then(function () { chooseCoTeachers(values.co_teacher_ids); });
+    } else {
+      chooseCoTeachers(values.co_teacher_ids);
+    }
+    AttendQR.loadGroups(group, values.semester_id || '', { selected: values.group_id });
   });
 })();
 </script>

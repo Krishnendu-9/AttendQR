@@ -1,0 +1,206 @@
+{#- The week grid of a routine, shared by the class routine, its editor and personal routines.
+    Blocks carry their position as data-top/-height/-left/-width (percent of the day); static/js/app.js
+    placeBlocks() applies them, since the CSP forbids inline styles. Phones get a list per day instead.
+    Import with context: {% from 'components/routine.html' import routine_grid, routine_list, entry_text with context %} -#}
+{% from 'components/ui.html' import icon, badge %}
+
+{#- What a class says in the grid: "CS591 (Gr-1)", teachers' short names, room, odd/even weeks. -#}
+{% macro entry_text(entry, show_class=False) -%}
+{% set label = (entry.subject.paper_code or entry.subject.name) if entry.subject else (entry.title or 'Unassigned') %}
+<span class="block truncate text-label-md text-foreground">{{ label }}{% if entry.group %} <span class="text-muted-foreground">· {{ entry.group.name }}</span>{% endif %}</span>
+{% if entry.subject and entry.subject.paper_code %}<span class="block truncate text-body-sm text-muted-foreground">{{ entry.subject.name }}</span>{% endif %}
+<span class="block truncate text-body-sm text-muted-foreground">
+  {{- entry_teachers(entry) }}{% if entry.room %}{{ ' · ' if entry_teachers(entry) }}{{ entry.room }}{% endif %}
+  {%- if entry.week_pattern != 'every' %} · {{ 'odd' if entry.week_pattern == 'odd' else 'even' }} weeks{% endif %}
+</span>
+{% if entry.status_label %}<span class="block truncate text-body-sm {{ 'text-warning' if entry.status == 'not_recorded' else 'text-muted-foreground' }}">{{ entry.status_label }}</span>{% endif %}
+{% if show_class and entry.timetable %}<span class="block truncate text-body-sm text-muted-foreground">{{ entry.timetable.semester.department.display_name }} {{ entry.timetable.semester.name }}</span>{% endif %}
+{%- endmacro %}
+
+{#- "MG+SC": the teachers' short names. -#}
+{% macro entry_teachers(entry) -%}
+{%- for teacher in entry.teachers %}{{ teacher_short_name(teacher) }}{% if not loop.last %}+{% endif %}{% endfor -%}
+{%- endmacro %}
+
+{#- The grid. editing: periods and blocks open the entry dialog (entry_values(entry) gives a block's values). -#}
+{% macro routine_grid(grid, editing=False, show_class=False, highlight_day=None) -%}
+<div class="hidden overflow-x-auto md:block">
+  <div class="flex min-w-[46rem]">
+    <div class="w-14 shrink-0">
+      <div class="h-10"></div>
+      <div class="relative" data-span-minutes="{{ grid.span }}">
+        {% for hour in grid.hours %}
+        <span class="absolute -translate-y-1/2 pr-2 text-right text-body-sm tabular-nums text-muted-foreground" data-place data-top="{{ hour.top }}">{{ hour.label }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% for column in grid.columns %}
+    <div class="min-w-0 flex-1 border-l border-border">
+      <div class="flex h-10 items-center justify-center border-b border-border text-label-lg {{ 'text-primary' if column.weekday == highlight_day else 'text-foreground' }}">{{ column.name }}</div>
+      <div class="relative" data-span-minutes="{{ grid.span }}">
+        {% for band in column.bands %}
+        {% set p = band.period %}
+        {% if editing and not p.is_break %}
+        <button type="button" class="absolute inset-x-0 border-b border-border/70 text-left hover:bg-accent focus-visible:shadow-focus focus-visible:outline-none"
+          data-place data-top="{{ band.top }}" data-height="{{ band.height }}"
+          data-record-dialog="entry-dialog" data-action="{{ add_entry_url }}" data-title="Add a class on {{ column.name }}" data-submit="Add class" data-mode="create"
+          data-values='{{ {"weekday": column.weekday, "start_time": p.start_time.strftime("%H:%M"), "end_time": p.end_time.strftime("%H:%M")}|tojson }}'
+          aria-label="Add a class on {{ column.name }}, period {{ p.label }}">
+          <span class="px-1.5 text-body-sm text-muted-foreground">{{ p.label }}</span>
+        </button>
+        {% else %}
+        <div class="absolute inset-x-0 border-b border-border/70 {{ 'bg-muted' if p.is_break }}" data-place data-top="{{ band.top }}" data-height="{{ band.height }}">
+          <span class="px-1.5 text-body-sm text-muted-foreground">{{ 'Break' if p.is_break and p.label|lower != 'break' else p.label }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% for block in column.blocks %}
+        {% set e = block.entry %}
+        {% set tone = 'border-warning/40 bg-warning-soft' if e.is_unassigned else ('border-border bg-muted line-through' if e.status == 'cancelled' else 'border-secondary bg-accent') %}
+        {% if editing %}
+        <button type="button" class="absolute p-0.5 text-left focus-visible:outline-none"
+          data-place data-top="{{ block.top }}" data-height="{{ block.height }}" data-left="{{ block.left }}" data-width="{{ block.width }}"
+          data-record-dialog="entry-dialog" data-action="{{ url_for('routine.update_entry', id=e.id) }}" data-title="Edit class" data-submit="Save class" data-mode="edit"
+          data-values='{{ entry_values(e)|tojson }}'>
+          <span class="block h-full overflow-hidden rounded-lg border {{ tone }} px-2 py-1 hover:shadow-card">{{ entry_text(e, show_class) }}</span>
+        </button>
+        {% else %}
+        <div class="absolute p-0.5" data-place data-top="{{ block.top }}" data-height="{{ block.height }}" data-left="{{ block.left }}" data-width="{{ block.width }}"
+          title="{{ e.start_time.strftime('%I:%M %p') }} to {{ e.end_time.strftime('%I:%M %p') }}">
+          <div class="h-full overflow-hidden rounded-lg border {{ tone }} px-2 py-1">{{ entry_text(e, show_class) }}</div>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{%- endmacro %}
+
+{#- Phones: each day as a list. -#}
+{% macro routine_list(grid, editing=False, show_class=False) -%}
+<div class="space-y-5 md:hidden">
+  {% for column in grid.columns %}
+  <section>
+    <h3 class="mb-2 text-label-lg text-foreground">{{ column.name }}</h3>
+    {% if column.blocks %}
+    <ul class="space-y-2">
+      {% for block in column.blocks|sort(attribute='entry.start_time') %}
+      {% set e = block.entry %}
+      <li class="flex gap-3 rounded-lg border border-border p-3">
+        <span class="w-20 shrink-0 text-body-sm tabular-nums text-muted-foreground">{{ e.start_time.strftime('%I:%M').lstrip('0') }}-{{ e.end_time.strftime('%I:%M %p').lstrip('0') }}</span>
+        <span class="min-w-0 flex-1">{{ entry_text(e, show_class) }}</span>
+        {% if editing %}
+        <button type="button" class="btn btn-ghost btn-sm btn-icon" aria-label="Edit"
+          data-record-dialog="entry-dialog" data-action="{{ url_for('routine.update_entry', id=e.id) }}" data-title="Edit class" data-submit="Save class" data-mode="edit"
+          data-values='{{ entry_values(e)|tojson }}'>{{ icon('pencil') }}</button>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-body-sm text-muted-foreground">No classes.</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{#- One dated class as a row: time, class, status, and what the user may do with it.
+    Needs in the context: may_run(o), allowed_kinds(o), can_undo(change). -#}
+{% macro occurrence_row(o, show_class=False, next_url=None, actions=True) -%}
+{% set name = (o.subject.paper_code ~ ' - ' ~ o.subject.name) if o.subject and o.subject.paper_code else (o.subject.name if o.subject else o.title) %}
+{% set short = (o.subject.paper_code or o.subject.name) if o.subject else o.title %}
+<li class="flex flex-wrap items-start gap-x-4 gap-y-2 py-3 {{ 'opacity-70' if o.status == 'cancelled' }}">
+  <span class="w-28 shrink-0 text-body-sm tabular-nums text-muted-foreground">
+    {{ o.start_time.strftime('%I:%M').lstrip('0') }}-{{ o.end_time.strftime('%I:%M %p').lstrip('0') }}
+  </span>
+  <span class="min-w-0 flex-1">
+    <span class="block text-label-lg text-foreground {{ 'line-through' if o.status == 'cancelled' }}">
+      {{- name }}{% if o.group %} <span class="text-muted-foreground">&middot; {{ o.group.name }}</span>{% endif %}</span>
+    <span class="block text-body-sm text-muted-foreground">
+      {%- if show_class %}{{ o.semester.department.display_name }} {{ o.semester.name }} &middot; {% endif -%}
+      {{ o.teachers|map(attribute='name')|join(', ') or 'No teacher' }}{% if o.room %} &middot; {{ o.room }}{% endif %}</span>
+    {% if o.change and o.change.reason %}<span class="block text-body-sm text-muted-foreground">{{ o.change.kind_label }}: {{ o.change.reason }}</span>{% endif %}
+  </span>
+  <span class="flex flex-wrap items-center gap-2">
+    {{ badge(o.status_label, o.status_tone) }}
+    {% if actions %}
+      {% if o.session %}
+        <a href="{{ url_for('attendance.generate_qr', session_id=o.session.id) }}" class="btn btn-outline btn-sm">{{ icon('qr-code') }}<span>Open session</span></a>
+      {% elif o.can_start() and may_run(o) %}
+        <form method="POST" action="{{ url_for('routine.start_occurrence') }}" class="contents">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="key" value="{{ o.key }}">
+          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+          <button type="submit" class="btn btn-primary btn-sm">{{ icon('qr-code') }}<span>Start session</span></button>
+        </form>
+      {% endif %}
+      {% set verbs = {'cancel': ('Cancel', 'Cancel class'), 'move': ('Move', 'Move class'), 'substitute': ('Substitute', 'Assign substitute')} %}
+      {% for kind in allowed_kinds(o) %}
+        <button type="button" class="btn btn-ghost btn-sm" data-record-dialog="change-dialog" data-action="{{ url_for('routine.change_view') }}"
+          data-title="{{ verbs[kind][0] }}: {{ short }} on {{ o.original_day.strftime('%a %d %b') }}" data-submit="{{ verbs[kind][1] }}" data-mode="{{ kind }}"
+          data-values='{{ {"key": o.key, "kind": kind, "next": next_url or "", "new_date": o.day.isoformat(), "new_start_time": o.start_time.strftime("%H:%M"), "new_end_time": o.end_time.strftime("%H:%M")}|tojson }}'>
+          {{- verbs[kind][0] -}}
+        </button>
+      {% endfor %}
+      {% if o.change and o.change.id and can_undo(o.change) %}
+        <form method="POST" action="{{ url_for('routine.undo_change', id=o.change.id) }}" class="contents"
+          data-confirm="The class goes back to how the routine has it." data-confirm-title="Undo this change?" data-confirm-label="Undo">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+          <button type="submit" class="btn btn-ghost btn-sm">{{ icon('rotate-cw') }}<span>Undo</span></button>
+        </form>
+      {% endif %}
+    {% endif %}
+  </span>
+</li>
+{%- endmacro %}
+
+{#- The dialog behind Cancel, Move and Substitute. Its key and kind are text inputs styled hidden,
+    because the dialog fills only fields that are not type="hidden". -#}
+{% macro change_dialog(substitutes=[]) -%}
+<dialog id="change-dialog" class="dialog dialog-lg" aria-labelledby="change-dialog-title">
+  <form method="POST" action="">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <input type="text" name="key" class="hidden" aria-hidden="true" tabindex="-1">
+    <input type="text" name="kind" class="hidden" aria-hidden="true" tabindex="-1">
+    <input type="text" name="next" class="hidden" aria-hidden="true" tabindex="-1">
+    <div class="flex items-start justify-between gap-4 px-6 pt-6">
+      <h2 id="change-dialog-title" class="text-headline-md text-foreground" data-record-title>Change a class</h2>
+      <button type="button" class="btn btn-ghost btn-sm btn-icon -mr-2 -mt-1" data-dialog-close aria-label="Close">{{ icon('x') }}</button>
+    </div>
+    <div class="grid gap-5 px-6 py-5 sm:grid-cols-2">
+      <p class="text-body-sm text-muted-foreground sm:col-span-2">For this date only. The routine stays as it is, and the change is in the activity log.</p>
+      <div class="grid gap-5 sm:col-span-2 sm:grid-cols-3" data-record-mode="move">
+        <div><label for="change_new_date" class="mb-1.5 block text-label-lg">New date</label><input class="input" type="date" id="change_new_date" name="new_date"></div>
+        <div><label for="change_new_start" class="mb-1.5 block text-label-lg">Starts</label><input class="input" type="time" id="change_new_start" name="new_start_time"></div>
+        <div><label for="change_new_end" class="mb-1.5 block text-label-lg">Ends</label><input class="input" type="time" id="change_new_end" name="new_end_time"></div>
+      </div>
+      <div class="sm:col-span-2" data-record-mode="substitute">
+        <label for="change_substitute" class="mb-1.5 block text-label-lg">Taken by</label>
+        <div class="relative">
+          <select class="input" id="change_substitute" name="substitute_teacher_id">
+            <option value="">Choose a teacher</option>
+            {% for t in substitutes %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+          </select>
+          <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">{{ icon('chevron-down') }}</span>
+        </div>
+      </div>
+      <div class="sm:col-span-2">
+        <label for="change_reason" class="mb-1.5 block text-label-lg">Reason<span class="ml-0.5 text-muted-foreground" aria-hidden="true">*</span></label>
+        <input class="input" id="change_reason" name="reason" maxlength="200" required placeholder="e.g. Teacher on leave, exam in the hall">
+      </div>
+      <div class="sm:col-span-2" data-record-mode="move">
+        <label for="change_room" class="mb-1.5 block text-label-lg">Room</label>
+        <input class="input" id="change_room" name="room" maxlength="40" placeholder="Leave empty to keep the room">
+      </div>
+    </div>
+    <div class="flex flex-col-reverse gap-2 border-t border-border px-6 py-4 sm:flex-row sm:justify-end">
+      <button type="button" class="btn btn-outline" data-dialog-close>Close</button>
+      <button type="submit" class="btn btn-primary" data-busy-label="Saving...">{{ icon('loader-circle', 'btn-spinner') }}<span data-busy-text data-record-submit>Save</span></button>
+    </div>
+  </form>
+</dialog>
+{%- endmacro %}

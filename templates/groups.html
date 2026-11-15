@@ -1,0 +1,106 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state, dropdown, menu_link, menu_form, record_opener, record_dialog with context %}
+{% from 'components/forms.html' import text_input, textarea_input, select_input, field with context %}
+{% set class_name = semester.department.display_name ~ ' - ' ~ semester.name %}
+{% set page_title = terms('group') %}
+{% if can_manage %}
+  {% set breadcrumbs = [(terms('semester'), url_for('academics.semesters')), (class_name, None), (terms('group'), None)] %}
+{% else %}
+  {% set breadcrumbs = [(class_name, None), (terms('group'), None)] %}
+{% endif %}
+
+{% block content %}
+{% call page_header(terms('group'), class_name ~ ' · ' ~ class_size ~ ' student' ~ ('' if class_size == 1 else 's')) %}
+  {% if can_manage %}
+  {{ record_opener('New group', 'group-dialog', url_for('groups.index', semester_id=semester.id), 'New group', 'Create group',
+                   {}, 'plus', mode='create', as_button=True) }}
+  {% endif %}
+{% endcall %}
+
+<div class="mb-6">
+  {% call callout('How groups count') %}
+    A session started for a group, such as one lab batch, counts only for the students who were in that group when it was held.
+    For everyone else in the class it counts neither way, so the other batch is never marked absent. A student can be in several
+    groups, for example a lab batch and an elective.
+  {% endcall %}
+</div>
+
+{% if groups %}
+<div class="grid gap-6 lg:grid-cols-2">
+  {% for item in groups %}
+  {% set group = item.group %}
+  <section class="card overflow-hidden" aria-labelledby="group-{{ group.id }}">
+    <header class="flex items-start justify-between gap-3 px-6 pb-4 pt-6">
+      <div class="min-w-0">
+        <h2 id="group-{{ group.id }}" class="text-headline-sm text-foreground">{{ group.name }}</h2>
+        <p class="mt-0.5 text-body-sm text-muted-foreground">
+          {{ item.members|length }} member{{ '' if item.members|length == 1 else 's' }} &middot;
+          {{ item.sessions }} session{{ '' if item.sessions == 1 else 's' }} held
+        </p>
+      </div>
+      {% if can_manage %}
+      <div class="flex shrink-0 items-center gap-2">
+        <a href="{{ url_for('groups.members', id=group.id) }}" class="{{ btn('outline', 'sm') }}">{{ icon('users') }}<span>Members</span></a>
+        {% call dropdown('Actions for ' ~ group.name) %}
+          {{ record_opener('Rename', 'group-dialog', url_for('groups.rename', id=group.id), 'Rename ' ~ group.name, 'Save', {'name': group.name}, 'pencil') }}
+          {% if not item.sessions %}
+          {{ menu_form('Delete', url_for('groups.delete', id=group.id), 'trash-2', danger=True,
+                       confirm='The group and its member list are removed. No attendance is affected: it has no sessions.',
+                       confirm_title='Delete ' ~ group.name ~ '?', confirm_label='Delete') }}
+          {% endif %}
+        {% endcall %}
+      </div>
+      {% endif %}
+    </header>
+    <div class="border-t border-border px-6 py-4">
+      {% if item.members %}
+      <ul class="flex flex-wrap gap-2">
+        {% for student in item.members %}
+        <li class="rounded-lg border border-border px-2.5 py-1 text-body-sm"><span class="font-mono text-muted-foreground">{{ student.roll_no }}</span> <span class="text-foreground">{{ student.name }}</span></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="text-body-sm text-muted-foreground">No members yet.{% if can_manage %} Use Members to add them.{% endif %}</p>
+      {% endif %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% else %}
+<section class="card">
+  {{ empty_state('users', 'No groups yet', 'Create a group, or split the class by roll number below.' if can_manage else 'The HOD has not set up groups for this class.') }}
+</section>
+{% endif %}
+
+{% if can_manage %}
+<div class="mt-6 grid gap-6 lg:grid-cols-2">
+  {% call card('Split into equal groups', 'Students in roll-number order, divided as evenly as possible. Existing groups with the same name are filled, not replaced.', icon_name='columns-3') %}
+  <form method="POST" action="{{ url_for('groups.split', semester_id=semester.id) }}" class="grid gap-5 sm:grid-cols-2">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="mode" value="equal">
+    {{ text_input('count', 'Number of groups', '2', id='split_count', type='number', required=True, attrs={'min': 2, 'max': 20}) }}
+    {{ text_input('prefix', 'Names start with', 'Gr-', id='split_prefix', hint='Gr- gives Gr-1, Gr-2...', attrs={'maxlength': 20}) }}
+    <div class="sm:col-span-2 flex justify-end">
+      <button type="submit" class="{{ btn('outline') }}">{{ icon('columns-3') }}<span>Split</span></button>
+    </div>
+  </form>
+  {% endcall %}
+
+  {% call card('Split by roll-number ranges', 'One line per group. A plain number matches the number at the end of a roll number, so 1-37 covers MCA001 to MCA037.', icon_name='hash') %}
+  <form method="POST" action="{{ url_for('groups.split', semester_id=semester.id) }}" class="grid gap-5">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="mode" value="ranges">
+    {{ textarea_input('ranges', 'Ranges', '', id='split_ranges', required=True, rows=3, attrs={'placeholder': 'Gr-1: 1-37\nGr-2: 38-75', 'spellcheck': 'false'}) }}
+    <div class="flex justify-end">
+      <button type="submit" class="{{ btn('outline') }}">{{ icon('hash') }}<span>Split</span></button>
+    </div>
+  </form>
+  {% endcall %}
+</div>
+
+{% call record_dialog('group-dialog', 'New group', 'Create group') %}
+  {{ text_input('name', 'Name', id='group_name', required=True, placeholder='Gr-1, Lab batch A or Elective: Cloud',
+                attrs={'maxlength': 60, 'autocomplete': 'off'}, cls='sm:col-span-2') }}
+{% endcall %}
+{% endif %}
+{% endblock %}

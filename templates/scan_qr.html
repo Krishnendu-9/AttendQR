@@ -1,6 +1,6 @@
 {% extends 'layouts/auth.html' %}
 {% from 'components/ui.html' import icon, btn, callout, detail_item with context %}
-{% block title %}{{ status_title }} | AttendQR{% endblock %}
+{% block title %}{{ status_title }} | {{ institution_name or 'AttendQR' }}{% endblock %}
 {% block content %}
 <div class="card p-6 shadow-popover sm:p-8">
   <span class="mb-5 flex size-12 items-center justify-center rounded-full {{ 'bg-secondary text-ink' if can_mark_attendance else 'bg-muted text-muted-foreground' }}">

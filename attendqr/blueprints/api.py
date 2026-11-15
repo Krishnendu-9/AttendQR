@@ -15,6 +15,7 @@ from ..access import (
 )
 from ..extensions import db
 from ..models import Attendance, ClassSession, Semester, Subject, Teacher
+from ..services.groups import summaries as group_summaries
 from ..services.qr import build_scan_url, make_qr_token, qr_data_uri
 from ..utils import format_12h, sort_semesters
 
@@ -31,6 +32,10 @@ def _subject_json(subject, include_semester=False):
         'display_name': subject_display_name(subject),
         'teacher_id': subject.teacher_id,
         'teacher_name': subject.teacher.name if subject.teacher else '',
+        # Co-teachers may also run its sessions; the session form offers them with the main teacher.
+        'co_teachers': [{'id': t.id, 'name': t.name} for t in subject.co_teachers],
+        'group_id': subject.group_id,
+        'counts': bool(subject.counts_towards_attendance),
     }
     if include_semester:
         data['semester'] = subject.semester.name if subject.semester else ''
@@ -77,6 +82,17 @@ def department_subjects(department_id):
         .all()
     )
     return jsonify([_subject_json(r, include_semester=True) for r in rows])
+
+
+@bp.route('/groups/<int:semester_id>')
+@login_required
+@role_required(*STAFF)
+def groups(semester_id):
+    semester = db.get_or_404(Semester, semester_id)
+    if not can_access_department(semester.department_id):
+        abort(403)
+    return jsonify([{'id': s.group.id, 'name': s.group.name, 'members': len(s.members)}
+                    for s in group_summaries(semester_id)])
 
 
 @bp.route('/teachers/<int:department_id>')

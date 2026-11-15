@@ -2,12 +2,12 @@
 import re
 from functools import wraps
 
-from flask import abort, current_app, g
+from flask import abort, current_app, g, has_app_context
 from flask_login import current_user
-from sqlalchemy import and_, false, or_
+from sqlalchemy import and_, false, or_, select
 
 from .extensions import db, login_manager
-from .models import ActivityLog, ClassSession, Department, Semester, Student, Subject, Teacher, User
+from .models import ActivityLog, ClassSession, Department, Semester, Student, Subject, SubjectTeacher, Teacher, User
 from .utils import infer_department_branch, normalize_email, normalize_paper_code, utc_now
 
 ROLE_LABELS = {
@@ -21,6 +21,10 @@ SPECIAL_CLASS_SUBJECT_NAME = '__SPECIAL_CLASS__'
 
 
 def role_label(role):
+    """What a role is called here: the Settings page's word ("Director"), else the usual one."""
+    if role in ROLE_LABELS and has_app_context():
+        from .services.settings import get_setting  # here: services.settings imports this module
+        return get_setting(f'role_{role}')
     return ROLE_LABELS.get(role, role.replace('_', ' ').title() if role else 'User')
 
 
@@ -139,17 +143,44 @@ def can_access_student(student):
     return can_access_department(student.department_id)
 
 
+def taught_subject_clause(subject_id_column):
+    """SQL condition: `subject_id_column` is a subject the current teacher teaches, as its main
+    teacher or a co-teacher. Never true without a teacher profile."""
+    teacher_id = current_teacher_id()
+    if not teacher_id:
+        return false()
+    return or_(
+        subject_id_column.in_(select(Subject.id).where(Subject.teacher_id == teacher_id)),
+        subject_id_column.in_(select(SubjectTeacher.subject_id).where(SubjectTeacher.teacher_id == teacher_id)),
+    )
+
+
+def taught_subject_ids():
+    """For teachers: the ids of the subjects they teach (main or co-teacher), once per request."""
+    if 'taught_subject_ids' not in g:
+        g.taught_subject_ids = {
+            subject_id for (subject_id,) in db.session.query(Subject.id).filter(taught_subject_clause(Subject.id))
+        } if current_teacher_id() else set()
+    return g.taught_subject_ids
+
+
+def teacher_session_clause():
+    """SQL condition for a teacher's sessions: ones they ran, and every session of a subject they teach
+    (so co-teachers can run and correct their shared classes)."""
+    return or_(own_teacher_filter(ClassSession.teacher_id), taught_subject_clause(ClassSession.subject_id))
+
+
 def taught_classes():
-    """For teachers: the classes, as (department_id, semester_id), they have a subject assigned in.
+    """For teachers: the classes, as (department_id, semester_id), they teach a subject in (main or co-teacher).
 
     Worked out once per request, since a student list asks for every row.
     """
     if 'taught_classes' not in g:
-        teacher_id = current_teacher_id()
+        ids = taught_subject_ids()
         g.taught_classes = {
             (department_id, semester_id) for department_id, semester_id in
-            db.session.query(Subject.department_id, Subject.semester_id).filter(Subject.teacher_id == teacher_id).distinct()
-        } if teacher_id else set()
+            db.session.query(Subject.department_id, Subject.semester_id).filter(Subject.id.in_(ids)).distinct()
+        } if ids else set()
     return g.taught_classes
 
 
@@ -179,7 +210,7 @@ def can_access_subject(subject):
     if not subject:
         return False
     if user_role() == 'teacher':
-        return is_own_teacher(subject.teacher_id)
+        return subject.id in taught_subject_ids()
     return can_access_department(subject.department_id)
 
 
@@ -189,7 +220,7 @@ def can_access_session(class_session):
     if user_role() == 'teacher':
         return (
             can_access_department(class_session.subject.department_id)
-            and is_own_teacher(class_session.teacher_id)
+            and (is_own_teacher(class_session.teacher_id) or class_session.subject_id in taught_subject_ids())
         )
     return user_role() in ('principal', 'hod') and can_access_subject(class_session.subject)
 
@@ -228,7 +259,7 @@ def visible_semesters_query():
 def visible_subjects_query():
     query = Subject.query.filter(Subject.name != SPECIAL_CLASS_SUBJECT_NAME)
     if user_role() == 'teacher':
-        query = query.filter(own_teacher_filter(Subject.teacher_id))
+        query = query.filter(taught_subject_clause(Subject.id))
     elif not is_principal():
         query = query.filter(department_filter(Subject.department_id))
     return query
@@ -255,7 +286,7 @@ def visible_students_query():
 def visible_sessions_query():
     query = ClassSession.query.join(Subject)
     if user_role() == 'teacher':
-        query = query.filter(own_teacher_filter(ClassSession.teacher_id))
+        query = query.filter(teacher_session_clause())
     elif not is_principal():
         query = query.filter(department_filter(Subject.department_id))
     return query
@@ -353,10 +384,28 @@ def subject_display_name(subject):
     return subject.name
 
 
+# Titles left out of automatic initials: "Dr. Sutapa Chatterjee" is SC.
+_NAME_TITLES = frozenset({'dr', 'prof', 'mr', 'mrs', 'ms', 'smt', 'sri', 'shri', 'miss'})
+
+
+def teacher_short_name(teacher):
+    """The teacher's short name for the routine grid: the one saved, else their initials."""
+    if teacher is None:
+        return ''
+    if teacher.short_name:
+        return teacher.short_name
+    words = [word for word in re.findall(r"[A-Za-z]+", teacher.name or '') if word.lower() not in _NAME_TITLES]
+    return ''.join(word[0] for word in words).upper()[:4] or (teacher.name or '')[:4]
+
+
 def session_display_name(class_session):
+    """The session's title, with its group for a group's session: "C291 - Networks Lab · Gr-1"."""
     if getattr(class_session, 'special_title', None):
-        return class_session.special_title
-    return subject_display_name(class_session.subject) if class_session.subject else 'Special Class'
+        name = class_session.special_title
+    else:
+        name = subject_display_name(class_session.subject) if class_session.subject else 'Special Class'
+    group = getattr(class_session, 'group', None)
+    return f"{name} · {group.name}" if group else name
 
 
 def build_account_profile(account):

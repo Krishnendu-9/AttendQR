@@ -64,8 +64,13 @@
         {{ detail_item('Roll number', student.roll_no, mono=True) }}
         {{ detail_item('Email', student.email) }}
         {{ detail_item('Login email', account.username if account else None) }}
-        {{ detail_item('Department', student.department.display_name) }}
-        {{ detail_item('Semester', student.semester.name) }}
+        {{ detail_item(term('department'), student.department.display_name) }}
+        {{ detail_item(term('semester'), student.semester.name) }}
+        {% call detail_item(terms('group')) %}
+          {%- if groups %}{% for group in groups %}{{ badge(group.name, 'neutral') }}{% if not loop.last %} {% endif %}{% endfor %}
+          {%- else %}<span class="font-normal text-muted-foreground">None</span>{% endif %}
+          <a href="{{ url_for('groups.index', semester_id=student.semester_id) }}" class="ml-1 text-body-sm font-normal text-primary hover:underline">Class groups</a>
+        {%- endcall %}
       {% endcall %}
     {% endcall %}
 
@@ -75,7 +80,7 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col">Subject</th>
+              <th scope="col">{{ term('subject') }}</th>
               <th scope="col" class="text-right">Attended</th>
               <th scope="col">Percentage</th>
               <th scope="col" class="text-right">To reach {{ target }}%</th>

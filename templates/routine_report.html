@@ -1,0 +1,95 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state with context %}
+{% from 'components/forms.html' import field, text_input, select_control with context %}
+{% set page_title = 'Planned and held' %}
+
+{% macro tally_table(rows, first_column) -%}
+<div class="overflow-x-auto">
+  <table class="data-table">
+    <thead><tr>
+      <th scope="col">{{ first_column }}</th><th scope="col" class="text-right">Planned</th><th scope="col" class="text-right">Held</th>
+      <th scope="col" class="text-right">Not recorded</th><th scope="col" class="text-right">Cancelled</th><th scope="col" class="text-right">To come</th>
+      <th scope="col" class="text-right">Held %</th>
+    </tr></thead>
+    <tbody>
+      {% for t in rows %}
+      <tr>
+        <td class="text-label-lg text-foreground">{{ t.label }}</td>
+        <td class="text-right tabular-nums">{{ t.planned }}</td>
+        <td class="text-right tabular-nums">{{ t.held }}</td>
+        <td class="text-right tabular-nums {{ 'text-warning' if t.not_recorded }}">{{ t.not_recorded }}</td>
+        <td class="text-right tabular-nums">{{ t.cancelled }}</td>
+        <td class="text-right tabular-nums">{{ t.to_come }}</td>
+        <td class="text-right">{% if t.held_rate is none %}<span class="text-muted-foreground">-</span>{% else %}{{ badge(t.held_rate ~ '%', 'success' if t.held_rate >= 90 else ('warning' if t.held_rate >= 70 else 'danger')) }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{%- endmacro %}
+
+{% block content %}
+{% call page_header('Planned and held', 'Each class in the routine, and whether a QR session held it. Classes not recorded count for no student.') %}
+  {% if found %}<a href="{{ url_for('reports.routine_report_export', **export_args) }}" class="{{ btn('outline') }}">{{ icon('file-spreadsheet') }}<span>Excel</span></a>{% endif %}
+{% endcall %}
+
+<section class="card mb-6 p-6" aria-label="Filters">
+  <form method="GET" action="{{ url_for('reports.routine_report') }}" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    {% if current_user.role != 'teacher' %}
+    {% call field('rr_semester', 'Class') %}
+      {% call select_control('semester_id', 'rr_semester', placeholder='Choose a class') %}
+        {% for s in semesters %}<option value="{{ s.id }}"{% if semester and s.id == semester.id %} selected{% endif %}>{{ s.department.display_name }} - {{ s.name }}</option>{% endfor %}
+      {% endcall %}
+    {% endcall %}
+    {% call field('rr_teacher', 'Teacher', hint='Optional: one teacher, across classes.') %}
+      {% call select_control('teacher_id', 'rr_teacher', placeholder='Every teacher') %}
+        {% for t in teacher_choices %}<option value="{{ t.id }}"{% if teacher and t.id == teacher.id %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      {% endcall %}
+    {% endcall %}
+    {% endif %}
+    {{ text_input('date_from', 'From', date_from.isoformat(), id='rr_from', type='date', attrs={'max': today.isoformat()}) }}
+    {{ text_input('date_to', 'To', date_to.isoformat(), id='rr_to', type='date', attrs={'max': today.isoformat()}) }}
+    <div class="flex items-end sm:col-span-2 lg:col-span-4 lg:justify-end"><button type="submit" class="{{ btn('primary') }}">{{ icon('search') }}<span>Show</span></button></div>
+  </form>
+  {% if error %}<p class="mt-3 text-body-sm text-warning">{{ error }}</p>{% endif %}
+</section>
+
+{% if not semester and not teacher %}
+  <section class="card">{{ empty_state('list-checks', 'Choose a class', 'Pick a class, or a teacher, to compare its routine with the sessions held.') }}</section>
+{% elif not found %}
+  <section class="card">{{ empty_state('calendar-range', 'No routine classes', 'No published routine has classes on these days.') }}</section>
+{% else %}
+  <section class="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5" aria-label="Totals">
+    {% for label, value in [('Planned', overall.planned), ('Held', overall.held), ('Not recorded', overall.not_recorded), ('Cancelled', overall.cancelled), ('Held %', (overall.held_rate ~ '%') if overall.held_rate is not none else '-')] %}
+    <div class="card p-5"><p class="text-label-md text-muted-foreground">{{ label }}</p><p class="mt-2 text-headline-lg tabular-nums text-foreground">{{ value }}</p></div>
+    {% endfor %}
+  </section>
+
+  <div class="mb-6 grid gap-6 2xl:grid-cols-2">
+    {% call card('By subject', flush=True) %}{{ tally_table(subjects, term('subject')) }}{% endcall %}
+    {% call card('By teacher', 'A class with two teachers counts for both.', flush=True) %}{{ tally_table(teachers, 'Teacher') }}{% endcall %}
+  </div>
+
+  {% call card('Every class', 'Newest day last.', flush=True) %}
+  <div class="overflow-x-auto">
+    <table class="data-table">
+      <thead><tr><th scope="col">Date</th><th scope="col">Time</th><th scope="col">Class</th><th scope="col">Teachers</th><th scope="col">Status</th></tr></thead>
+      <tbody>
+        {% for day, rows in days %}{% for o in rows %}
+        <tr>
+          <td class="whitespace-nowrap tabular-nums">{{ o.day.strftime('%a %d %b') }}</td>
+          <td class="whitespace-nowrap tabular-nums text-muted-foreground">{{ o.start_time.strftime('%I:%M').lstrip('0') }}-{{ o.end_time.strftime('%I:%M %p').lstrip('0') }}</td>
+          <td><span class="text-label-lg text-foreground">{{ (o.subject.paper_code or o.subject.name) if o.subject else o.title }}</span>
+            {%- if o.group %} <span class="text-muted-foreground">· {{ o.group.name }}</span>{% endif %}
+            {%- if not semester %}<span class="block text-body-sm text-muted-foreground">{{ o.semester.department.display_name }} {{ o.semester.name }}</span>{% endif %}</td>
+          <td class="text-body-md text-muted-foreground">{{ o.teachers|map(attribute='name')|join(', ') }}</td>
+          <td>{{ badge(o.status_label, o.status_tone) }}{% if o.session %} <a class="text-body-sm text-primary hover:underline" href="{{ url_for('attendance.generate_qr', session_id=o.session.id) }}">Session</a>{% endif %}
+            {%- if o.change and o.change.reason %}<span class="block text-body-sm text-muted-foreground">{{ o.change.reason }}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endcall %}
+{% endif %}
+{% endblock %}

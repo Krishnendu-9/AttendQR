@@ -1,0 +1,95 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, badge, page_header, callout with context %}
+{% from 'components/forms.html' import field, text_input, select_input, checkbox_input, form_section, form_actions with context %}
+{% set page_title = 'Settings' %}
+
+{#- Server default, and who changed the value here and when, with a way back. -#}
+{% macro setting_meta(f) -%}
+{% set key = f.spec.key %}
+<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-body-sm text-muted-foreground">
+  <span>Server default: <span class="text-foreground">{{ f.default }}</span></span>
+  {% if key == 'timezone' %}<span>Time here now: <span class="text-foreground">{{ format_12h(now()) }}</span></span>{% endif %}
+  {% if f.saved %}
+    {{ badge('Changed here', 'info') }}
+    <span>by {{ f.saved.updated_by.username if f.saved.updated_by else 'a deleted account' }}, {{ format_12h(f.saved.updated_at) }}</span>
+    <button type="submit" form="reset-{{ key }}" class="btn btn-link btn-sm">Reset to default</button>
+  {% endif %}
+</div>
+{%- endmacro %}
+
+{% block content %}
+{{ page_header('Settings', 'Options for the whole institution. Every role sees the result at once.') }}
+
+<div class="mb-6">
+  {% call callout('Where these values come from') %}
+    Each option starts from the server's setting. A value saved here replaces it for everyone, and
+    <span class="text-label-lg">Reset to default</span> goes back to it. Security settings, such as the campus network,
+    QR timings and two-step sign-in, are not here: they stay with whoever runs the server.
+  {% endcall %}
+</div>
+
+<form method="POST" action="{{ url_for('settings.index') }}" class="card">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+  {% for section in sections %}
+  {% call form_section(section.title, section.description) %}
+    {% for f in section.fields %}
+    {% set spec = f.spec %}
+    {% set key = spec.key %}
+    {% if spec.kind == 'weekdays' %}
+    <fieldset class="sm:col-span-2"{% if f.error %} aria-describedby="{{ key }}-error"{% else %} aria-describedby="{{ key }}-hint"{% endif %}>
+      <legend class="mb-1.5 block text-label-lg text-foreground">{{ spec.label }}</legend>
+      {#- Always sent, so unticking every day is seen (and refused) rather than ignored. -#}
+      <input type="hidden" name="{{ key }}" value="">
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {% for day in weekdays %}
+        {{ checkbox_input(key, day, checked=loop.index0 in f.value, id=key ~ '_' ~ loop.index0, value=loop.index0) }}
+        {% endfor %}
+      </div>
+      {% if f.error %}
+      <p id="{{ key }}-error" class="mt-1.5 flex items-start gap-1.5 text-body-sm text-destructive">{{ icon('circle-alert', 'mt-px size-3.5 shrink-0') }}<span>{{ f.error }}</span></p>
+      {% else %}
+      <p id="{{ key }}-hint" class="mt-1.5 text-body-sm text-muted-foreground">{{ spec.help }}</p>
+      {% endif %}
+      {{ setting_meta(f) }}
+    </fieldset>
+    {% else %}
+    <div class="{{ 'sm:col-span-2' if spec.kind in ['text', 'timezone', 'bool'] }}">
+      {% if spec.kind == 'percent' %}
+        {{ text_input(key, spec.label ~ ' (%)', f.value, type='number', required=True, hint=spec.help, error=f.error,
+                      attrs={'min': 1, 'max': 99 if key == 'attendance_target' else 100, 'step': 1, 'inputmode': 'numeric'}) }}
+      {% elif spec.kind == 'timezone' %}
+        {{ text_input(key, spec.label, f.value, required=True, hint=spec.help, error=f.error, placeholder='Asia/Kolkata',
+                      attrs={'list': 'timezone-list', 'autocomplete': 'off', 'spellcheck': 'false', 'maxlength': 64}) }}
+      {% elif spec.kind == 'word' %}
+        {{ text_input(key, spec.label, f.value, required=True, hint=spec.help, error=f.error, attrs={'maxlength': 30, 'autocomplete': 'off'}) }}
+      {% elif spec.kind == 'bool' %}
+        <input type="hidden" name="{{ key }}" value="0">
+        {{ checkbox_input(key, spec.label, checked=f.value, id=key, value='1', description=spec.help) }}
+      {% elif spec.kind == 'weekday' %}
+        {{ select_input(key, spec.label, options=day_options, selected=f.value, hint=spec.help, error=f.error) }}
+      {% else %}
+        {{ text_input(key, spec.label, f.value, hint=spec.help, error=f.error, placeholder='Your college or institute',
+                      attrs={'maxlength': 80, 'autocomplete': 'organization'}) }}
+      {% endif %}
+      {{ setting_meta(f) }}
+    </div>
+    {% endif %}
+    {% endfor %}
+  {% endcall %}
+  {% endfor %}
+
+  {{ form_actions(url_for('main.dashboard'), 'Save settings') }}
+</form>
+
+<datalist id="timezone-list">
+  {% for name in timezones %}<option value="{{ name }}"></option>{% endfor %}
+</datalist>
+
+{#- One small form per saved value; its button sits beside the field (form="reset-…"). -#}
+{% for key in saved_keys %}
+<form id="reset-{{ key }}" method="POST" action="{{ url_for('settings.reset', key=key) }}" class="hidden">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+</form>
+{% endfor %}
+{% endblock %}

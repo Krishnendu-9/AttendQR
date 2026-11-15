@@ -1,11 +1,11 @@
 {% extends 'layouts/app.html' %}
 {% from 'components/ui.html' import icon, btn, badge, page_header, empty_state, monogram, dropdown, menu_form, menu_separator, record_opener, record_dialog, client_toolbar, search_empty with context %}
 {% from 'components/forms.html' import text_input with context %}
-{% set page_title = 'Departments' %}
+{% set page_title = terms('department') %}
 {% set can_manage = current_user.role == 'principal' %}
 
 {% block content %}
-{% call page_header('Departments', 'Branches and courses offered by the institution.') %}
+{% call page_header(terms('department'), 'Branches and courses offered by the institution.') %}
   {% if can_manage %}
   {{ record_opener('New department', 'department-dialog', url_for('academics.departments'), 'New department', 'Create department', icon_name='plus', mode='create', as_button=True) }}
   {% endif %}
@@ -19,7 +19,7 @@
       <table class="data-table">
         <thead>
           <tr>
-            <th scope="col">Department</th>
+            <th scope="col">{{ term('department') }}</th>
             <th scope="col">Branch</th>
             <th scope="col">Course</th>
             {% if can_manage %}<th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>{% endif %}

@@ -2,7 +2,8 @@
 
 Time: every timestamp is stored as a naive UTC datetime (SQLite keeps no time zone,
 and naive values compare the same way on every database). Only display and
-calendar dates use the college's time zone, the TIMEZONE setting.
+calendar dates use the college's time zone: the Settings page's choice, which starts
+from the TIMEZONE environment variable.
 """
 import re
 from datetime import UTC, datetime, time
@@ -10,7 +11,7 @@ from functools import lru_cache
 from typing import overload
 from zoneinfo import ZoneInfo
 
-from flask import current_app, has_app_context
+from flask import has_app_context
 
 DEFAULT_TIMEZONE = 'Asia/Kolkata'
 
@@ -26,9 +27,12 @@ def _zone(name):
 
 
 def local_zone():
-    """The college's time zone (TIMEZONE setting)."""
-    name = current_app.config.get('TIMEZONE') if has_app_context() else None
-    return _zone(name or DEFAULT_TIMEZONE)
+    """The college's time zone: the Settings page's choice, else the TIMEZONE setting."""
+    if not has_app_context():
+        return _zone(DEFAULT_TIMEZONE)
+    # Imported here: services.settings imports the models, which import this module.
+    from .services.settings import get_setting
+    return _zone(get_setting('timezone') or DEFAULT_TIMEZONE)
 
 
 @overload
@@ -103,6 +107,36 @@ def parse_int_value(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+# Counts from a million up are shortened: (size, suffix), largest first.
+_COMPACT_UNITS = ((10 ** 12, 'T'), (10 ** 9, 'B'), (10 ** 6, 'M'))
+
+
+def full_number(value):
+    """A count in full with thousands separators: 6000000 -> "6,000,000". Anything else unchanged."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return f"{value:,}"
+    return value
+
+
+def compact_number(value):
+    """A count for a small space: in full below a million ("48,250"), shortened from there
+    ("1.2M", "6M", "3.4B"). Rounded down, so it never shows more than there is (1,999,999 is
+    "1.9M", not "2M"). Integer arithmetic, so no float rounding can produce "1000M".
+    Show full_number() beside it where the exact figure matters (a tooltip, screen readers)."""
+    if not isinstance(value, int) or isinstance(value, bool):
+        return value
+    size = abs(value)
+    if size < 10 ** 6:
+        return f"{value:,}"
+    sign = '-' if value < 0 else ''
+    unit, suffix = next((u, s) for u, s in _COMPACT_UNITS if size >= u)
+    tenths = size * 10 // unit
+    if tenths < 100:  # under 10 of the unit: one decimal, without a trailing ".0"
+        whole, tenth = divmod(tenths, 10)
+        return f"{sign}{whole}{f'.{tenth}' if tenth else ''}{suffix}"
+    return f"{sign}{size // unit:,}{suffix}"
 
 
 _NATURAL_SPLIT = re.compile(r'(\d+)')

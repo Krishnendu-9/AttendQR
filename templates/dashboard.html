@@ -1,15 +1,31 @@
 {% extends 'layouts/app.html' %}
-{% from 'components/ui.html' import icon, btn, badge, page_header, card, empty_state with context %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state with context %}
+{% from 'components/routine.html' import occurrence_row, change_dialog with context %}
 {% set page_title = 'Dashboard' %}
 
-{% macro stat(label, value, icon_name, href, meta=None) -%}
-<a href="{{ href }}" class="card group flex items-start justify-between gap-4 p-5 transition-colors hover:border-input focus-visible:shadow-focus focus-visible:outline-none">
-  <div class="min-w-0">
-    <p class="text-label-md text-muted-foreground">{{ label }}</p>
-    <p class="mt-2 text-headline-lg tabular-nums text-foreground">{{ value }}</p>
-    {% if meta %}<p class="mt-1 text-body-sm text-muted-foreground">{{ meta }}</p>{% endif %}
+{#- A total that links to its page: the icon and label on top, the number centred below (with
+    what it is made of, as (count, name) pairs, beside it). Numbers from a million up are shortened
+    ("6M"); the exact figure is in the tooltip and read by screen readers. A long number or label
+    (a renamed term) steps down a size so it never touches the edge. The arrow shows where cards are wide. -#}
+{% macro stat(label, value, icon_name, href, breakdown=None) -%}
+{%- set shown = value|compact_number|string -%}
+{%- set exact = value|full_number|string -%}
+<a href="{{ href }}"{% if shown != exact %} title="{{ label }}: {{ exact }}"{% endif %} class="card group flex flex-col gap-1.5 px-4 py-3 transition-colors hover:border-input focus-visible:shadow-focus focus-visible:outline-none">
+  <div class="flex min-w-0 items-center gap-2.5">
+    <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-ink transition-colors group-hover:bg-secondary">{{ icon(icon_name, 'size-4') }}</span>
+    <p class="min-w-0 flex-1 truncate {{ 'text-label-lg' if label|length <= 12 else 'text-label-md' }} text-muted-foreground" title="{{ label }}">{{ label }}</p>
+    <span class="shrink-0 text-placeholder transition-colors group-hover:text-foreground 2xl:hidden">{{ icon('chevron-right') }}</span>
   </div>
-  <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-ink transition-colors group-hover:bg-secondary">{{ icon(icon_name, 'size-5') }}</span>
+  <div class="flex min-w-0 flex-1 items-center justify-center gap-3">
+    <p class="{{ 'text-headline-lg' if shown|length <= 7 else 'text-headline-md' }} tabular-nums text-foreground">
+      {%- if shown != exact %}<span aria-hidden="true">{{ shown }}</span><span class="sr-only">{{ exact }}</span>{% else %}{{ shown }}{% endif -%}
+    </p>
+    {% if breakdown %}
+    <ul class="min-w-0 border-l border-border pl-3 text-body-sm text-muted-foreground">
+      {% for count, name in breakdown %}<li class="truncate"><span class="tabular-nums text-foreground">{{ count|compact_number }}</span> {{ name }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
 </a>
 {%- endmacro %}
 
@@ -19,19 +35,51 @@
   <a href="{{ url_for('attendance.generate_qr') }}" class="{{ btn('primary') }}">{{ icon('qr-code') }}<span>Generate QR</span></a>
 {% endcall %}
 
+{% if not_recorded_week %}
+<div class="mb-6">
+  {% call callout(not_recorded_week|length ~ ' class' ~ ('' if not_recorded_week|length == 1 else 'es') ~ ' in the routine not recorded this week', 'warning') %}
+    {% if not_recorded_today %}{{ not_recorded_today|length }} of them today. {% endif %}They passed without a QR session, so they count for nobody.
+    <a class="text-label-md text-primary underline-offset-2 hover:underline" href="{{ url_for('reports.routine_report', date_from=routine_week_from.isoformat()) }}">See planned and held</a>
+  {% endcall %}
+</div>
+{% endif %}
+
+{% if current_user.role == 'teacher' %}
+<section class="card mb-6" aria-labelledby="today-title">
+  <header class="flex items-start justify-between gap-3 px-6 pt-6">
+    <div>
+      <h2 id="today-title" class="text-headline-sm text-foreground">Today's classes</h2>
+      <p class="mt-0.5 text-body-sm text-muted-foreground">From the routine. Start a session from 15 minutes before a class.</p>
+    </div>
+    <a href="{{ url_for('routine.mine') }}" class="{{ btn('ghost', 'sm') }}">My routine {{ icon('chevron-right') }}</a>
+  </header>
+  {% if today_classes %}
+  <ul class="divide-y divide-border px-6 pb-2">
+    {% for o in today_classes %}{{ occurrence_row(o, show_class=True, next_url=url_for('main.dashboard')) }}{% endfor %}
+  </ul>
+  {% else %}
+  <p class="px-6 pb-6 pt-3 text-body-sm text-muted-foreground">No classes in your routine today.</p>
+  {% endif %}
+</section>
+{{ change_dialog() }}
+{% endif %}
+
 {% if current_user.role in ['principal', 'hod'] %}
-<section aria-label="Totals" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-  {{ stat('Departments', departments, 'building-2', url_for('academics.departments')) }}
-  {{ stat('Semesters', semesters, 'calendar-range', url_for('academics.semesters')) }}
-  {{ stat('Subjects', subjects, 'book-open', url_for('academics.subjects')) }}
+{#- One row on wide screens. With the accounts breakdown, the last card gets more room for it. -#}
+<section aria-label="Totals" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 {{ '2xl:grid-cols-[repeat(5,minmax(0,1fr))_minmax(0,1.6fr)]' if accounts.principals is not none else '2xl:grid-cols-6' }}">
+  {{ stat(terms('department'), departments, 'building-2', url_for('academics.departments')) }}
+  {{ stat(terms('semester'), semesters, 'calendar-range', url_for('academics.semesters')) }}
+  {{ stat(terms('subject'), subjects, 'book-open', url_for('academics.subjects')) }}
   {{ stat('Teachers', teachers, 'presentation', url_for('academics.teachers')) }}
   {{ stat('Students', students, 'graduation-cap', url_for('students.index')) }}
   {% if accounts.principals is not none %}
-    {% set accounts_meta = accounts.principals ~ ' Principal, ' ~ accounts.hods ~ ' HOD, ' ~ accounts.teachers ~ ' Teacher' %}
+  {{ stat('Accounts', accounts.total, 'shield-user', url_for('accounts.index'), [
+       (accounts.principals, role_label('principal')), (accounts.hods, role_label('hod')),
+       (accounts.teachers, role_label('teacher'))]) }}
   {% else %}
-    {% set accounts_meta = 'Teacher accounts' %}
+  {#- An HOD sees only their department's teacher accounts. -#}
+  {{ stat(role_label('teacher') ~ ' accounts', accounts.total, 'shield-user', url_for('accounts.index')) }}
   {% endif %}
-  {{ stat('Accounts', accounts.total, 'shield-user', url_for('accounts.index'), accounts_meta) }}
 </section>
 {% else %}
 <section aria-label="Totals" class="grid grid-cols-1 gap-4 sm:grid-cols-3">

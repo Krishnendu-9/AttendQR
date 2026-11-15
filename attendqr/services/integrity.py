@@ -76,7 +76,7 @@ def build_integrity_report(department_id, semester_id, weeks=DEFAULT_WEEKS):
                             date_to=today.isoformat(), error=None)
     sessions = {s.id: s for s in report_sessions_query(filters).all()}
     report = IntegrityReport(sessions=len(sessions))
-    students = {student.id: student for student, _ in class_roster(department_id, semester_id)}
+    students = {member.student.id: member.student for member in class_roster(department_id, semester_id)}
     flags = defaultdict(list)
     if not sessions:
         return report

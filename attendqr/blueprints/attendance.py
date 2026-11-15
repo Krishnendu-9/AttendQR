@@ -33,12 +33,14 @@ from ..access import (
     visible_sessions_query,
 )
 from ..extensions import db
-from ..models import Attendance, ClassSession, Semester, SpotCheck, Student, Subject, Teacher
+from ..models import Attendance, ClassGroup, ClassSession, Semester, SpotCheck, Student, Subject, Teacher
 from ..observability import count_scan
 from ..security import is_safe_redirect_target
-from ..services.enrollment import class_roster, in_class_at, was_in_class
+from ..services.enrollment import class_roster, was_in_class
+from ..services.groups import GroupRosters, current_members, describe_group, may_attend
 from ..services.locks import semester_lock_error, session_lock_error
 from ..services.network import client_ip, scan_network_error
+from ..services.occurrences import link_session, matching_occurrence, unscheduled_ids
 from ..services.qr import (
     DEVICE_TAKEN_MESSAGE,
     build_scan_url,
@@ -131,6 +133,7 @@ def generate_qr():
         departments=ordered_departments_query().all(),
         recent_sessions=recent_sessions,
         session_counts=attendance_counts([s.id for s in recent_sessions]),
+        unscheduled=unscheduled_ids(recent_sessions),
         current_teacher=current_user.teacher if user_role() == 'teacher' else None,
     )
 
@@ -167,22 +170,34 @@ def _render_session(class_session_id):
         spot_check_candidates=len(candidates(class_session)),
         spot_check_size=SPOT_CHECK_SIZE,
         lock_error=session_lock_error(class_session),
+        unscheduled=unscheduled_ids([class_session]),
     )
 
 
 def _absent_students(class_session):
-    """Students who were in the session's class when it was held and have no attendance entry for it.
+    """Students who were in the session's class (and group) when it was held and have no attendance entry for it.
 
-    Includes students moved to another class since, so an old session can still be corrected.
+    Includes students moved to another class since, so an old session can still be corrected,
+    students added to the session's group since, and current students who joined the class after
+    it (staff may mark them present for a class they attended before their account existed).
     """
     subject = class_session.subject
     marked = {
         student_id for (student_id,) in
         db.session.query(Attendance.student_id).filter(Attendance.session_id == class_session.id)
     }
+    group_id = class_session.group_id
+    rosters = GroupRosters([group_id])
+    members_now = {student.id for student in current_members(group_id)} if group_id is not None else set()
+
+    def in_group(student):
+        return (group_id is None or student.id in members_now
+                or rosters.is_member(student.id, group_id, class_session.created_at))
+
     return [
-        student for student, left_at in class_roster(subject.department_id, subject.semester_id)
-        if student.id not in marked and in_class_at(left_at, class_session.created_at)
+        member.student for member in class_roster(subject.department_id, subject.semester_id)
+        if member.student.id not in marked and (member.is_current or member.in_class(class_session.created_at))
+        and in_group(member.student)
     ]
 
 
@@ -195,6 +210,7 @@ def _create_session():
     teacher_id = parse_int_value(request.form.get('teacher_id'))
     special_title = normalize_text(request.form.get('special_title'))
     duration = parse_int_value(request.form.get('duration'))
+    group_id = parse_int_value(request.form.get('group_id'))
 
     if duration is None or not cfg['MIN_QR_DURATION'] <= duration <= cfg['MAX_QR_DURATION']:
         return _form_error(f"Duration must be between {cfg['MIN_QR_DURATION']} and {cfg['MAX_QR_DURATION']} minutes.")
@@ -207,6 +223,11 @@ def _create_session():
         return _form_error("The selected semester does not belong to the selected department.")
     if semester_lock_error(semester):
         return _form_error(semester_lock_error(semester))
+    group = None
+    if group_id:
+        group = db.session.get(ClassGroup, group_id)
+        if not group or group.semester_id != semester.id:
+            return _form_error("The selected group does not belong to the selected semester.")
 
     if class_mode == 'special':
         if not special_title:
@@ -237,23 +258,39 @@ def _create_session():
     elif class_mode != 'special':
         return _form_error("Select a teacher for regular classes.")
 
-    now = utc_now()
-    class_session = ClassSession(
-        subject_id=subject.id,
-        special_title=special_title,
-        teacher_id=teacher_id,
-        created_at=now,
-        expires_at=now + timedelta(minutes=duration),
-    )
-    db.session.add(class_session)
-    db.session.flush()
-    log_activity(
-        'qr_session_created',
-        f"Generated QR session for '{special_title or subject_display_name(subject)}'.",
-        'class_session', class_session.id, department_id,
-    )
-    db.session.commit()
-    return redirect(url_for('attendance.generate_qr', session_id=class_session.id))
+    # A session started by hand that matches a class under way in the routine (same class, subject
+    # and group) holds that class. Otherwise it is "Unscheduled" where the class has a routine.
+    occurrence = matching_occurrence(semester.id, subject.id, group.id if group else None) \
+        if class_mode != 'special' else None
+    for link in ((True, False) if occurrence else (False,)):
+        now = utc_now()
+        class_session = ClassSession(
+            subject_id=subject.id,
+            special_title=special_title,
+            teacher_id=teacher_id,
+            created_at=now,
+            expires_at=now + timedelta(minutes=duration),
+            group_id=group.id if group else None,
+        )
+        db.session.add(class_session)
+        db.session.flush()
+        if link:
+            link_session(class_session, occurrence)
+        log_activity(
+            'qr_session_created',
+            f"Generated QR session for '{special_title or subject_display_name(subject)}'"
+            + (f" for {group.name}" if group else "")
+            + (" (the routine class)." if link else "."),
+            'class_session', class_session.id, department_id,
+        )
+        try:
+            db.session.commit()
+        except IntegrityError:
+            # Someone linked a session to that routine class at the same moment: keep this one unlinked.
+            db.session.rollback()
+            continue
+        return redirect(url_for('attendance.generate_qr', session_id=class_session.id))
+    abort(500)
 
 
 def _session_for_action(id):
@@ -382,6 +419,8 @@ def mark_present(id):
         flash(error, 'danger')
     elif not student or not was_in_class(student, subject.department_id, subject.semester_id, class_session.created_at):
         flash("Choose a student from this session's class.", 'danger')
+    elif not may_attend(student, class_session):
+        flash(f"Choose a student from this session's group ({class_session.group.name}).", 'danger')
     elif Attendance.query.filter_by(student_id=student.id, session_id=class_session.id).first():
         flash(f"{student.name} is already marked present for this session.", 'warning')
     else:
@@ -647,6 +686,9 @@ def attend():
             f'This QR code is only for {subject.department.display_name} - {subject.semester.name}.',
             403, info, student=student,
         )
+    if not may_attend(student, class_session):
+        return _status_page('Wrong Group', f'This QR code is only for {describe_group(class_session)}.',
+                            403, info, student=student)
 
     device_error = device_binding_error(student, read_device_cookie())
     if device_error:
@@ -700,6 +742,9 @@ def mark_attendance():
     if student.department_id != subject.department_id or student.semester_id != subject.semester_id:
         count_scan('wrong_class')
         return _json_error(f'This QR code is only for {subject.department.display_name} - {subject.semester.name}.', 403)
+    if not may_attend(student, class_session):
+        count_scan('wrong_group')
+        return _json_error(f'This QR code is only for {describe_group(class_session)}.', 403)
 
     device_id = read_device_cookie()
     device_error = device_binding_error(student, device_id)

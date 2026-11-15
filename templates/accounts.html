@@ -93,7 +93,9 @@
                 {% if can_edit %}
                 {{ record_opener('Edit', 'account-edit-dialog', url_for('accounts.edit', id=account.id), 'Edit ' ~ role_label(account.role) ~ ' account', 'Save changes',
                                  {'username': account.username, 'role': account.role, 'role_label': role_label(account.role),
-                                  'teacher_name': account.teacher.name if account.teacher else '', 'department_id': account.department_id or ''}, 'pencil') }}
+                                  'teacher_name': account.teacher.name if account.teacher else '',
+                                 'teacher_short_name': account.teacher.short_name or '' if account.teacher else '',
+                                 'department_id': account.department_id or ''}, 'pencil') }}
                 {% endif %}
                 {% if can_reset %}
                 {{ menu_form('Reset password', url_for('accounts.reset_password', id=account.id), 'key-round',
@@ -191,11 +193,11 @@
         {{ text_input('teacher_name', 'Teacher name', placeholder='Full name', attrs={'maxlength': 100, 'autocomplete': 'off'}) }}
       </div>
       <div data-role-field="hod teacher">
-        {{ select_input('department_id', 'Department', departments, id='department_id', placeholder='Select department',
+        {{ select_input('department_id', term('department'), departments, id='department_id', placeholder='Select department',
                         value_attr='id', label_attr='display_name') }}
       </div>
       <div data-role-field="teacher">
-        {% call field('subject_id', 'Subject', hint='Optional. More subjects can be assigned on the Subjects page.') %}
+        {% call field('subject_id', term('subject'), hint='Optional. More subjects can be assigned on the Subjects page.') %}
           {{ select_control('subject_id', 'subject_id', placeholder='Assign later', hint='Optional. More subjects can be assigned on the Subjects page.') }}
         {% endcall %}
       </div>
@@ -224,8 +226,12 @@
   <div data-role-field="teacher">
     {{ text_input('teacher_name', 'Teacher name', id='edit_teacher_name', attrs={'maxlength': 100, 'autocomplete': 'off'}) }}
   </div>
+  <div data-role-field="teacher">
+    {{ text_input('teacher_short_name', 'Short name', id='edit_teacher_short_name', placeholder='e.g. SC',
+                  hint='Shown in the class routine. Empty uses the initials of the name.', attrs={'maxlength': 10, 'autocomplete': 'off'}) }}
+  </div>
   <div data-role-field="hod teacher">
-    {{ select_input('department_id', 'Department', departments, id='edit_department_id', placeholder='Select department',
+    {{ select_input('department_id', term('department'), departments, id='edit_department_id', placeholder='Select department',
                     value_attr='id', label_attr='display_name') }}
   </div>
   <div data-role-field="teacher">

@@ -50,7 +50,7 @@
 {% set this_page = url_for('attendance.generate_qr', session_id=view_session.id) %}
 {% call page_header(session_display_name(view_session),
                     view_session.subject.department.display_name ~ ' · ' ~ view_session.subject.semester.name ~ ' · Valid for ' ~ duration ~ ' minutes',
-                    session_badge(view_session)) %}
+                    session_badge(view_session) ~ (badge('Unscheduled', 'neutral', 'Held outside the class routine') if view_session.id in unscheduled else '')) %}
   {{ session_actions(view_session, next_url=this_page, present=attendance_records|length) }}
   <a href="{{ url_for('attendance.generate_qr') }}" class="{{ btn('primary') }}">{{ icon('plus') }}<span>New session</span></a>
 {% endcall %}
@@ -253,12 +253,14 @@
   <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
     {{ select_input('class_mode', 'Class type', [('regular', 'Regular class'), ('special', 'Special class')], id='class_mode',
                     hint='Special classes (workshops, aptitude) need no subject.') }}
-    {{ select_input('department_id', 'Department', departments, id='dept_select', placeholder='Select department', required=True,
+    {{ select_input('department_id', term('department'), departments, id='dept_select', placeholder='Select department', required=True,
                     value_attr='id', label_attr='display_name') }}
-    {{ select_input('semester_id', 'Semester', id='sem_select', placeholder='Select semester', required=True) }}
+    {{ select_input('semester_id', term('semester'), id='sem_select', placeholder='Select semester', required=True) }}
     <div id="subjectField">
-      {{ select_input('subject_id', 'Subject', id='sub_select', placeholder='Select subject', required=True) }}
+      {{ select_input('subject_id', term('subject'), id='sub_select', placeholder='Select subject', required=True) }}
     </div>
+    {{ select_input('group_id', term('group'), id='group_select', placeholder='Whole class',
+                    hint='For a lab batch or an elective: the session counts only for its members.') }}
     <div id="specialTitleField" hidden>
       {{ text_input('special_title', 'Special class details', id='special_title', placeholder='Aptitude class or Spoken English workshop',
                     attrs={'maxlength': 200}) }}
@@ -306,7 +308,7 @@
               <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-ink">{{ icon('qr-code') }}</span>
               <div class="min-w-0">
                 <a href="{{ url_for('attendance.generate_qr', session_id=cs.id) }}" class="block truncate rounded text-label-lg text-foreground hover:text-primary focus-visible:shadow-focus focus-visible:outline-none">{{ session_display_name(cs) }}</a>
-                <p class="flex items-center gap-1.5 text-body-sm text-muted-foreground">{{ cs.subject.department.display_name }} &middot; {{ cs.subject.semester.name }}{% if cs.special_title %} {{ badge('Special', 'info') }}{% endif %}</p>
+                <p class="flex items-center gap-1.5 text-body-sm text-muted-foreground">{{ cs.subject.department.display_name }} &middot; {{ cs.subject.semester.name }}{% if cs.special_title %} {{ badge('Special', 'info') }}{% endif %}{% if cs.id in unscheduled %} {{ badge('Unscheduled', 'neutral', 'Held outside the class routine') }}{% endif %}</p>
               </div>
             </div>
           </td>
@@ -463,6 +465,7 @@
     const semSelect = document.getElementById('sem_select');
     const subjectSelect = document.getElementById('sub_select');
     const teacherSelect = document.getElementById('teacher_select');
+    const groupSelect = document.getElementById('group_select');
     const specialTitle = document.getElementById('special_title');
     let departmentTeachers = [];
 
@@ -474,14 +477,18 @@
       });
     }
 
-    // A subject with an assigned teacher pins the teacher choice to that person.
+    // A subject with an assigned teacher limits the choice to that teacher and its co-teachers.
     function syncTeacherToSubject() {
-      if (!teacherSelect) return;
       const option = subjectSelect.options[subjectSelect.selectedIndex];
-      const assignedId = option ? option.dataset.teacherId : '';
       const isSpecial = classMode.value === 'special';
+      if (option && option.dataset.groupId && !isSpecial && groupSelect.querySelector('option[value="' + option.dataset.groupId + '"]')) {
+        groupSelect.value = option.dataset.groupId;  // the subject's own group (an elective, one lab batch)
+      }
+      if (!teacherSelect) return;
+      const assignedId = option ? option.dataset.teacherId : '';
       if (assignedId && !isSpecial) {
-        AttendQR.fillSelect(teacherSelect, [{ id: assignedId, name: option.dataset.teacherName }], { selected: assignedId });
+        const choices = [{ id: assignedId, name: option.dataset.teacherName }].concat(JSON.parse(option.dataset.coTeachers || '[]'));
+        AttendQR.fillSelect(teacherSelect, choices, { selected: assignedId });
       } else {
         const current = teacherSelect.value;
         AttendQR.fillSelect(teacherSelect, departmentTeachers, { placeholder: 'Select teacher', selected: current });
@@ -502,10 +509,12 @@
     deptSelect.addEventListener('change', function () {
       AttendQR.loadSemesters(semSelect, deptSelect.value);
       AttendQR.fillSelect(subjectSelect, [], { placeholder: 'Select subject' });
+      AttendQR.fillSelect(groupSelect, [], { placeholder: 'Whole class' });
       loadDepartmentTeachers();
     });
     semSelect.addEventListener('change', function () {
-      AttendQR.loadSubjects(subjectSelect, semSelect.value).then(syncTeacherToSubject);
+      Promise.all([AttendQR.loadSubjects(subjectSelect, semSelect.value), AttendQR.loadGroups(groupSelect, semSelect.value)])
+        .then(syncTeacherToSubject);
     });
     subjectSelect.addEventListener('change', syncTeacherToSubject);
     classMode.addEventListener('change', toggleClassMode);

@@ -35,7 +35,7 @@
   {{ stat('Class size', report.class_size, 'graduation-cap') }}
   {{ stat('Below ' ~ threshold ~ '%', report.rows|length, 'triangle-alert') }}
   {{ stat('Classes held', report.classes_held, 'calendar-check') }}
-  {{ stat('Subjects', report.subjects|length, 'book-open') }}
+  {{ stat(terms('subject'), report.subjects|length, 'book-open') }}
 </section>
 
 <section class="card mt-6 overflow-hidden" aria-label="Students below the requirement">
@@ -71,7 +71,8 @@
               {{ monogram(row.student.name) }}
               <div class="min-w-0">
                 <p class="flex flex-wrap items-center gap-1.5 text-label-lg text-foreground">{{ row.student.name }}
-                  {% if row.left_at %}<span title="Moved to another class on {{ format_12h(row.left_at) }}; only sessions before that count">{{ attendance_badge('moved_out') }}</span>{% endif %}</p>
+                  {% if row.left_at %}<span title="Moved to another class on {{ format_12h(row.left_at) }}; only sessions before that count">{{ attendance_badge('moved_out') }}</span>{% endif %}
+                  {% if row.joined_late %}<span title="Joined this class on {{ format_12h(row.joined_late) }}; only sessions from then count">{{ attendance_badge('joined_late') }}</span>{% endif %}</p>
                 <p class="whitespace-nowrap text-body-sm text-muted-foreground"><span class="font-mono">{{ row.student.roll_no }}</span> &middot; {{ row.student.email }}</p>
               </div>
             </div>

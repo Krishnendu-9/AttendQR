@@ -5,11 +5,11 @@
   class="fixed inset-y-0 left-0 z-50 print:hidden flex w-sidebar -translate-x-full flex-col border-r border-border bg-card transition-transform duration-200 ease-out data-[open=true]:translate-x-0 data-[open=true]:shadow-dialog md:w-rail md:translate-x-0 lg:w-sidebar"
   :data-open="sidebarOpen ? 'true' : 'false'">
   <div class="flex h-header-sm shrink-0 items-center justify-between gap-2 border-b border-border px-5 md:h-header md:max-lg:justify-center md:max-lg:px-0">
-    <a href="{{ url_for('main.dashboard') }}" class="flex items-center gap-3 rounded-lg focus-visible:shadow-focus focus-visible:outline-none" aria-label="AttendQR home">
+    <a href="{{ url_for('main.dashboard') }}" class="flex min-w-0 items-center gap-3 rounded-lg focus-visible:shadow-focus focus-visible:outline-none" aria-label="AttendQR home">
       <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">{{ icon('qr-code', 'size-5') }}</span>
       <span class="min-w-0 md:max-lg:hidden">
         <span class="block text-headline-sm text-foreground">AttendQR</span>
-        <span class="block text-body-sm text-muted-foreground">Attendance system</span>
+        <span class="block truncate text-body-sm text-muted-foreground"{% if institution_name %} title="{{ institution_name }}"{% endif %}>{{ institution_name or 'Attendance system' }}</span>
       </span>
     </a>
     <button type="button" class="btn btn-ghost btn-icon btn-sm md:hidden" @click="closeSidebar" aria-label="Close navigation">{{ icon('x') }}</button>

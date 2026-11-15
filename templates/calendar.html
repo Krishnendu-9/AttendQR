@@ -1,0 +1,103 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state, action_form, record_opener, record_dialog with context %}
+{% from 'components/forms.html' import text_input, select_input, field, select_control with context %}
+{% set page_title = 'Calendar' %}
+{% set principal = current_user.role == 'principal' %}
+
+{% macro scope_select(id) -%}
+{% call field(id, 'For') %}
+  {% call select_control('scope', id) %}
+    {% if principal %}<option value="institution">The whole institution</option>{% endif %}
+    {% for d in departments %}<option value="{{ d.id }}">{{ d.display_name }} only</option>{% endfor %}
+  {% endcall %}
+{% endcall %}
+{%- endmacro %}
+
+{% block content %}
+{{ page_header('Calendar', 'Bell schedules give each day its periods; holidays have no classes. A department\'s own schedule or holiday applies before the institution\'s.') }}
+
+<section class="mb-6" aria-labelledby="schedules-title">
+  <div class="mb-3 flex items-end justify-between gap-3">
+    <div>
+      <h2 id="schedules-title" class="text-headline-sm text-foreground">Bell schedules</h2>
+      <p class="mt-0.5 text-body-sm text-muted-foreground">Which periods a day has, and which days use them.</p>
+    </div>
+    {{ record_opener('New schedule', 'schedule-dialog', url_for('routine.new_schedule'), 'New bell schedule', 'Create', {}, 'plus', mode='create', as_button=True) }}
+  </div>
+  {% if schedules %}
+  <div class="grid gap-6 lg:grid-cols-2">
+    {% for s in schedules %}
+    <section class="card overflow-hidden">
+      <header class="flex items-start justify-between gap-3 px-6 pb-3 pt-6">
+        <div class="min-w-0">
+          <h3 class="text-headline-sm text-foreground">{{ s.name }}</h3>
+          <p class="mt-0.5 flex flex-wrap items-center gap-1.5 text-body-sm text-muted-foreground">
+            {{ badge(s.department.display_name if s.department else 'Institution', 'info' if s.department else 'neutral') }}
+            {% set used = s.days|map(attribute='weekday')|sort %}
+            {% if used %}Used on {% for d in used %}{{ weekdays[d][:3] }}{{ ', ' if not loop.last }}{% endfor %}{% else %}Not used on any day yet{% endif %}
+          </p>
+        </div>
+        {% if can_manage_scope(s.department_id) %}
+        <div class="flex shrink-0 gap-2">
+          <a href="{{ url_for('routine.edit_schedule', id=s.id) }}" class="{{ btn('outline', 'sm') }}">{{ icon('pencil') }}<span>Edit</span></a>
+          {{ action_form('Delete', url_for('routine.delete_schedule', id=s.id), variant='ghost', size='sm', danger=True,
+                         confirm='Its days fall back to the institution\'s schedule, or none. Routines keep their times.',
+                         confirm_title='Delete ' ~ s.name ~ '?', confirm_label='Delete') }}
+        </div>
+        {% endif %}
+      </header>
+      {% if s.periods %}
+      <ul class="flex flex-wrap gap-2 border-t border-border px-6 py-4">
+        {% for p in s.periods %}
+        <li class="rounded-lg border border-border px-2.5 py-1 text-body-sm {{ 'bg-muted text-muted-foreground' if p.is_break }}">
+          <span class="text-label-md">{{ p.label }}</span> <span class="tabular-nums text-muted-foreground">{{ p.start_time.strftime('%H:%M') }}-{{ p.end_time.strftime('%H:%M') }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="border-t border-border px-6 py-4 text-body-sm text-muted-foreground">No periods yet.</p>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+  {% else %}
+  <section class="card">{{ empty_state('clock', 'No bell schedules', 'Add one with the periods of a normal day, such as 10:00-10:50, 10:50-11:40 and a break. The routine editor then offers those periods.', compact=True) }}</section>
+  {% endif %}
+</section>
+
+{% call card('Holidays', 'Classes in a routine do not happen on these days. Listed from two months ago.', icon_name='calendar-clock') %}
+  <form method="POST" action="{{ url_for('routine.add_holiday') }}" class="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    {{ text_input('title', 'Holiday', id='holiday_title', required=True, placeholder='Durga Puja', attrs={'maxlength': 100}, cls='lg:col-span-2') }}
+    {{ text_input('start_date', 'From', id='holiday_start', type='date', required=True) }}
+    {{ text_input('end_date', 'To', id='holiday_end', type='date', hint='Empty: one day.') }}
+    {{ scope_select('holiday_scope') }}
+    <div class="sm:col-span-2 lg:col-span-5 flex justify-end"><button type="submit" class="{{ btn('outline') }}">{{ icon('plus') }}<span>Add holiday</span></button></div>
+  </form>
+  {% if holidays %}
+  <ul class="divide-y divide-border border-t border-border">
+    {% for h in holidays %}
+    <li class="flex flex-wrap items-center justify-between gap-3 py-3">
+      <span class="min-w-0">
+        <span class="text-label-lg text-foreground">{{ h.title }}</span>
+        <span class="text-body-sm text-muted-foreground"> · {{ h.start_date.strftime('%d %b %Y') }}{% if h.end_date != h.start_date %} to {{ h.end_date.strftime('%d %b %Y') }}{% endif %}</span>
+        {% if h.department %} {{ badge(h.department.display_name, 'info') }}{% endif %}
+        {% if h.end_date < today %} {{ badge('Past', 'neutral') }}{% endif %}
+      </span>
+      {% if can_manage_scope(h.department_id) %}
+      {{ action_form('Remove', url_for('routine.delete_holiday', id=h.id), variant='ghost', size='sm', danger=True,
+                     confirm='Classes on these days appear in the routine again.', confirm_title='Remove ' ~ h.title ~ '?', confirm_label='Remove') }}
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-body-sm text-muted-foreground">No holidays.</p>
+  {% endif %}
+{% endcall %}
+
+{% call record_dialog('schedule-dialog', 'New bell schedule', 'Create') %}
+  {{ text_input('name', 'Name', id='schedule_name', required=True, placeholder='Weekday', attrs={'maxlength': 60}) }}
+  {{ scope_select('schedule_scope') }}
+{% endcall %}
+{% endblock %}

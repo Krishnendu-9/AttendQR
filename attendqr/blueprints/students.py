@@ -31,6 +31,7 @@ from ..security import (
     is_safe_redirect_target,
 )
 from ..services.enrollment import record_class_change
+from ..services.groups import student_groups
 from ..services.reports import build_student_attendance_summary
 from ..services.roster import (
     ensure_student_account,
@@ -38,7 +39,7 @@ from ..services.roster import (
     import_template_rows,
     parse_student_import,
 )
-from ..utils import normalize_email, normalize_roll_no, normalize_text, parse_int_value, sort_semesters
+from ..utils import normalize_email, normalize_roll_no, normalize_text, parse_int_value, sort_semesters, utc_now
 
 bp = Blueprint('students', __name__)
 
@@ -197,7 +198,8 @@ def index():
         error = error or _duplicate_error(values)
         if error:
             return _save_failed(error)
-        student = Student(**values)
+        # Sessions the class held before today are not the new student's (services/counting.py).
+        student = Student(**values, class_joined_at=utc_now())
         db.session.add(student)
         db.session.flush()
         temporary_password = ensure_student_account(student)
@@ -263,6 +265,7 @@ def view(id):
         student=student,
         account=User.query.filter_by(student_id=student.id).first(),
         summary=build_student_attendance_summary(student),
+        groups=student_groups(student),
     )
 
 

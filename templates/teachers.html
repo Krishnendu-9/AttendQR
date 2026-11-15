@@ -17,7 +17,7 @@
   {% if teachers %}
   {% call client_toolbar('teachers-filter', '#teachers-list', 'Search name or email', 'Search teachers', filters=show_department) %}
     <div>
-      <label for="filter-teacher-department" class="mb-1.5 block text-label-md text-muted-foreground">Department</label>
+      <label for="filter-teacher-department" class="mb-1.5 block text-label-md text-muted-foreground">{{ term('department') }}</label>
       {{ select_control('department', 'filter-teacher-department', departments, placeholder='All departments', value_attr='id', label_attr='display_name') }}
     </div>
   {% endcall %}
@@ -27,7 +27,7 @@
         <thead>
           <tr>
             <th scope="col">Teacher</th>
-            {% if show_department %}<th scope="col">Department</th>{% endif %}
+            {% if show_department %}<th scope="col">{{ term('department') }}</th>{% endif %}
             <th scope="col">Assigned subjects</th>
           </tr>
         </thead>
@@ -39,7 +39,7 @@
               <div class="flex items-center gap-3">
                 {{ monogram(t.name) }}
                 <div class="min-w-0">
-                  <p class="truncate text-label-lg text-foreground">{{ t.name }}</p>
+                  <p class="truncate text-label-lg text-foreground">{{ t.name }} <span class="font-mono text-body-sm text-muted-foreground" title="Short name in the class routine">{{ teacher_short_name(t) }}</span></p>
                   <p class="truncate text-body-sm text-muted-foreground">{{ t.email }}</p>
                 </div>
               </div>

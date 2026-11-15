@@ -10,7 +10,14 @@ from ..access import can_access_department, current_department_id, is_principal,
 from ..extensions import db
 from ..models import Department, Semester, Student, User
 from ..security import generate_temporary_password, hash_temporary_password
-from ..utils import normalize_course_name, normalize_email, normalize_header, normalize_roll_no, normalize_text
+from ..utils import (
+    normalize_course_name,
+    normalize_email,
+    normalize_header,
+    normalize_roll_no,
+    normalize_text,
+    utc_now,
+)
 
 
 def ensure_student_account(student):
@@ -213,8 +220,9 @@ def import_students_from_rows(rows):
             errors.append(f"Row {index}: login account email {email} already exists")
             continue
 
+        # Sessions the class held before the import are not the student's (services/counting.py).
         student = Student(name=name, roll_no=roll_no, email=email,
-                          department_id=department.id, semester_id=semester.id)
+                          department_id=department.id, semester_id=semester.id, class_joined_at=utc_now())
         db.session.add(student)
         db.session.flush()
         created.append((student, ensure_student_account(student)))

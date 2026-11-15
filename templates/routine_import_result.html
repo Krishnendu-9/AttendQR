@@ -1,0 +1,34 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, page_header, card, callout with context %}
+{% set page_title = 'Routine import' %}
+{% set breadcrumbs = [('Class routines', url_for('routine.classes')), (class_label, url_for('routine.view', semester_id=semester.id)), ('Import', None)] %}
+
+{% block content %}
+{% call page_header('Routine import', class_label ~ ' · ' ~ added ~ ' of ' ~ total ~ ' rows imported into the draft') %}
+  <a href="{{ url_for('routine.editor', semester_id=semester.id) }}" class="{{ btn('primary') }}">{{ icon('pencil') }}<span>Review the draft</span></a>
+{% endcall %}
+
+<div class="mb-6">
+  {% call callout('Nothing is published yet', 'info') %}
+    The rows went into the draft. Review it in the editor, then publish it from the date it starts.
+  {% endcall %}
+</div>
+
+{% if errors %}
+{% call card('Rows not imported', 'Fix these in the spreadsheet and import them again, or add them in the editor.', icon_name='circle-alert') %}
+  <ul class="space-y-2 text-body-md">
+    {% for number, message in errors %}<li><span class="text-label-lg text-foreground">Row {{ number }}:</span> {{ message }}</li>{% endfor %}
+  </ul>
+{% endcall %}
+{% endif %}
+
+{% if notes %}
+<div class="mt-6">
+{% call card('Imported, with a warning', icon_name='triangle-alert') %}
+  <ul class="space-y-2 text-body-md">
+    {% for number, message in notes %}<li><span class="text-label-lg text-foreground">Row {{ number }}:</span> {{ message }}</li>{% endfor %}
+  </ul>
+{% endcall %}
+</div>
+{% endif %}
+{% endblock %}

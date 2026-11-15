@@ -20,8 +20,11 @@ from ..access import (
 )
 from ..extensions import db
 from ..models import ActivityLog, ClassSession, Subject, User
+from ..services.changes import allowed_kinds, can_undo, may_run
+from ..services.occurrences import NOT_RECORDED, occurrences
 from ..services.reports import attendance_counts, build_student_attendance_summary, total_attendance
-from ..utils import utc_now
+from ..services.routine import week_start
+from ..utils import local_now, utc_now
 
 bp = Blueprint('main', __name__)
 
@@ -30,7 +33,30 @@ def render_student_dashboard():
     if not current_user.student:
         abort(403)
     summary = build_student_attendance_summary(current_user.student)
-    return render_template('student_dashboard.html', student=current_user.student, summary=summary)
+    today = local_now().date()
+    return render_template('student_dashboard.html', student=current_user.student, summary=summary,
+                           today_classes=occurrences(today, today, student=current_user.student))
+
+
+def routine_overview():
+    """Today's classes for a teacher, and the classes passed without a session this week (staff)."""
+    today = local_now().date()
+    role = user_role()
+    teacher = current_user.teacher if role == 'teacher' else None
+    week_from = week_start(today)
+    if teacher is not None:
+        week = occurrences(week_from, today, teacher_id=teacher.id)
+    elif role in ('principal', 'hod'):
+        semester_ids = [s.id for s in visible_semesters_query().all()]
+        week = occurrences(week_from, today, semester_ids=semester_ids) if semester_ids else []
+    else:
+        week = []
+    return {
+        'today_classes': [o for o in week if o.day == today] if teacher is not None else [],
+        'not_recorded_today': [o for o in week if o.day == today and o.status == NOT_RECORDED],
+        'not_recorded_week': [o for o in week if o.status == NOT_RECORDED],
+        'routine_week_from': week_from,
+    }
 
 
 @bp.route('/healthz')
@@ -96,6 +122,8 @@ def dashboard():
         recent_sessions=recent_rows,
         recent_account_logs=visible_activity_logs_query().order_by(ActivityLog.created_at.desc()).limit(3).all(),
         accounts=accounts,
+        allowed_kinds=allowed_kinds, can_undo=can_undo, may_run=may_run,
+        **routine_overview(),
     )
 
 

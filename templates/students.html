@@ -97,14 +97,14 @@
             <div id="filter-fields" class="space-y-4">
               {% if show_department %}
               <div>
-                <label for="filter-department" class="mb-1.5 block text-label-md text-muted-foreground">Department</label>
+                <label for="filter-department" class="mb-1.5 block text-label-md text-muted-foreground">{{ term('department') }}</label>
                 {% call select_control('department_id', 'filter-department', placeholder='All departments', attrs={'@change': 'resetAndSubmit', 'data-resets': 'semester_id'}) %}
                   {% for d in departments %}<option value="{{ d.id }}"{% if filters.department_id == d.id %} selected{% endif %}>{{ d.display_name }}</option>{% endfor %}
                 {% endcall %}
               </div>
               {% endif %}
               <div>
-                <label for="filter-semester" class="mb-1.5 block text-label-md text-muted-foreground">Semester</label>
+                <label for="filter-semester" class="mb-1.5 block text-label-md text-muted-foreground">{{ term('semester') }}</label>
                 {% call select_control('semester_id', 'filter-semester', placeholder='All semesters', attrs={'@change': 'submit'}) %}
                   {% for s in filter_semesters %}<option value="{{ s.id }}"{% if filters.semester_id == s.id %} selected{% endif %}>{{ s.name }}{% if not filters.department_id and show_department %} ({{ s.department.display_name }}){% endif %}</option>{% endfor %}
                 {% endcall %}
@@ -122,7 +122,7 @@
       <div class="hidden md:block" x-data="columnPicker" data-table="students">
         {% call dropdown('Columns', 'columns-3', variant='outline', size=None, icon_only=False) %}
           <p class="menu-heading">Show columns</p>
-          {% for key, label in [('roll', 'Roll no'), ('department', 'Department'), ('semester', 'Semester'), ('device', 'Device')] %}
+          {% for key, label in [('roll', 'Roll no'), ('department', term('department')), ('semester', term('semester')), ('device', 'Device')] %}
           <button type="button" role="menuitemcheckbox" class="menu-item" :aria-checked="isShown('{{ key }}') ? 'true' : 'false'" @click="toggle('{{ key }}')">
             <span class="flex size-4 items-center justify-center rounded border border-input" :class="isShown('{{ key }}') ? 'border-primary bg-primary text-primary-foreground' : ''">
               <span x-show="isShown('{{ key }}')">{{ icon('check', 'size-3') }}</span>
@@ -146,8 +146,8 @@
           <tr>
             <th scope="col">Student</th>
             <th scope="col" data-col="roll">Roll no</th>
-            {% if show_department %}<th scope="col" data-col="department">Department</th>{% endif %}
-            <th scope="col" data-col="semester">Semester</th>
+            {% if show_department %}<th scope="col" data-col="department">{{ term('department') }}</th>{% endif %}
+            <th scope="col" data-col="semester">{{ term('semester') }}</th>
             <th scope="col" data-col="device">Device</th>
             <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
           </tr>

@@ -1,0 +1,36 @@
+{% extends 'layouts/app.html' %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, empty_state with context %}
+{% set page_title = 'Class routines' %}
+
+{% block content %}
+{% call page_header('Class routines', 'The weekly routine of each class: subjects, groups, teachers and rooms.') %}
+  {% if can_edit %}<a href="{{ url_for('routine.calendar') }}" class="{{ btn('outline') }}">{{ icon('calendar-clock') }}<span>Bell schedules and holidays</span></a>{% endif %}
+{% endcall %}
+
+<section class="card overflow-hidden" aria-label="Classes">
+  {% if rows %}
+  <div class="overflow-x-auto">
+    <table class="data-table">
+      <thead><tr><th scope="col">Class</th><th scope="col">Routine</th><th scope="col"><span class="sr-only">Open</span></th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+        {% set s = row.semester %}
+        <tr data-href="{{ url_for('routine.view', semester_id=s.id) }}">
+          <td class="py-3">
+            <a href="{{ url_for('routine.view', semester_id=s.id) }}" class="text-label-lg text-foreground hover:text-primary">{{ s.department.display_name }} - {{ s.name }}</a>
+          </td>
+          <td class="text-body-md text-muted-foreground">
+            {% if row.current %}In force since {{ row.current.effective_from.strftime('%d %b %Y') }} · {{ row.current.entries|length }} classes{% else %}{{ badge('No routine', 'neutral') }}{% endif %}
+            {% if row.draft and can_edit %} {{ badge('Draft in progress', 'warning') }}{% endif %}
+          </td>
+          <td class="col-actions"><a href="{{ url_for('routine.view', semester_id=s.id) }}" class="{{ btn('ghost', 'sm') }}">Open {{ icon('chevron-right') }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {{ empty_state('calendar-range', 'No classes', 'Classes you can see appear here once semesters exist.') }}
+  {% endif %}
+</section>
+{% endblock %}

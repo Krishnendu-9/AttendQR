@@ -1,0 +1,77 @@
+{#- A routine to print, like the sheet on a notice board: days as rows, periods as columns. -#}
+{% from 'components/ui.html' import icon, btn %}
+{% from 'components/routine.html' import routine_grid, entry_teachers with context %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Routine {{ class_label }} | {{ institution_name or 'AttendQR' }}</title>
+{% include 'components/head.html' %}
+</head>
+<body class="bg-background p-6 text-foreground print:bg-white print:p-0">
+  <div class="mb-4 flex items-start justify-between gap-4">
+    <div>
+      {% if institution_name %}<p class="text-label-lg text-muted-foreground">{{ institution_name }}</p>{% endif %}
+      <h1 class="text-headline-md text-foreground">Class routine · {{ class_label }}</h1>
+      <p class="text-body-sm text-muted-foreground">
+        {% if timetable and not timetable.is_draft %}In force from {{ timetable.effective_from.strftime('%d %b %Y') }}{% if timetable.effective_to %} to {{ timetable.effective_to.strftime('%d %b %Y') }}{% endif %}{% elif timetable %}Draft, not published{% endif %}
+        · Printed {{ format_12h(printed_at) }}
+      </p>
+    </div>
+    <button type="button" class="{{ btn('primary') }} print:hidden" data-print>{{ icon('printer') }}<span>Print</span></button>
+  </div>
+
+  {% if not entries %}
+  <p class="text-body-md text-muted-foreground">No classes in this routine.</p>
+  {% elif table %}
+  <table class="w-full border-collapse text-body-sm">
+    <thead>
+      <tr>
+        <th scope="col" class="border border-border p-2 text-left">Day</th>
+        {% for p in table.periods %}
+        <th scope="col" class="border border-border p-2 text-center {{ 'bg-muted' if p.is_break }}">{{ p.label }}<br><span class="font-normal tabular-nums">{{ p.start_time.strftime('%I:%M').lstrip('0') }}-{{ p.end_time.strftime('%I:%M').lstrip('0') }}</span></th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in table.rows %}
+      <tr>
+        <th scope="row" class="border border-border p-2 text-left">{{ row.name }}</th>
+        {% for cell in row.cells if cell.span %}
+        <td class="border border-border p-2 text-center align-top {{ 'bg-muted' if cell.period and cell.period.is_break }}" colspan="{{ cell.span }}">
+          {% for e in cell.entries %}
+          <div class="{{ 'mt-1 border-t border-border pt-1' if not loop.first }}">
+            <span class="text-label-md">{{ (e.subject.paper_code or e.subject.name) if e.subject else e.title }}</span>
+            {%- if entry_teachers(e) %} ({{ entry_teachers(e) }}){% endif %}{% if e.group %} ({{ e.group.name }}){% endif %}
+            {%- if e.week_pattern != 'every' %} <em>{{ e.week_pattern }} weeks</em>{% endif %}{% if e.room %}<br><span class="text-muted-foreground">{{ e.room }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  {{ routine_grid(grid) }}
+  {% endif %}
+
+  {% if entries %}
+  {% set subjects = entries|selectattr('subject')|map(attribute='subject')|unique(attribute='id')|list %}
+  {% if subjects %}
+  <h2 class="mt-6 text-label-lg text-foreground">Subjects and teachers</h2>
+  <ul class="mt-2 columns-1 gap-8 text-body-sm sm:columns-2">
+    {% for s in subjects|sort(attribute='paper_code') %}
+    <li>{{ subject_display_name(s) }}: {% for t in [s.teacher] + s.co_teachers if t %}{{ t.name }} ({{ teacher_short_name(t) }}){{ ', ' if not loop.last }}{% endfor %}{% if not s.counts_towards_attendance %} <em>(not counted)</em>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if holidays %}
+  <h2 class="mt-6 text-label-lg text-foreground">Coming holidays</h2>
+  <ul class="mt-2 text-body-sm">{% for h in holidays %}<li>{{ h.title }}: {{ h.start_date.strftime('%d %b') }}{% if h.end_date != h.start_date %} to {{ h.end_date.strftime('%d %b') }}{% endif %}</li>{% endfor %}</ul>
+  {% endif %}
+  {% endif %}
+  <script nonce="{{ csp_nonce() }}">
+    document.querySelector('[data-print]').addEventListener('click', function () { window.print(); });
+  </script>
+</body>
+</html>
