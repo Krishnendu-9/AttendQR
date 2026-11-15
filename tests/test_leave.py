@@ -136,6 +136,88 @@ def test_only_the_students_hod_or_the_principal_can_decide(data, client_for, app
     assert leave.status == 'approved'
 
 
+# ── Reopening a decision ─────────────────────────────────────
+
+def reopen(client, leave, note='Approved by mistake'):
+    return post(client, f'/leave/{leave.id}/reopen', {'note': note}, follow_redirects=True)
+
+
+def test_a_decision_can_be_reopened_with_a_reason_and_decided_again(data, client_for):
+    leave = approved_leave(data.student_id, today())
+    leave.decision_note = 'Get well soon'
+    db.session.commit()
+    hod = client_for(data.hod)
+    assert f'/leave/{leave.id}/reopen' in page(hod.get('/leave'))
+
+    assert 'waiting for a decision again' in page(reopen(hod, leave, 'Certificate not received'))
+    db.session.expire_all()
+    assert (leave.status, leave.decided_by_user_id, leave.decided_at, leave.decision_note) == ('pending', None, None, None)
+    entry = ActivityLog.query.filter_by(action='leave_reopened', target_id=leave.id).one()
+    assert 'which was approved' in entry.description and 'Certificate not received' in entry.description
+
+    post(hod, f'/leave/{leave.id}/decide', {'decision': 'reject', 'note': 'No certificate'})
+    db.session.expire_all()
+    assert leave.status == 'rejected'
+
+
+def test_reopening_an_approval_counts_the_classes_again(data, client_for):
+    class_session = add_session(data, present=())
+    leave = approved_leave(data.student_id, session_day(class_session))
+    student = db.session.get(Student, data.student_id)
+    assert build_student_attendance_summary(student)['overall_total'] == 0
+
+    reopen(client_for(data.hod), leave)
+    db.session.expire_all()
+    assert build_student_attendance_summary(student)['overall_total'] == 1
+
+
+def test_reopening_needs_a_reason_and_a_decided_request(data, client_for):
+    hod = client_for(data.hod)
+    decided = approved_leave(data.student_id, today())
+    waiting = approved_leave(data.student_id, today() + timedelta(days=5), status=LeaveRequest.PENDING)
+
+    assert 'short reason for reopening' in page(reopen(hod, decided, note=' '))
+    assert 'still waiting for a decision' in page(reopen(hod, waiting))
+    db.session.expire_all()
+    assert decided.status == 'approved'
+    assert ActivityLog.query.filter_by(action='leave_reopened').count() == 0
+
+
+def test_a_rejection_is_not_reopened_over_a_newer_request_for_the_same_days(data, client_for):
+    rejected = approved_leave(data.student_id, today(), today() + timedelta(days=2), status=LeaveRequest.REJECTED)
+    approved_leave(data.student_id, today() + timedelta(days=1), status=LeaveRequest.PENDING)
+
+    assert 'cannot be reopened' in page(reopen(client_for(data.hod), rejected))
+    db.session.expire_all()
+    assert rejected.status == 'rejected'
+
+
+def test_only_the_students_hod_or_the_principal_can_reopen(data, client_for):
+    from conftest import make_account
+
+    other_hod = make_account('hod2@rcciit.org.in', 'hod', department_id=data.other_id)
+    db.session.commit()
+    leave = approved_leave(data.student_id, today())
+
+    assert post(client_for(other_hod.username), f'/leave/{leave.id}/reopen', {'note': 'x'}).status_code == 403
+    assert post(client_for(data.teacher), f'/leave/{leave.id}/reopen', {'note': 'x'}).status_code == 403
+    assert post(client_for(data.student), f'/leave/{leave.id}/reopen', {'note': 'x'}).status_code == 403
+    reopen(client_for(data.principal), leave)
+    db.session.expire_all()
+    assert leave.status == 'pending'
+
+
+def test_a_decision_in_a_locked_semester_cannot_be_reopened(data, client_for):
+    leave = approved_leave(data.student_id, today())
+    hod = client_for(data.hod)
+    post(hod, f'/semesters/{data.sem1_id}/lock')
+
+    assert f'/leave/{leave.id}/reopen' not in page(hod.get('/leave'))
+    assert 'is locked' in page(reopen(hod, leave))
+    db.session.expire_all()
+    assert leave.status == 'approved'
+
+
 # ── Effect on attendance ─────────────────────────────────────
 
 def make_history(data):
