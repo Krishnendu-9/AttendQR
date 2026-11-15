@@ -2,6 +2,7 @@
 import io
 import re
 
+from attendqr.extensions import db
 from attendqr.models import User
 from attendqr.security import TEMPORARY_PASSWORD_ALPHABET, generate_temporary_password
 from conftest import login, post
@@ -45,6 +46,23 @@ def test_reset_gives_a_new_one_time_password(app, data, client_for):
     assert login(app.test_client(), data.student, 'MCA001', expect_success=False).status_code == 200
     login(app.test_client(), data.student, password)
     assert User.query.filter_by(username=data.student).one().must_change_password
+
+
+def test_teacher_resets_passwords_only_in_classes_they_teach(app, data, client_for):
+    """The teacher has subjects in Semester 1 only; a reset would hand them a Semester 2 student's account."""
+    other_class = User.query.filter_by(username=data.sem2_student).one()
+    old_hash = other_class.password
+    teacher = client_for(data.teacher)
+
+    assert 'Reset password' not in teacher.get(f'/students/{other_class.student_id}').get_data(as_text=True)
+    assert 'Reset password' in teacher.get(f'/students/{data.student_id}').get_data(as_text=True)
+    assert post(teacher, f'/students/reset-password/{other_class.student_id}').status_code == 403
+    db.session.expire_all()
+    assert db.session.get(User, other_class.id).password == old_hash
+    login(app.test_client(), data.sem2_student)  # the student's own password still works
+
+    response = post(client_for(data.hod), f'/students/reset-password/{other_class.student_id}', follow_redirects=True)
+    assert ONE_TIME.search(response.get_data(as_text=True))
 
 
 def test_import_shows_each_one_time_password_once(app, data, client_for):
