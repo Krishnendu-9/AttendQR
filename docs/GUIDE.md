@@ -35,7 +35,7 @@ Columns: `name, roll_no, email, semester`. Principal uploads also need `departme
 4. The system checks the session is still active, the student belongs to that department and semester, and the phone is the student's registered device. The scan window belongs to the phone and browser that scanned, the campus network is checked again when attendance is confirmed, and each scan can mark attendance once, so copying the browser's cookies elsewhere does not help.
 5. Attendance is stored once per student per session. The IP address the scan came from is stored with it for 30 days (see [Scan IP addresses](DEPLOYMENT.md#scan-ip-addresses)).
 
-Device rules: a student's first successful attendance registers that phone, and each phone can belong to only one student. Teachers, HODs, and the Principal can reset a student's device lock from the Students page (for example after a phone change). The device lock is a browser cookie, so a student who has not registered a phone yet could register any browser; scans that register a device are labelled **New device** in the session view, with a count, so several at once (especially from one address) stand out.
+Device rules: a student's first successful attendance registers that phone, and each phone can belong to only one student. The HOD and the Principal can reset a student's device lock from the Students page (for example after a phone change), and so can a teacher, for students in a class where they teach a subject. The same rule applies to resetting a student's password, which shows the staff member a working one-time password. The device lock is a browser cookie, so a student who has not registered a phone yet could register any browser; scans that register a device are labelled **New device** in the session view, with a count, so several at once (especially from one address) stand out.
 
 Sessions deactivated before anyone marked attendance are treated as void (created by mistake) and do not count as classes held. Deactivating after attendance was taken still counts the class.
 
@@ -53,7 +53,7 @@ The Generate QR page also supports special classes (aptitude, workshops). Teache
 
 Students ask to be excused from classes on the **Leave** page: the type (medical, personal, college duty), the first and last day, and a reason. A request covers at most 30 days, can start up to 30 days in the past (certificates often come later) and at most 90 days ahead, and cannot overlap another waiting or approved request. Until it is decided, the student can withdraw it.
 
-The student's HOD or the Principal approves or rejects it on **Leave requests**. A rejection needs a note, which the student sees. Every request and decision is in the activity log, with who decided.
+The student's HOD or the Principal approves or rejects it on **Leave requests**. A rejection needs a note, which the student sees. A decision made by mistake can be reopened from **Recent decisions**, with a reason: the request waits for a decision again, and its days count as usual until then. A request cannot be reopened while another waiting or approved request covers the same days. Every request, decision and reopening is in the activity log, with who made it.
 
 **Classes held during approved leave do not count for the student, either way.** They are left out of both classes held and classes attended, on the student dashboard, in the attendance report and exports (marked `L`), in the shortage list and in analytics. Waiting and rejected requests change nothing.
 
@@ -76,7 +76,7 @@ Buddy pairs need scan addresses, which are kept for `SCAN_IP_RETENTION_DAYS`; th
 
 ## Locking a semester
 
-When a semester's attendance is final (usually after exams), the HOD or the Principal locks it from **Semesters**. From then on nothing in it can change: no new sessions, no scans, no manual entries or removals, no spot checks, no session deletions, and no leave decisions for its students. Only the Principal can unlock it, and must give a reason. Locking and unlocking are in the activity log. Condonations (below) can still be granted.
+When a semester's attendance is final (usually after exams), the HOD or the Principal locks it from **Semesters**. From then on nothing in it can change: no new sessions, no scans, no manual entries or removals, no spot checks, no session deletions, and no leave decisions (or reopened decisions) for its students. A student who scanned just before the lock is told at once, before they confirm. Only the Principal can unlock it, and must give a reason. Locking and unlocking are in the activity log. Condonations (below) can still be granted.
 
 ## Exam eligibility
 
