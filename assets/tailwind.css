@@ -67,21 +67,23 @@
 }
 
 .dark {
-  --background: #0B0F19;
-  --card: #121826;
-  --popover: #172033;
-  --foreground: #E5E9F0;
-  --muted-foreground: #94A3B8;
-  --placeholder: #5B6478;
-  --border: #1F2937;
-  --input: #334155;
-  --muted: #1A2233;
+  /* Neutral surfaces, so blue marks only what acts or is selected (buttons, links, focus, the
+     active menu item) and the status colours (present, absent, warnings) read true. */
+  --background: #09090B;
+  --card: #111113;
+  --popover: #18181B;
+  --foreground: #E4E4E7;
+  --muted-foreground: #A1A1AA;
+  --placeholder: #71717A;
+  --border: #27272A;
+  --input: #3F3F46;
+  --muted: #1C1C1F;
   --primary: #2563EB;
   --primary-foreground: #FFFFFF;
   --primary-hover: #3B82F6;
   --vibrant: #3B82F6;
-  --secondary: #172554;
-  --accent: #131E3A;
+  --secondary: #1A2440;
+  --accent: #202024;
   --ink: #BFDBFE;
   --ring: #60A5FA;
   --success: #34D399;
