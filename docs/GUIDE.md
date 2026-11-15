@@ -49,6 +49,72 @@ Deleting a whole session erases its attendance records. A session nobody marked 
 
 The Generate QR page also supports special classes (aptitude, workshops). Teacher selection is optional, and a custom title can be entered.
 
+## Subject options
+
+Besides its paper code, name and main teacher, a subject (on **Subjects**) has:
+
+- **Co-teachers**: teachers who share it, such as the two teachers of a lab. They can start its sessions, open and correct every session of it (whoever started it), and see it in their reports.
+- **Only for group**: for an elective or a lab one batch takes. New sessions of the subject start for that group.
+- **Counts towards attendance** (on by default): untick it for something taught but never counted, such as a non-credit course. Its sessions are still listed in the reports and exports, but count in nobody's percentage, shortage, analytics or exam eligibility, like special classes.
+
+Teachers also have a **short name** (edited with their account; empty uses their initials, "Dr. Sutapa Chatterjee" is SC), used in the class routine.
+
+## Groups (lab batches, electives)
+
+A class can have **groups**: lab batches, electives or tutorial sets. The HOD or Principal manages them from **Semesters → Groups**; teachers can see the groups of classes they teach.
+
+- **Create** a group by name, then tick its members, or **split** the class by roll number: into N equal groups, or by ranges such as `Gr-1: 1-37` and `Gr-2: 38-75` (a plain number matches the number at the end of a roll number, so `37` matches `MCA037`). A student can be in several groups.
+- **Start a session for a group** by choosing it under **Group** on Generate QR. Leave it on *Whole class* for a normal lecture.
+- **The rule:** a group's session counts only for the students who were in the group when it was held. For everyone else in the class it counts neither way, shown as `–`, so the other lab batch is never marked absent. Only members can scan into it or be marked present; a student added to the group later can still be marked for it by staff.
+- **History is kept.** Removing a student ends their membership instead of deleting it, so sessions they were in keep counting for them. Moving a student to another class ends their groups in the old class.
+- A group that has sessions cannot be deleted (it would lose who they counted for); rename it instead.
+
+## Class routine
+
+The routine (timetable) says which classes each class has in a week. It is built in the app; nothing has to be imported.
+
+### Bell schedules and holidays (Calendar)
+
+- A **bell schedule** lists a day's periods, such as 10:00-10:50, 10:50-11:40 and a lunch break, and the weekdays that use it. A department can have its own schedule for a day, which it uses before the institution's (a Saturday half-day, a Sunday batch). The Principal manages the institution's schedules; an HOD manages their department's.
+- **Holidays** have no classes: for everyone, or for one department.
+- **Working days** and the **first day of the week** are on **Settings**. Sunday can be a working day.
+
+### Building and publishing a routine
+
+1. On **Class routines**, open a class and choose **Create routine** (or **Edit routine**). This opens a **draft**; nobody else sees it.
+2. Click a period in the grid, or **Add class**: choose the day, a period and its length (or any start and end time), the subject (or a title such as "Special Tutorial Class"), the group, the teachers, the room, and whether it repeats every week, in odd weeks or in even weeks. A class can also be limited to some dates.
+3. Two lab batches can run side by side. The draft refuses a clash, and names it: the same teacher in two places (also in another class's routine), the same room twice, a whole-class class beside anything else, or one group twice. Two groups that share students only warn; tick **Save anyway** if they never attend both.
+4. **Copy a day** repeats one day on another. **Copy a routine** starts from another class: subjects are matched by paper code, and classes without a match stay to be assigned.
+5. **Publish** from a date. The routine in force until then ends the day before. A published routine never changes: editing makes a new draft, so every past week keeps the routine it really had. For the same reason a new version starts today or later; only a class's first routine can start in the past. **Print** gives the sheet for the notice board: days against periods, with the teachers' short names.
+
+A locked semester's routine can be viewed but not changed.
+
+### Using it every day
+
+- **Today's classes** on a teacher's dashboard lists their classes, with **Start session** from 15 minutes before a class until it ends. The session gets the subject, the group and a duration up to the class's end. Once started it shows **Open session**, also for a co-teacher.
+- A session started by hand on **Generate QR** that matches a class under way (same class, subject and group) holds that class. Otherwise it is marked **Unscheduled**, but only in classes that have a routine; nothing is refused.
+- **My routine** shows a teacher every class they teach in a week, and a student their classes, with their groups only. The student dashboard shows **Today**.
+
+### Changes for one date
+
+On a class's week (**Class routines → This week**) or in a teacher's routine:
+
+- **Cancel** or **Move** a class (to another time or date), with a reason. A teacher can do this for their own classes until the class ends, if **Settings → Teachers may change their own classes** is on (it is by default). A class that passed without a session stays **Not recorded** unless the HOD or Principal records what happened. A class cannot be moved to a time that has passed or onto a holiday; if a holiday is declared later on the date a class was moved to, it shows as cancelled.
+- **Substitute**: another teacher takes the class that day and can run its session. HOD and Principal only.
+- **Extra class**: a class on one date that is not in the routine. HOD and Principal only.
+
+Every change is checked for clashes on that date, is in the activity log, and can be undone until the class is held. Students see cancellations and moves in their Today card and week.
+
+### Importing a routine (optional)
+
+The routine is normally built in the editor. To start from a spreadsheet instead, open the draft and use **Import from a spreadsheet**. **Download the template** gives the columns: one row per class, with the day; a start and end time, or a period of the bell schedule and its length in periods; the paper code of a subject or a title; the group; the teachers (emails or short names, such as `MG+SC`); the room; and whether it repeats every week, in odd weeks or in even weeks. Each row is checked like the editor's dialog, clashes included. Rows that cannot be taken are listed with the reason, and nothing is published until the HOD reviews the draft. The import does not read the merged-cell layout of a printed routine.
+
+### Planned and held
+
+**Planned and held** lists every class of the routine over some days (this month by default) and whether a QR session held it: **Held**, **Not recorded** (it passed without a session), **Cancelled**, or still to come; with totals per subject and per teacher and an Excel export. Dashboards warn about classes not recorded this week. Teachers see their own classes.
+
+The rule that never changes: a class in the routine that nobody recorded counts for no student, in any percentage, list or report. Only sessions count.
+
 ## Leave
 
 Students ask to be excused from classes on the **Leave** page: the type (medical, personal, college duty), the first and last day, and a reason. A request covers at most 30 days, can start up to 30 days in the past (certificates often come later) and at most 90 days ahead, and cannot overlap another waiting or approved request. Until it is decided, the student can withdraw it.
@@ -72,19 +138,19 @@ After students scan, the teacher can open **Spot check** in the session view and
 | New phones | Registered a new phone 2 or more times; and sessions where 3 or more phones were registered at once | 2 |
 | Manual entries | Marked present by hand 3 or more times (usually innocent; shown so a pattern is visible) | 1 |
 
-Buddy pairs need scan addresses, which are kept for `SCAN_IP_RETENTION_DAYS`; the report says how many scans still have one.
+Buddy pairs need scan addresses, which are kept for `SCAN_IP_RETENTION_DAYS`; the report says how many scans still have one. They assume each phone reaches the app with its own address, as on a campus LAN. On a public deployment where every campus phone shares one outgoing address, nearly every pair would match, so read buddy pairs with care there (see the threat model).
 
 ## Locking a semester
 
-When a semester's attendance is final (usually after exams), the HOD or the Principal locks it from **Semesters**. From then on nothing in it can change: no new sessions, no scans, no manual entries or removals, no spot checks, no session deletions, and no leave decisions (or reopened decisions) for its students. A student who scanned just before the lock is told at once, before they confirm. Only the Principal can unlock it, and must give a reason. Locking and unlocking are in the activity log. Condonations (below) can still be granted.
+When a semester's attendance is final (usually after exams), the HOD or the Principal locks it from **Semesters**. From then on nothing in it can change: no new sessions, no scans, no manual entries or removals, no spot checks, no session deletions, and no leave decisions (or reopened decisions) for its students. A student who scanned just before the lock is told at once, before they confirm. Only the Principal can unlock it, and must give a reason. Locking and unlocking are in the activity log. The lock also keeps the exam eligibility percentages in force at that moment, so a later change in **Settings** does not change a final semester's eligibility; unlocking lets it follow the current settings again. Condonations (below) can still be granted.
 
 ## Exam eligibility
 
 **Exam eligibility** (HOD and Principal) places each student of a class by their percentage over the whole semester, counted as in the reports:
 
-- **Eligible**: at least `ELIGIBILITY_PERCENT` (75%).
-- **Needs condonation**: from `CONDONATION_PERCENT` (65%) up to 75%. The HOD or Principal can **condone** it with a reason; the student is then *Eligible (condoned)*. A condonation can be revoked.
-- **Detained**: below 65%; cannot be condoned.
+- **Eligible**: at least the eligibility percentage (75% unless changed in **Settings**).
+- **Needs condonation**: from the condonation limit (65% unless changed) up to the eligibility percentage. The HOD or Principal can **condone** it with a reason; the student is then *Eligible (condoned)*. A condonation can be revoked.
+- **Detained**: below the condonation limit; cannot be condoned.
 
 The Excel export lists every student with their status and, for condoned students, who condoned it and why.
 
@@ -96,12 +162,30 @@ Turning it on shows 10 recovery codes, once. Each signs in once in place of a co
 
 Accounts in `TOTP_REQUIRED_ROLES` (Principal and HOD by default) must set it up before they can use anything else, and cannot turn it off. If someone loses their phone and their recovery codes, the Principal (or the HOD, for a teacher) uses **Reset two-step sign-in** on the Accounts page; they are signed out everywhere and set it up again. Students do not use two-step sign-in.
 
+## Settings
+
+The Principal changes institution-wide options on **Settings**. A college that changes nothing keeps the behaviour the server's settings give.
+
+- **Institution name**: shown in the sidebar, page titles, the sign-in page and exported reports (in Excel, on printed pages and as the first note; in PDF, above the title). Empty shows only "AttendQR".
+- **Attendance target** (80%): the percentage students are warned against on their dashboard, the shortage list's starting threshold, and the line in analytics.
+- **Exam eligibility** (75%) and **condonation limit** (65%): the bands of the eligibility report. The condonation limit cannot be above the eligibility percentage.
+- **Time zone** (Asia/Kolkata): times are shown in it, and "today", report dates and leave days follow it. Set it before classes start: changing it later moves past leave days and report dates as well.
+- **Working days** (Monday to Saturday; Sunday can be added): the days classes can be held, for the class routine.
+- **First day of the week** (Monday): where weeks begin in analytics, the integrity report, and odd and even weeks in the routine. Changing it during a term can swap which weeks are odd and even in published routines, past weeks included.
+
+- **Teachers may change their own classes** (on): whether a teacher can cancel or move a routine class they teach, for one date, until it ends.
+- **Terms**: the words the app uses, for an institution that says "Course" for department, "Batch" for semester, "Paper" for subject, "Section" for group, or "Director" and "Coordinator" for the Principal and HOD. The menus, page titles, form labels, role names and messages follow them. Web addresses and earlier activity log entries keep the usual words.
+
+Each field shows the server's default, and who changed it here and when. **Reset to default** goes back to the server's value. Every change is in the activity log. Security settings (the campus network, QR timings, two-step sign-in, idle sign-out) are not on the page: they stay with whoever runs the server.
+
 ## Reporting
 
 - Session-wise attendance reports with pagination
 - Detailed student-by-session matrix (uses the same subject and date filters as the report)
 - Excel and PDF export
-- Student-wise attendance percentage and classes needed to reach 80%
-- Shortage list: students below a chosen percentage (default 80%) overall or in any subject, worst first, with the consecutive classes each needs and Excel export
+- Student-wise attendance percentage and classes needed to reach the attendance target (80% by default)
+- Shortage list: students below a chosen percentage (default: the attendance target) overall or in any subject, worst first, with the consecutive classes each needs and Excel export
+- Sessions for a group (a lab batch) count only for its members; the others see `–` and are not counted, in every report and export
 - Students moved to another semester or department stay in their old class's reports, shortage list and exports, marked "Moved out". Sessions held after the move show `–` and do not count for them, and staff can still correct the old class's sessions for them.
-- Analytics for one class over the last 4 to 16 weeks: the weekly attendance rate against the target, each subject's rate, and the students below the target over the period or in the last two weeks. Every number is computed from the same data as the reports, so leave, moved students, void sessions and special classes are handled the same way.
+- Students added to a class, or moved into it, after it has held sessions are marked "Joined late": the sessions before they joined show `–` and do not count for them. If staff marked them present for one (a class they attended before their account existed), it counts. Students from before this rule existed count every session, as before.
+- Analytics for one class over the last 4 to 16 weeks: the weekly attendance rate against the target, each subject's rate, and the students below the target over the period or in the last two weeks. Every number is computed from the same data as the reports, so leave, late joiners, moved students, void sessions and special classes are handled the same way.
