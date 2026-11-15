@@ -77,18 +77,30 @@ def parse_leave_form(form, student):
         return None, "Give a short reason."
     if len(reason) > MAX_REASON_LENGTH:
         return None, f"Keep the reason under {MAX_REASON_LENGTH} characters."
-    overlapping = LeaveRequest.query.filter(
-        LeaveRequest.student_id == student.id,
-        LeaveRequest.status.in_((LeaveRequest.PENDING, LeaveRequest.APPROVED)),
-        LeaveRequest.start_date <= end,
-        LeaveRequest.end_date >= start,
-    ).first()
+    overlapping = overlapping_request(student.id, start, end)
     if overlapping:
         return None, (
             f"You already have a {overlapping.status} request covering "
             f"{overlapping.start_date:%d %b} to {overlapping.end_date:%d %b}."
         )
     return {'kind': kind, 'reason': reason, 'start_date': start, 'end_date': end}, None
+
+
+def overlapping_request(student_id, start, end, exclude_id=None):
+    """A pending or approved request of the student that shares a day with start..end, if any.
+
+    A student has at most one such request for any day, so a decision never has to
+    weigh two requests against each other.
+    """
+    query = LeaveRequest.query.filter(
+        LeaveRequest.student_id == student_id,
+        LeaveRequest.status.in_((LeaveRequest.PENDING, LeaveRequest.APPROVED)),
+        LeaveRequest.start_date <= end,
+        LeaveRequest.end_date >= start,
+    )
+    if exclude_id is not None:
+        query = query.filter(LeaveRequest.id != exclude_id)
+    return query.first()
 
 
 def describe_range(leave):
