@@ -6,7 +6,7 @@ from attendqr.models import ActivityLog, AuditChain, LeaveRequest, Semester, Spo
 from attendqr.services.audit import verify_chain
 from attendqr.services.qr import make_qr_token
 from attendqr.utils import local_now
-from conftest import add_session, post
+from conftest import add_session, post, post_json
 
 
 def page(response):
@@ -147,6 +147,24 @@ def test_nothing_in_a_locked_semester_can_change(data, client_for):
     db.session.expire_all()
     assert len(class_session.attendances) == 1 and SpotCheck.query.count() == 0 and leave.status == 'pending'
     assert db.session.get(Semester, data.sem2_id).attendance_locked is False  # other semesters are untouched
+
+
+def test_a_lock_after_the_scan_is_shown_before_the_student_confirms(data, client_for):
+    class_session = add_session(data)
+    student = client_for(data.student)
+    scan = student.get(f'/scan/{make_qr_token(class_session.id)}')
+    assert scan.status_code == 302 and scan.headers['Location'].endswith('/attend')
+    lock(client_for(data.hod), data)
+
+    attend = student.get('/attend')
+    assert attend.status_code == 403
+    text = page(attend)
+    assert 'Attendance Locked' in text and 'Mark My Attendance' not in text
+    # The scan grant is spent: confirming afterwards asks for a new scan.
+    confirm = post_json(student, '/mark_attendance')
+    assert confirm.status_code == 410 and 'Scan the QR code' in confirm.get_json()['message']
+    db.session.expire_all()
+    assert class_session.attendances == []
 
 
 def test_the_session_view_shows_the_lock_instead_of_corrections(data, client_for):
