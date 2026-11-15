@@ -16,14 +16,14 @@
     {{ icon('menu', 'size-5') }}
   </button>
 
-  <p class="min-w-0 truncate text-headline-sm text-foreground md:hidden">{{ page_title }}</p>
+  <p class="min-w-0 truncate text-headline-md text-foreground md:hidden">{{ page_title }}</p>
   <nav aria-label="Breadcrumb" class="hidden min-w-0 md:block">
-    <ol class="flex items-center gap-1.5 text-body-md">
+    <ol class="flex items-center gap-2 text-headline-sm font-normal">
       {% for label, href in breadcrumbs %}
       <li class="flex min-w-0 items-center gap-1.5">
-        {% if not loop.first %}<span class="text-placeholder">{{ icon('chevron-right', 'size-3.5') }}</span>{% endif %}
+        {% if not loop.first %}<span class="text-placeholder">{{ icon('chevron-right', 'size-4') }}</span>{% endif %}
         {% if loop.last or not href %}
-        <span class="truncate {{ 'text-label-lg text-foreground' if loop.last else 'text-muted-foreground' }}"{% if loop.last %} aria-current="page"{% endif %}>{{ label }}</span>
+        <span class="truncate {{ 'text-headline-md text-foreground' if loop.last else 'text-muted-foreground' }}"{% if loop.last %} aria-current="page"{% endif %}>{{ label }}</span>
         {% else %}
         <a href="{{ href }}" class="truncate rounded text-muted-foreground transition-colors hover:text-foreground focus-visible:shadow-focus focus-visible:outline-none">{{ label }}</a>
         {% endif %}
