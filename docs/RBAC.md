@@ -20,6 +20,9 @@ The system supports four roles:
 - Approves or rejects leave requests from any department, and can reopen a decision made by mistake (with a reason).
 - Sees the integrity report and exam eligibility for every class, and condones students in the condonation band.
 - Locks and unlocks semesters (unlocking needs a reason).
+- Manages the groups of every class (lab batches, electives): creates, renames, deletes, splits by roll number and sets members.
+- Manages the institution's bell schedules and holidays, and every class's routine: drafts, publishes, and changes for one date (cancel, move, substitute, extra class).
+- Changes the institution's settings on the **Settings** page: its name, the attendance target, the exam eligibility and condonation percentages, the time zone, the working days, the first day of the week, whether teachers may change their own classes, and the words the app uses (including the role names). Only the Principal sees the page; every change is in the activity log.
 - Resets two-step sign-in for HOD and Teacher accounts (lost phone).
 - Must use two-step sign-in (by default).
 
@@ -39,6 +42,8 @@ The system supports four roles:
 - Must use two-step sign-in (by default).
 - Cannot create Principal or HOD accounts.
 - Cannot access other departments.
+- Manages the groups (lab batches, electives) of the department's classes; every change is logged.
+- Builds and publishes the routines of the department's classes, manages its own bell schedules and holidays, and makes changes for one date (cancel, move, substitute, extra class).
 
 ## Teacher
 
@@ -53,6 +58,9 @@ The system supports four roles:
 - Creates or bulk-imports student profiles for the assigned department.
 - Can reset student passwords and device locks only for students in classes where they teach a subject (either reset hands over the account).
 - Cannot manage users or academic master data.
+- Sees the groups of the classes they teach (read only), and can start a session for one group.
+- Has the same rights for subjects they co-teach as for their own: starts their sessions, opens and corrects any session of them, and sees them in reports.
+- Sees the routines of classes they teach and their own week (My routine), starts sessions from Today's classes, and can cancel or move their own classes for one date, until the class ends, when the setting allows it.
 
 ## Student
 
@@ -61,6 +69,7 @@ The system supports four roles:
 - Logs in with the student email and the temporary password given by staff, and must set a private password at first login.
 - Marks attendance only from their own registered phone; each phone can be registered to one student.
 - Applies for leave and can withdraw a request until it is decided; sees the decision and any note.
+- Sees their own routine (only their groups) and today's classes, with cancellations and moves.
 
 ## Account Verification
 
