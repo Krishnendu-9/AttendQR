@@ -8,6 +8,7 @@ import pytest
 
 from attendqr.extensions import db
 from attendqr.models import ActivityLog, User
+from attendqr.services import two_factor
 from conftest import PASSWORD, login, post
 
 
@@ -22,7 +23,7 @@ def code(secret, steps_ahead=0):
 def enable(client, username):
     """Turn two-step sign-in on through the setup page; returns (secret, recovery codes)."""
     client.get('/account/two-step')
-    secret = User.query.filter_by(username=username).one().totp_pending_secret
+    secret = two_factor.decrypt_secret(User.query.filter_by(username=username).one().totp_pending_secret)
     response = post(client, '/account/two-step', {'action': 'enable', 'code': code(secret)})
     codes = re.findall(r'<li>([A-Z0-9]{5}-[A-Z0-9]{5})</li>', response.get_data(as_text=True))
     return secret, codes
@@ -44,10 +45,21 @@ def test_setup_shows_a_qr_code_and_turns_on_with_a_valid_code(data, client_for):
     secret, codes = enable(client, data.teacher)
 
     user = User.query.filter_by(username=data.teacher).one()
-    assert user.totp_secret == secret and user.totp_pending_secret is None and user.totp_enabled_at
+    assert two_factor.decrypt_secret(user.totp_secret) == secret
+    assert user.totp_pending_secret is None and user.totp_enabled_at
     assert len(codes) == 10 and len(set(codes)) == 10
     assert codes[0] not in (user.recovery_codes or '')  # only hashes are stored
     assert ActivityLog.query.filter_by(action='two_factor_enabled').count() == 1
+
+
+def test_secrets_are_stored_encrypted_under_the_secret_key(app, data, client_for):
+    secret, _ = enable(client_for(data.teacher), data.teacher)
+    stored = User.query.filter_by(username=data.teacher).one().totp_secret
+    assert secret not in stored and stored.startswith('gAAAA')  # a Fernet token, not the key itself
+
+    # A copy of the database without the server's SECRET_KEY cannot recover the key.
+    app.config['SECRET_KEY'] = 'another-installation-' + 'x' * 40
+    assert two_factor.decrypt_secret(stored) is None
 
 
 def test_a_wrong_code_does_not_turn_it_on(data, client_for):

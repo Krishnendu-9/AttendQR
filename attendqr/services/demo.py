@@ -301,7 +301,7 @@ def _add_session(rng, subject, teacher, account, start, students, totals,
     start = local_to_utc(start)  # the timetable is in local time; timestamps are stored in UTC
     session = ClassSession(
         subject_id=subject.id, teacher_id=teacher.id if teacher else None, special_title=special_title,
-        token=secrets.token_hex(16), created_at=start,
+        created_at=start,
         expires_at=start + timedelta(minutes=SESSION_MINUTES), is_active=active,
     )
     db.session.add(session)

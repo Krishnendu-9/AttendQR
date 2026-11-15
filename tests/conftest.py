@@ -191,7 +191,7 @@ def add_session(data, subject_id=None, active=True, present=(), special_title=No
     now = utc_now() - timedelta(days=days_ago)
     class_session = ClassSession(
         subject_id=subject_id or data.subject_id, teacher_id=data.teacher_id, special_title=special_title,
-        token=f"t-{ClassSession.query.count()}-{now.timestamp()}", created_at=now,
+        created_at=now,
         expires_at=now + timedelta(minutes=30), is_active=active,
     )
     db.session.add(class_session)

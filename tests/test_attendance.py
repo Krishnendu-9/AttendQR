@@ -1,5 +1,6 @@
 """QR sessions and the student scan → attend → mark flow."""
 import time
+import uuid
 from datetime import timedelta
 
 from itsdangerous import TimestampSigner
@@ -124,6 +125,25 @@ def test_teacher_can_reset_device_lock(data, client_for):
     assert db.session.get(Student, data.student_id).device_id is None
 
 
+def test_teacher_resets_device_locks_only_in_classes_they_teach(data, client_for):
+    """The teacher has subjects in Semester 1 only; the HOD may reset anyone in the department."""
+    device = '11111111-2222-3333-4444-555555555555'
+    other_class = Student.query.filter_by(email=data.sem2_student).one()
+    other_class.device_id = device
+    db.session.commit()
+    teacher = client_for(data.teacher)
+
+    assert 'Reset device' not in teacher.get(f'/students/{other_class.id}').get_data(as_text=True)
+    assert 'Reset device' in teacher.get(f'/students/{data.student_id}').get_data(as_text=True)
+    assert post(teacher, f'/students/reset-device/{other_class.id}').status_code == 403
+    db.session.expire_all()
+    assert db.session.get(Student, other_class.id).device_id == device
+
+    post(client_for(data.hod), f'/students/reset-device/{other_class.id}')
+    db.session.expire_all()
+    assert db.session.get(Student, other_class.id).device_id is None
+
+
 def test_expired_qr_token_is_rejected(monkeypatch, data, client_for):
     class_session = create_session(client_for(data.teacher), data)
     monkeypatch.setattr(TimestampSigner, 'get_timestamp', lambda self: int(time.time()) - 120)
@@ -136,10 +156,12 @@ def test_expired_qr_token_is_rejected(monkeypatch, data, client_for):
 
 
 def test_permanent_session_token_no_longer_works(data, client_for):
-    class_session = create_session(client_for(data.teacher), data)
+    # The first version put a permanent random id (a UUID) in the QR; only signed, expiring tokens work now.
+    create_session(client_for(data.teacher), data)
+    legacy_token = str(uuid.uuid4())
     student = client_for(data.student)
-    assert student.get(f'/scan/{class_session.token}').status_code == 404
-    assert post_json(student, '/mark_attendance', {'token': class_session.token}).status_code == 410
+    assert student.get(f'/scan/{legacy_token}').status_code == 404
+    assert post_json(student, '/mark_attendance', {'token': legacy_token}).status_code == 410
 
 
 def test_marking_requires_a_fresh_scan(data, client_for):

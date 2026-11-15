@@ -226,7 +226,7 @@ def test_report_date_filter_uses_local_days(data, client_for):
     from attendqr.extensions import db
     from attendqr.models import ClassSession
 
-    early = ClassSession(subject_id=data.subject_id, teacher_id=data.teacher_id, token='early',
+    early = ClassSession(subject_id=data.subject_id, teacher_id=data.teacher_id,
                          created_at=datetime(2026, 11, 11, 19, 0), expires_at=datetime(2026, 11, 11, 19, 30))
     db.session.add(early)
     db.session.commit()

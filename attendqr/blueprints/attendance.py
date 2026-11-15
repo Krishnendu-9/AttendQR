@@ -1,4 +1,3 @@
-import uuid
 from datetime import timedelta
 
 from flask import (
@@ -242,8 +241,6 @@ def _create_session():
     class_session = ClassSession(
         subject_id=subject.id,
         special_title=special_title,
-        # Internal identifier only; scanning uses rotating signed tokens.
-        token=str(uuid.uuid4()),
         teacher_id=teacher_id,
         created_at=now,
         expires_at=now + timedelta(minutes=duration),
@@ -636,6 +633,11 @@ def attend():
     if not class_session.is_live():
         title, message = _ended_status(class_session)
         return _status_page(title, message, 410, info)
+    # The semester may have been locked since the scan; say so now, not after the student confirms.
+    lock_error = session_lock_error(class_session)
+    if lock_error:
+        clear_scan_grant()
+        return _status_page('Attendance Locked', lock_error, 403, info)
 
     student = current_user.student
     subject = class_session.subject

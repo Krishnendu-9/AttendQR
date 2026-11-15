@@ -197,7 +197,7 @@ def test_teacher_account_without_a_profile_sees_nothing(app, data, client_for):
     db.session.add(special)
     db.session.flush()
     now = utc_now()
-    orphan = ClassSession(subject_id=special.id, teacher_id=None, special_title='Hidden Workshop', token='orphan',
+    orphan = ClassSession(subject_id=special.id, teacher_id=None, special_title='Hidden Workshop',
                           created_at=now, expires_at=now, is_active=True)
     db.session.add(orphan)
     make_account('ghost@rcciit.org.in', 'teacher', department_id=data.mca_id)

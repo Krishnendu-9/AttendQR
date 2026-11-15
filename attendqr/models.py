@@ -30,9 +30,10 @@ class User(UserMixin, db.Model):
     # Part of the login session identifier; rotating it signs out every existing session.
     session_token = db.Column(db.String(64), nullable=False, default=new_session_token)
     # Two-step sign-in (services/two_factor.py). The secret is set once the user has proved
-    # their authenticator works; until then it waits in totp_pending_secret.
-    totp_secret = db.Column(db.String(64), nullable=True)
-    totp_pending_secret = db.Column(db.String(64), nullable=True)
+    # their authenticator works; until then it waits in totp_pending_secret. Both are stored
+    # encrypted (Fernet, keyed from SECRET_KEY), so a copy of the database cannot make codes.
+    totp_secret = db.Column(db.String(255), nullable=True)
+    totp_pending_secret = db.Column(db.String(255), nullable=True)
     totp_enabled_at = db.Column(db.DateTime, nullable=True)
     # The last 30-second step a code was accepted for: each code works once.
     totp_last_step = db.Column(db.Integer, nullable=True)
@@ -177,7 +178,6 @@ class ClassSession(db.Model):
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id', ondelete='CASCADE'), nullable=False)
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id', ondelete='SET NULL'), nullable=True)
     special_title = db.Column(db.String(200), nullable=True)
-    token = db.Column(db.String(100), unique=True, nullable=False)
     created_at = db.Column(db.DateTime, default=utc_now)
     expires_at = db.Column(db.DateTime, nullable=False)
     is_active = db.Column(db.Boolean, nullable=False, default=True)

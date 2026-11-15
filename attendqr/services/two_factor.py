@@ -11,7 +11,12 @@ Works with any authenticator: Google, Microsoft, Zoho, 2FAS, Aegis, password man
   hash is enough), for a lost phone.
 - TOTP_REQUIRED_ROLES (default: Principal and HOD) must set it up before using the app;
   other staff may turn it on. Students never use it.
+- Secrets are stored encrypted with Fernet (AES with an HMAC), under a key derived from
+  SECRET_KEY, which is not in the database. A copy of the database alone cannot produce codes.
+  Changing SECRET_KEY makes the stored secrets unreadable: those accounts sign in with a
+  recovery code, or the Principal resets their two-step sign-in.
 """
+import base64
 import hashlib
 import hmac
 import json
@@ -20,6 +25,7 @@ import secrets
 import time
 
 import pyotp
+from cryptography.fernet import Fernet, InvalidToken
 from flask import current_app
 
 from ..security import TEMPORARY_PASSWORD_ALPHABET
@@ -28,6 +34,8 @@ from ..utils import utc_now
 STEP_SECONDS = 30
 RECOVERY_CODE_COUNT = 10
 STAFF_ROLES = ('principal', 'hod', 'teacher')
+# Kept in step with migrations/versions/0016_encrypt_totp_secrets.py, which encrypts existing secrets.
+SECRET_KEY_PURPOSE = b'attendqr-totp-secrets'
 
 
 def is_required(user):
@@ -42,13 +50,37 @@ def is_enabled(user):
     return bool(user.totp_secret)
 
 
+# ── Encryption at rest ───────────────────────────────────────
+
+def _fernet():
+    key = hmac.new(str(current_app.config['SECRET_KEY']).encode(), SECRET_KEY_PURPOSE, hashlib.sha256).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def encrypt_secret(secret):
+    return _fernet().encrypt(secret.encode()).decode('ascii')
+
+
+def decrypt_secret(stored):
+    """The plain secret, or None when there is none or it cannot be read (SECRET_KEY changed)."""
+    if not stored:
+        return None
+    try:
+        return _fernet().decrypt(stored.encode()).decode()
+    except InvalidToken:
+        current_app.logger.warning("A stored two-step secret could not be decrypted; was SECRET_KEY changed?")
+        return None
+
+
 # ── Setup ────────────────────────────────────────────────────
 
 def pending_secret(user):
-    """The secret being set up, created on first use."""
-    if not user.totp_pending_secret:
-        user.totp_pending_secret = pyotp.random_base32()
-    return user.totp_pending_secret
+    """The secret being set up (plain), created on first use and stored encrypted."""
+    secret = decrypt_secret(user.totp_pending_secret)
+    if secret is None:
+        secret = pyotp.random_base32()
+        user.totp_pending_secret = encrypt_secret(secret)
+    return secret
 
 
 def provisioning_uri(user, secret):
@@ -63,10 +95,10 @@ def grouped(secret):
 
 def enable(user, code):
     """Turn on two-step sign-in if `code` matches the pending secret. Returns the recovery codes, or None."""
-    secret = user.totp_pending_secret
+    secret = decrypt_secret(user.totp_pending_secret)
     if not secret or not _accept(user, secret, code):
         return None
-    user.totp_secret, user.totp_pending_secret = secret, None
+    user.totp_secret, user.totp_pending_secret = user.totp_pending_secret, None
     user.totp_enabled_at = utc_now()
     return new_recovery_codes(user)
 
@@ -99,7 +131,8 @@ def _accept(user, secret, code):
 
 def verify_code(user, code):
     """A current authenticator code for an account with two-step sign-in on. Marks it used."""
-    return is_enabled(user) and _accept(user, user.totp_secret, code)
+    secret = decrypt_secret(user.totp_secret) if is_enabled(user) else None
+    return bool(secret) and _accept(user, secret, code)
 
 
 # ── Recovery codes ───────────────────────────────────────────

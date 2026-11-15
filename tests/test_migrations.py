@@ -3,6 +3,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
@@ -208,18 +209,55 @@ def test_utc_migration_shifts_stored_ist_times(app, data):
     from attendqr.extensions import db
     from attendqr.models import ClassSession
 
-    db.session.add(ClassSession(subject_id=data.subject_id, token='utc', created_at=datetime(2026, 1, 1, 4, 30),
-                                expires_at=datetime(2026, 1, 1, 5, 0)))
+    class_session = ClassSession(subject_id=data.subject_id, created_at=datetime(2026, 1, 1, 4, 30),
+                                 expires_at=datetime(2026, 1, 1, 5, 0))
+    db.session.add(class_session)
     db.session.commit()
+    session_id = class_session.id
     db.session.remove()
 
     def stored():
         with db.engine.connect() as connection:
-            row = connection.exec_driver_sql(
-                "SELECT created_at, expires_at FROM class_session WHERE token = 'utc'").fetchone()
+            row = connection.execute(sa.text("SELECT created_at, expires_at FROM class_session WHERE id = :id"),
+                                     {'id': session_id}).fetchone()
         return [str(value)[:16] for value in row]
 
     downgrade(revision='0009_user_account')
     assert stored() == ['2026-01-01 10:00', '2026-01-01 10:30']  # as earlier versions stored it (IST)
     upgrade()
     assert stored() == ['2026-01-01 04:30', '2026-01-01 05:00']
+
+
+def test_two_step_secret_migration_encrypts_and_restores(app, data):
+    """0016 encrypts secrets stored as they were, and drops class_session.token; down restores both."""
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import User
+    from attendqr.services import two_factor
+    from conftest import add_session
+
+    add_session(data)
+    db.session.commit()
+    db.session.remove()
+    downgrade(revision='0015_condonation')
+    with db.engine.begin() as connection:
+        assert connection.exec_driver_sql('SELECT token FROM class_session').scalar()  # refilled on the way down
+        connection.exec_driver_sql(
+            "UPDATE user_account SET totp_secret = 'JBSWY3DPEHPK3PXP' WHERE username = 'principal@example.com'")
+
+    upgrade()
+    with db.engine.connect() as connection:
+        stored = connection.exec_driver_sql(
+            "SELECT totp_secret FROM user_account WHERE username = 'principal@example.com'").scalar()
+        columns = {column['name'] for column in sa.inspect(connection).get_columns('class_session')}
+    assert stored != 'JBSWY3DPEHPK3PXP' and two_factor.decrypt_secret(stored) == 'JBSWY3DPEHPK3PXP'
+    assert 'token' not in columns
+    assert two_factor.decrypt_secret(User.query.filter_by(username='principal@example.com').one().totp_secret)
+    db.session.remove()  # end the read transaction; on PostgreSQL it would block the ALTER TABLE below
+
+    downgrade(revision='0015_condonation')
+    with db.engine.connect() as connection:
+        assert connection.exec_driver_sql(
+            "SELECT totp_secret FROM user_account WHERE username = 'principal@example.com'").scalar() == 'JBSWY3DPEHPK3PXP'
+    upgrade()
