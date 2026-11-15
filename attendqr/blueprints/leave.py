@@ -6,7 +6,7 @@ from sqlalchemy.orm import joinedload
 from ..access import can_access_student, department_filter, is_principal, log_activity, role_required, user_role
 from ..extensions import db
 from ..models import LeaveRequest, Student
-from ..services.leave import MAX_NOTE_LENGTH, describe_range, parse_leave_form
+from ..services.leave import MAX_NOTE_LENGTH, describe_range, overlapping_request, parse_leave_form
 from ..services.locks import semester_lock_error
 from ..utils import normalize_text, utc_now
 
@@ -129,4 +129,45 @@ def decide(id):
                  'leave_request', leave.id, student.department_id)
     db.session.commit()
     flash(f"Leave for {student.name} {leave.status}.", 'success')
+    return redirect(url_for('leave.index'))
+
+
+@bp.route('/leave/<int:id>/reopen', methods=['POST'])
+@login_required
+@role_required(*DECIDERS)
+def reopen(id):
+    """Undo a decision made by mistake: the request waits for a decision again, with a reason in the log."""
+    leave = db.get_or_404(LeaveRequest, id)
+    if not can_access_student(leave.student):
+        abort(403)
+    if leave.status == LeaveRequest.PENDING:
+        flash("This request is still waiting for a decision.", 'warning')
+        return redirect(url_for('leave.index'))
+    student = leave.student
+    lock_error = semester_lock_error(student.semester)
+    if lock_error:
+        flash(lock_error, 'warning')
+        return redirect(url_for('leave.index'))
+    note = normalize_text(request.form.get('note'))
+    if not note:
+        flash("Give a short reason for reopening the request.", 'danger')
+        return redirect(url_for('leave.index'))
+    if len(note) > MAX_NOTE_LENGTH:
+        flash(f"Keep the reason under {MAX_NOTE_LENGTH} characters.", 'danger')
+        return redirect(url_for('leave.index'))
+    overlapping = overlapping_request(student.id, leave.start_date, leave.end_date, exclude_id=leave.id)
+    if overlapping:
+        flash(f"{student.name} already has a {overlapping.status} request covering {describe_range(overlapping)}, "
+              "so this one cannot be reopened.", 'warning')
+        return redirect(url_for('leave.index'))
+
+    previous = leave.status
+    leave.status = LeaveRequest.PENDING
+    leave.decided_by_user_id = leave.decided_at = leave.decision_note = None
+    log_activity('leave_reopened',
+                 f"Reopened {leave.kind_label.lower()} leave for {student.name} ({student.roll_no}): "
+                 f"{describe_range(leave)}, which was {previous}. Reason: {note}",
+                 'leave_request', leave.id, student.department_id)
+    db.session.commit()
+    flash(f"Leave for {student.name} is waiting for a decision again.", 'success')
     return redirect(url_for('leave.index'))
