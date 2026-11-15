@@ -17,7 +17,7 @@ The system supports four roles:
 - Can activate, deactivate, reset, or delete non-student accounts from the Accounts page.
 - Creates or bulk-imports student profiles from the Students page; student login accounts are auto-created.
 - Views all reports, exports and analytics.
-- Approves or rejects leave requests from any department.
+- Approves or rejects leave requests from any department, and can reopen a decision made by mistake (with a reason).
 - Sees the integrity report and exam eligibility for every class, and condones students in the condonation band.
 - Locks and unlocks semesters (unlocking needs a reason).
 - Resets two-step sign-in for HOD and Teacher accounts (lost phone).
@@ -32,7 +32,7 @@ The system supports four roles:
 - Can reset student passwords and device locks in the assigned department.
 - Can correct attendance on any session in the assigned department and view the department shortage list.
 - Can delete a session that has attendance in the assigned department, with a reason (this erases its records).
-- Approves or rejects leave requests from the department's students (a rejection needs a note).
+- Approves or rejects leave requests from the department's students (a rejection needs a note), and can reopen a decision made by mistake (with a reason).
 - Views analytics, the integrity report and exam eligibility for the department's classes, and condones students in the condonation band.
 - Locks the department's semesters; cannot unlock them.
 - Runs spot checks in any of the department's sessions, and resets two-step sign-in for the department's teachers.
@@ -51,7 +51,7 @@ The system supports four roles:
 - Cannot decide leave requests; classes during approved leave show as `L` in their reports.
 - Views attendance only for own sessions.
 - Creates or bulk-imports student profiles for the assigned department.
-- Can reset student passwords and device locks in the assigned department.
+- Can reset student passwords and device locks only for students in classes where they teach a subject (either reset hands over the account).
 - Cannot manage users or academic master data.
 
 ## Student
@@ -79,7 +79,7 @@ Newly created or reset accounts must change their password before they can use t
 - Subject access for teachers is now based on subject assignment, not department-wide access.
 - The Accounts page keeps an activity log for sensitive account actions.
 - Staff sign-ins, failed sign-in attempts on real accounts, and the pauses they trigger are recorded in the activity log. Each user sees failed attempts and pauses on their own account under Recent Security Activity.
-- Student password reset sets a new random temporary password, shown once to the staff member.
+- Student password reset sets a new random temporary password, shown once to the staff member. Teachers can reset only students in classes where they teach a subject.
 - Repeated failed logins pause that account on that device for 10 minutes; other devices are unaffected. Resetting the password clears it.
 - Changing or resetting a password, or deactivating an account, signs out all of its existing sessions.
 - Accounts with an unknown role get no access. A teacher account without a teacher profile, or an HOD without a department, gets no department or session access.
