@@ -14,10 +14,11 @@ AttendQR/
                         idle sign-out, login throttling
     schema.py           prepare_database(): migrations, upgrade of pre-migration databases, first Principal
     observability.py    Request ids, JSON logs, the access log, Prometheus metrics (/metrics)
-    utils.py            Time (stored UTC, shown in TIMEZONE), normalisation, natural sorting, date parsing
+    utils.py            Time (stored UTC, shown in the institution's time zone), normalisation, natural sorting, date parsing
     services/
       network.py        SCAN_ALLOWED_NETWORKS parsing and the scan address check
       qr.py             Rotating QR tokens, scan URLs, scan grants, device binding
+      counting.py       The one rule for how a session counts for a student (joined late, moved, group, leave)
       reports.py        Attendance summaries, report filters, Excel/PDF export
       analytics.py      Weekly trend, per-subject rates and students at risk, from the report matrix
       leave.py          Approved-leave windows used by every percentage, and leave request validation
@@ -29,18 +30,28 @@ AttendQR/
       locks.py          Locked semesters
       two_factor.py     Two-step sign-in (TOTP) and recovery codes
       roster.py         Student login accounts and bulk import
-      enrollment.py     Class membership over time, so moved students stay in their old class's reports
+      enrollment.py     Class membership over time: late joiners, and moved students in their old class's reports
+      groups.py         Groups within a class (lab batches): membership history, splitting by roll number, who a group's session counts for
+      routine.py        The class routine: bell schedules, holidays, versions, entries, clash checks, the week grid
+      occurrences.py    Dated classes from the routine (with one-date changes) and the sessions that hold them
+      changes.py        Changes for one date: cancel, move, substitute, extra class; who may make them
+      planned.py        Planned against held: totals per subject and teacher, and the export
+      routine_import.py Filling a draft routine from a spreadsheet, one row per class
       retention.py      Clearing scan IP addresses after SCAN_IP_RETENTION_DAYS
       backup.py         Consistent SQLite backups (`flask backup-db`)
+      settings.py       Institution settings: the registry, the server defaults, saving and resetting
     blueprints/
       auth.py           /login, /logout, /account
       main.py           Dashboards; /healthz for container health checks
       academics.py      Departments, semesters, subjects, teachers
+      groups.py         A class's groups and their members (/semesters/<id>/groups)
+      routine.py        Calendar (bell schedules, holidays), class routines and their editor, My routine, one-date changes
       students.py       Student records, import, password and device resets
       attendance.py     QR sessions (/generate_qr) and the student scan flow (/scan, /attend, /mark_attendance)
       reports.py        Reports, detailed view, exports, analytics, integrity, exam eligibility
       leave.py          Leave requests: students apply, the HOD or Principal decides (/leave)
       accounts.py       Staff account management (/accounts)
+      settings.py       The Principal's Settings page (/settings)
       api.py            JSON endpoints used by the pages (/api/...)
   migrations/           Alembic environment and versions (Flask-Migrate)
   templates/            Jinja2 templates (see "Frontend" below)
