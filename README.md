@@ -7,9 +7,7 @@ College attendance by QR code, built so that marking attendance for an absent fr
 
 Flask · SQLAlchemy · PostgreSQL or SQLite · server-rendered pages with htmx and Alpine.js · Docker · 330+ tests (90% coverage) in CI on two databases
 
-| The teacher's screen | The student's phone |
-| --- | --- |
-| ![Live QR session with the attendance list](docs/screenshots/live-session.png) | ![Confirming attendance on a phone](docs/screenshots/phone-confirm.png) |
+![A class session: the teacher's QR code changes, a student signs in and confirms on their phone, the name appears on the teacher's screen, a forwarded code has expired, and a spot check removes a student who was not in the room](docs/media/attendance-flow.gif)
 
 ## Try it in two minutes
 
@@ -67,7 +65,7 @@ Each rule has tests. What is *not* covered, such as registering a friend's phone
 
 - **Four roles, scoped by department.** Principal, HOD, Teacher and Student. Every query and page is limited to what the role may see ([docs/RBAC.md](docs/RBAC.md)).
 - **QR sessions.** Rotating codes, a live attendance list, manual corrections with reasons, and special classes (workshops) that are shown but not counted.
-- **Leave.** Students apply; the HOD or Principal approves or rejects with a note. Classes during approved leave count neither way.
+- **Leave.** Students apply; the HOD or Principal approves or rejects with a note, and can reopen a decision made by mistake. Classes during approved leave count neither way.
 - **Reports.** A per-session list, a student-by-session matrix, Excel and PDF exports, and a shortage list showing the classes each student needs to reach 80%.
 - **Analytics.** The weekly class rate against the target, each subject's rate, and the students slipping in the last two weeks. Server-rendered SVG charts with tooltips and a table view.
 - **Integrity.** Spot checks during class, and a report that explains each flag: failed spot checks, buddy pairs, repeated new phones, frequent manual entries.
@@ -76,13 +74,7 @@ Each rule has tests. What is *not* covered, such as registering a friend's phone
 - **Students moved between classes** stay in their old class's reports for the sessions they were part of.
 - **Accounts.** Two-step sign-in with any authenticator app (required for Principal and HOD), random one-time passwords, forced password changes, brute-force throttling per device, and every session signed out on a password change.
 
-| Analytics | Shortage list | Leave requests |
-| --- | --- | --- |
-| ![Weekly attendance, subjects and students at risk](docs/screenshots/analytics.png) | ![Students below 80% with the classes they need](docs/screenshots/shortage.png) | ![Leave requests waiting for the HOD](docs/screenshots/leave.png) |
-
-| Integrity report | Exam eligibility |
-| --- | --- |
-| ![Students flagged with the reasons, and a buddy pair](docs/screenshots/integrity.png) | ![Eligible, needs condonation and detained students](docs/screenshots/eligibility.png) |
+![The HOD's pages: analytics, the integrity report, exam eligibility, the shortage list and leave requests](docs/media/reports-tour.gif)
 
 ## Measured performance
 
@@ -106,7 +98,7 @@ Each rule has tests. What is *not* covered, such as registering a friend's phone
 - **Tests.** pytest, with each test on its own database built by the real migrations. CI runs them on Python 3.11 to 3.13 and on PostgreSQL. It also runs a migration-versus-model check on both databases, pyright, ruff (including bandit's security rules), a coverage floor, `pip-audit` on the pinned dependencies, and a Docker smoke test that walks the attendance flow against the built image.
 - **Migrations.** Alembic, with tests that upgrade and downgrade with data in place, and an automatic upgrade path for databases created before migrations existed.
 - **Time.** Stored in UTC and shown in the college's time zone (`TIMEZONE`).
-- **Security.** Two-step sign-in (TOTP, each code usable once), CSRF on every form, a CSP with no inline scripts or styles, signed QR tokens, network allowlisting that fails closed, an HMAC-chained activity log, and a 30-day retention for scan IP addresses. See the [threat model](docs/THREAT_MODEL.md).
+- **Security.** Two-step sign-in (TOTP, each code usable once, secrets encrypted at rest), CSRF on every form, a CSP with no inline scripts or styles, signed QR tokens, network allowlisting that fails closed, an HMAC-chained activity log, and a 30-day retention for scan IP addresses. See the [threat model](docs/THREAT_MODEL.md).
 - **Operations.** Request ids in every log line, optional JSON logs, an access log without IPs or tokens, Prometheus metrics behind a token, a health check, safe online backups, and a non-root Docker image.
 
 ```text
@@ -145,7 +137,7 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://postgres:test@localhost:5432/atte
 ## Known limits and next steps
 
 - **The device lock is a cookie.** It stops one phone serving two students, but not a student registering a friend's phone first. The next step is passkeys (WebAuthn): a key on the phone that cannot be copied. Browsers allow passkeys only over HTTPS, so they come with an HTTPS deployment.
-- **Two-step secrets are stored as they are** in the database. Encrypting them with a key kept outside the database would come next.
+- **Changing `SECRET_KEY`** makes the activity log fail verification and the stored two-step secrets unreadable (those accounts use a recovery code or a reset). Rotating the key without that needs key versions.
 - **The newest end of the audit chain** can be cut off together with its head record by someone with database access; keep the head that `flask verify-audit` prints with your backups.
 - **One process by default.** See *Measured performance* for when to add workers on PostgreSQL.
 
