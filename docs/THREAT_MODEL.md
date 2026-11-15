@@ -43,7 +43,7 @@ operator detail.
 
 | Attack | What stops it | Residual risk |
 | --- | --- | --- |
-| Guess a password | Paused after 5 failures per account per device for 10 min; 30 per account per hour; 100 per address across accounts (`security.py`). Hashes are scrypt. The password policy rejects common passwords and words-plus-digits, and passwords containing the email name or roll number. Staff can add two-step sign-in (TOTP); Principal and HOD accounts must. Wrong codes count towards the same pauses, and each code works once. | Teachers are not required to use two-step sign-in (configurable). |
+| Guess a password | Paused after 5 failures per account per device for 10 min; 30 per account per hour; 100 per address across accounts (`security.py`). Hashes are scrypt. The password policy rejects common passwords and words-plus-digits, and passwords containing the email name or roll number. Staff can add two-step sign-in (TOTP); Principal and HOD accounts must. Wrong codes count towards the same pauses, each code works once, and the secrets are stored encrypted with a key that is not in the database. | Teachers are not required to use two-step sign-in (configurable). |
 | Claim a new student's account before they do | Initial passwords are random (about 59 bits), shown once to staff, never stored, and must be changed at first sign-in. | |
 | Reuse a stolen session cookie | Cookies are HttpOnly and SameSite=Lax, and Secure under HTTPS. Logging out, a password change or reset, and deactivation rotate a per-account token that every session must match, so all copies stop working. Sessions end after 60 idle minutes. | A copied cookie works until one of those happens. |
 | Use the first Principal password from the logs | It is written only to a file readable by the server's user, never logged, deleted once replaced, and must be changed at first sign-in. | |
@@ -93,5 +93,5 @@ operator detail.
 
 1. **The device lock is a cookie.** It stops one phone serving two students, not a student registering a friend's phone first. Passkeys over HTTPS are the fix.
 2. **Public deployments without `SCAN_ALLOWED_NETWORKS`** lose the network barrier; only the 30-second token remains. The setting fails closed when empty, but an operator can set `any`.
-3. **Two-step secrets are stored unencrypted** in the database. Encrypting them with a key kept outside the database is the next step.
+3. **Everything rests on `SECRET_KEY`.** Sessions, QR tokens, the audit chain and the encryption of two-step secrets all derive from it. It is generated per installation and never stored in the database, but whoever has both the database and the key has everything, and rotating it breaks audit verification until key versions exist.
 4. **Availability is not engineered for**: one process, SQLite by default. The load test (`scripts/load_test.py`, results in the README) shows the headroom for a class scanning at once.
