@@ -64,7 +64,7 @@ AttendQR/
   compose.yaml          Runs the image with a data volume; requires APP_BASE_URL
   scripts/docker_smoke.py  End-to-end QR attendance check that CI runs against the image
   scripts/load_test.py  A whole class through the attendance flow against the real server, with latency percentiles
-  docs/                 DEPLOYMENT.md, GUIDE.md, THREAT_MODEL.md, RBAC.md, screenshots
+  docs/                 DEPLOYMENT.md, GUIDE.md, THREAT_MODEL.md, RBAC.md, media/ (the README GIFs)
   scripts/tailwind.py   Builds static/css/app.css with the pinned Tailwind standalone CLI (no Node.js)
   scripts/lucide_icons.py  Copies the Lucide icons the templates use into templates/components/icons/
 ```
@@ -101,7 +101,7 @@ The interface is server-rendered Jinja templates. There is no separate frontend 
 
 - `attendance.db`: the SQLite database (default `DATABASE_URL`)
 - `attendance.db-wal`, `attendance.db-shm`: SQLite's write-ahead log, present while the app runs. Back up with `flask backup-db`, not by copying files.
-- `secret_key`: generated on first start when `SECRET_KEY` is not set. Keep it private; deleting it signs everyone out.
+- `secret_key`: generated on first start when `SECRET_KEY` is not set. Keep it private and back it up: deleting it signs everyone out, and the activity log's hash chain and the encrypted two-step secrets depend on it.
 - `initial_principal_password`: the first Principal's one-time password; deleted once it has been replaced.
 - `backups/`: written by `flask backup-db`.
 
