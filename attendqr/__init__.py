@@ -15,6 +15,7 @@ from .access import (
     can_edit_account,
     can_manage_account,
     can_reset_staff_account,
+    can_reset_student_access,
     department_scope_label,
     is_hidden_special_subject,
     role_label,
@@ -216,7 +217,11 @@ def _register_request_hooks(app):
             flash("Please set a new private password before continuing.", "warning")
             return redirect(url_for('auth.account', next=next_url))
 
-        if two_factor.is_required(current_user) and not two_factor.is_enabled(current_user)                 and request.endpoint not in TWO_STEP_SETUP_ALLOWED:
+        if (
+            two_factor.is_required(current_user)
+            and not two_factor.is_enabled(current_user)
+            and request.endpoint not in TWO_STEP_SETUP_ALLOWED
+        ):
             if wants_json_response():
                 return jsonify({'success': False, 'message': 'Set up two-step sign-in before continuing.'}), 403
             flash("Your role needs two-step sign-in. Set it up with an authenticator app to continue.", "warning")
@@ -313,6 +318,7 @@ def _register_template_helpers(app):
             'can_manage_account': can_manage_account,
             'can_toggle_account_status': can_manage_account,
             'can_reset_staff_account': can_reset_staff_account,
+            'can_reset_student_access': can_reset_student_access,
             'attendance_target': app.config['ATTENDANCE_TARGET'],
             'min_password_length': app.config['MIN_PASSWORD_LENGTH'],
             'staff_email_pattern': staff_email_html_pattern,
