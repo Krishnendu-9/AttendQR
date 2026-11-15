@@ -8,12 +8,14 @@
 
 {% block content %}
 {% call page_header(student.name, 'Roll no ' ~ student.roll_no ~ ' · ' ~ student.semester.name ~ ' · ' ~ student.department.display_name, account_badge(account)) %}
+  {% if can_reset_student_access(student) %}
   {{ action_form('Reset device', url_for('students.reset_device', id=student.id), icon_name='smartphone',
                  confirm='The registered phone is released. The next phone the student marks attendance from becomes their device.',
                  confirm_title='Reset device for ' ~ student.name ~ '?', hidden={'return_to': this_page}) }}
   {{ action_form('Reset password', url_for('students.reset_password', id=student.id), icon_name='key-round',
                  confirm='A new temporary password is created and shown once. The student must change it at next sign-in.',
                  confirm_title='Reset password for ' ~ student.name ~ '?', hidden={'return_to': this_page}) }}
+  {% endif %}
   {% if can_manage %}
   {{ action_form('Delete', url_for('students.delete', id=student.id), variant='destructive-outline', icon_name='trash-2', danger=True,
                  confirm='Their login and attendance records are deleted too. This cannot be undone.',
