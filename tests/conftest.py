@@ -63,6 +63,9 @@ class IsolatedClient(FlaskClient):
     def open(self, *args, **kwargs):
         g.pop('_login_user', None)
         g.pop('csp_nonce', None)
+        g.pop('institution_settings', None)  # services/settings.py keeps the saved settings per context
+        g.pop('taught_classes', None)  # access.taught_classes() keeps the current teacher's classes
+        g.pop('taught_subject_ids', None)  # and access.taught_subject_ids() their subjects
         return super().open(*args, **kwargs)
 
 
@@ -187,12 +190,12 @@ def data(app):
     )
 
 
-def add_session(data, subject_id=None, active=True, present=(), special_title=None, days_ago=0):
+def add_session(data, subject_id=None, active=True, present=(), special_title=None, days_ago=0, group_id=None):
     now = utc_now() - timedelta(days=days_ago)
     class_session = ClassSession(
         subject_id=subject_id or data.subject_id, teacher_id=data.teacher_id, special_title=special_title,
         created_at=now,
-        expires_at=now + timedelta(minutes=30), is_active=active,
+        expires_at=now + timedelta(minutes=30), is_active=active, group_id=group_id,
     )
     db.session.add(class_session)
     db.session.flush()

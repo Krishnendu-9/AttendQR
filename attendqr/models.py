@@ -105,6 +105,10 @@ class Semester(db.Model):
         db.ForeignKey('user_account.id', ondelete='SET NULL', name='fk_semester_locked_by_user'),
         nullable=True,
     )
+    # The exam eligibility percentages in force when it was locked, so changing the settings
+    # afterwards does not change a final semester's eligibility. Cleared on unlock.
+    locked_eligibility_percent = db.Column(db.Integer, nullable=True)
+    locked_condonation_percent = db.Column(db.Integer, nullable=True)
     locked_by = db.relationship('User', foreign_keys=[attendance_locked_by_user_id])
 
     @property
@@ -124,7 +128,28 @@ class Subject(db.Model):
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
     semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id', ondelete='SET NULL'), nullable=True)
+    # Off for something taught but never counted, such as a non-credit course: its sessions are
+    # listed in reports but, like special classes, count in nobody's percentage.
+    counts_towards_attendance = db.Column(db.Boolean, nullable=False, default=True, server_default=sa.true())
+    # The group the subject is for (an elective, or a lab one batch takes); new sessions default to it.
+    group_id = db.Column(db.Integer, db.ForeignKey('class_group.id', ondelete='SET NULL', name='fk_subject_group'),
+                         nullable=True)
     teacher = db.relationship('Teacher', backref=db.backref('assigned_subjects', lazy=True), foreign_keys=[teacher_id])
+    group = db.relationship('ClassGroup', foreign_keys=[group_id])
+    # Teachers besides the main one (subject.teacher) who run and correct its sessions.
+    co_teachers = db.relationship('Teacher', secondary='subject_teacher', order_by='Teacher.name',
+                                  backref=db.backref('co_taught_subjects', lazy=True))
+
+
+class SubjectTeacher(db.Model):
+    """A co-teacher of a subject, such as the second teacher of a lab (MG + SC)."""
+    __table_args__ = (
+        db.Index('uq_subject_teacher', 'subject_id', 'teacher_id', unique=True),
+        db.Index('ix_subject_teacher_teacher_id', 'teacher_id'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id', ondelete='CASCADE'), nullable=False)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id', ondelete='CASCADE'), nullable=False)
 
 
 class Teacher(db.Model):
@@ -132,6 +157,8 @@ class Teacher(db.Model):
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
+    # Initials shown in the routine grid ("SC", "MG"); access.teacher_short_name() fills a missing one.
+    short_name = db.Column(db.String(10), nullable=True)
 
 
 class Student(db.Model):
@@ -149,6 +176,10 @@ class Student(db.Model):
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
     semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
     device_id = db.Column(db.String(100), nullable=True)
+    # When the student was added to, or moved into, their current class. Sessions held before
+    # then are not theirs unless they have an attendance entry for one (services/counting.py).
+    # NULL: in the class from the start (every student from before migration 0024).
+    class_joined_at = db.Column(db.DateTime, nullable=True)
 
 
 class StudentClassHistory(db.Model):
@@ -164,8 +195,47 @@ class StudentClassHistory(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False, index=True)
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
     semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
+    # When they had joined that class (NULL: from the start). Sessions before it were not theirs either.
+    joined_at = db.Column(db.DateTime, nullable=True)
     # Sessions created from this moment on are not the student's.
     left_at = db.Column(db.DateTime, nullable=False)
+
+
+class ClassGroup(db.Model):
+    """A named part of one class (department and semester): a lab batch, an elective, a tutorial set.
+
+    A session can be for one group; it then counts only for the students who were members
+    when it was held (services/groups.py). A student may be in several groups.
+    """
+    __table_args__ = (
+        db.Index('ix_class_group_semester_id', 'semester_id'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
+    semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
+    name = db.Column(db.String(60), nullable=False)  # unique within the semester, ignoring case (checked in code)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+
+    department = db.relationship('Department')
+    semester = db.relationship('Semester')
+
+
+class ClassGroupMember(db.Model):
+    """A student's time in a group. Leaving sets left_at; the row stays, so old sessions keep counting."""
+    __table_args__ = (
+        db.Index('ix_class_group_member_group_student', 'group_id', 'student_id'),
+        db.Index('ix_class_group_member_student_id', 'student_id'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('class_group.id', ondelete='CASCADE'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='CASCADE'), nullable=False)
+    joined_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+    left_at = db.Column(db.DateTime, nullable=True)
+
+    group = db.relationship('ClassGroup', backref=db.backref('memberships', cascade='all, delete-orphan',
+                                                             passive_deletes=True))
+    student = db.relationship('Student', backref=db.backref('group_memberships', cascade='all, delete-orphan',
+                                                            passive_deletes=True))
 
 
 class ClassSession(db.Model):
@@ -173,6 +243,9 @@ class ClassSession(db.Model):
         db.Index('ix_class_session_subject_id', 'subject_id'),
         db.Index('ix_class_session_teacher_id', 'teacher_id'),
         db.Index('ix_class_session_created_at', 'created_at'),
+        db.Index('ix_class_session_group_id', 'group_id'),
+        # One session per class occurrence in the routine (NULLs allowed many times).
+        db.Index('uq_class_session_occurrence', 'timetable_entry_id', 'occurrence_date', unique=True),
     )
     id = db.Column(db.Integer, primary_key=True)
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id', ondelete='CASCADE'), nullable=False)
@@ -181,8 +254,20 @@ class ClassSession(db.Model):
     created_at = db.Column(db.DateTime, default=utc_now)
     expires_at = db.Column(db.DateTime, nullable=False)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    # The group the session is for; NULL means the whole class. A group with sessions cannot be
+    # deleted (the app refuses; the key is NO ACTION so a department's cascade still works).
+    group_id = db.Column(db.Integer, db.ForeignKey('class_group.id', name='fk_class_session_group'), nullable=True)
+    # The routine class this session holds, and on which date (services/routine.py). NULL: started
+    # outside the routine ("Unscheduled" where the class has a published routine).
+    timetable_entry_id = db.Column(
+        db.Integer, db.ForeignKey('timetable_entry.id', ondelete='SET NULL', name='fk_class_session_timetable_entry'),
+        nullable=True,
+    )
+    occurrence_date = db.Column(db.Date, nullable=True)
     subject = db.relationship('Subject', backref=db.backref('sessions', lazy=True))
     teacher = db.relationship('Teacher', backref=db.backref('sessions', lazy=True))
+    group = db.relationship('ClassGroup')
+    timetable_entry = db.relationship('TimetableEntry')
 
     def is_live(self, now=None):
         return bool(self.is_active and (now or utc_now()) <= self.expires_at)
@@ -329,6 +414,215 @@ class SpotCheck(db.Model):
     session = db.relationship('ClassSession', backref=db.backref('spot_checks', cascade='all, delete-orphan'))
     student = db.relationship('Student', backref=db.backref('spot_checks', cascade='all, delete-orphan'))
     checked_by = db.relationship('User', foreign_keys=[checked_by_user_id])
+
+
+class BellSchedule(db.Model):
+    """The periods of a day ("Weekday", "Saturday half-day"). department_id NULL: the institution's;
+    set: that department's own version, used before the institution's on the days it is assigned."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(60), nullable=False)
+    department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+
+    department = db.relationship('Department')
+    periods = db.relationship('BellPeriod', order_by='BellPeriod.position', cascade='all, delete-orphan',
+                              passive_deletes=True, backref='schedule')
+    days = db.relationship('BellScheduleDay', cascade='all, delete-orphan', passive_deletes=True, backref='schedule')
+
+
+class BellPeriod(db.Model):
+    __table_args__ = (
+        db.Index('ix_bell_period_schedule_id', 'schedule_id'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    schedule_id = db.Column(db.Integer, db.ForeignKey('bell_schedule.id', ondelete='CASCADE'), nullable=False)
+    position = db.Column(db.Integer, nullable=False)
+    label = db.Column(db.String(20), nullable=False)  # "1", "2", "Break"
+    start_time = db.Column(db.Time, nullable=False)   # local wall-clock time
+    end_time = db.Column(db.Time, nullable=False)
+    is_break = db.Column(db.Boolean, nullable=False, default=False, server_default=sa.false())
+
+
+class BellScheduleDay(db.Model):
+    """A weekday (0 = Monday ... 6 = Sunday) that uses the schedule. One per weekday within a scope (checked in code)."""
+    __table_args__ = (
+        db.Index('ix_bell_schedule_day_schedule_id', 'schedule_id'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    schedule_id = db.Column(db.Integer, db.ForeignKey('bell_schedule.id', ondelete='CASCADE'), nullable=False)
+    weekday = db.Column(db.Integer, nullable=False)
+
+
+class Holiday(db.Model):
+    """Days without classes. department_id NULL: for everyone; set: that department only."""
+    id = db.Column(db.Integer, primary_key=True)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    title = db.Column(db.String(100), nullable=False)
+    department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+
+    department = db.relationship('Department')
+
+
+class Timetable(db.Model):
+    """One version of one class's routine. A draft is edited freely; a published version never changes.
+
+    Publishing a draft from date D ends the version before it on D - 1, so versions never overlap
+    and every past week keeps the routine it really had.
+    """
+    DRAFT = 'draft'
+    PUBLISHED = 'published'
+
+    __table_args__ = (
+        db.Index('ix_timetable_semester_id', 'semester_id'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
+    semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
+    status = db.Column(db.String(10), nullable=False, default=DRAFT, server_default=DRAFT)
+    effective_from = db.Column(db.Date, nullable=True)  # set on publishing
+    effective_to = db.Column(db.Date, nullable=True)    # set when a newer version is published
+    note = db.Column(db.String(200), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+    created_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('user_account.id', ondelete='SET NULL', name='fk_timetable_created_by_user'),
+        nullable=True,
+    )
+    published_at = db.Column(db.DateTime, nullable=True)
+    published_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('user_account.id', ondelete='SET NULL', name='fk_timetable_published_by_user'),
+        nullable=True,
+    )
+
+    department = db.relationship('Department')
+    semester = db.relationship('Semester')
+    created_by = db.relationship('User', foreign_keys=[created_by_user_id])
+    published_by = db.relationship('User', foreign_keys=[published_by_user_id])
+    entries = db.relationship('TimetableEntry', cascade='all, delete-orphan', passive_deletes=True,
+                              backref='timetable', order_by='[TimetableEntry.weekday, TimetableEntry.start_time]')
+
+    @property
+    def is_draft(self):
+        return self.status == self.DRAFT
+
+
+class TimetableEntry(db.Model):
+    """One class in the week: a weekday, local start and end times, a subject (or a title), a group, teachers, a room."""
+    EVERY = 'every'
+    ODD = 'odd'
+    EVEN = 'even'
+
+    __table_args__ = (
+        db.Index('ix_timetable_entry_timetable_id', 'timetable_id'),
+        db.Index('ix_timetable_entry_subject_id', 'subject_id'),
+        db.Index('ix_timetable_entry_group_id', 'group_id'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    timetable_id = db.Column(db.Integer, db.ForeignKey('timetable.id', ondelete='CASCADE'), nullable=False)
+    weekday = db.Column(db.Integer, nullable=False)  # 0 = Monday ... 6 = Sunday
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    # A subject, or a title for something that is not one ("Special Tutorial Class"). Neither: an
+    # unassigned entry, left by copying another class's routine; a draft cannot be published with one.
+    # The app refuses to delete a subject or group a routine uses, so these keys are NO ACTION.
+    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id', name='fk_timetable_entry_subject'), nullable=True)
+    title = db.Column(db.String(100), nullable=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('class_group.id', name='fk_timetable_entry_group'), nullable=True)
+    room = db.Column(db.String(40), nullable=True)
+    week_pattern = db.Column(db.String(5), nullable=False, default=EVERY, server_default=EVERY)
+    valid_from = db.Column(db.Date, nullable=True)  # optional limits within the version's dates
+    valid_to = db.Column(db.Date, nullable=True)
+    note = db.Column(db.String(200), nullable=True)
+
+    subject = db.relationship('Subject')
+    group = db.relationship('ClassGroup')
+    teachers = db.relationship('Teacher', secondary='timetable_entry_teacher', order_by='Teacher.name')
+
+    @property
+    def is_unassigned(self):
+        return self.subject_id is None and not self.title
+
+
+class TimetableEntryTeacher(db.Model):
+    __table_args__ = (
+        db.Index('uq_timetable_entry_teacher', 'entry_id', 'teacher_id', unique=True),
+        db.Index('ix_timetable_entry_teacher_teacher_id', 'teacher_id'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    entry_id = db.Column(db.Integer, db.ForeignKey('timetable_entry.id', ondelete='CASCADE'), nullable=False)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id', ondelete='CASCADE'), nullable=False)
+
+
+class RoutineChange(db.Model):
+    """A change to the routine for one date only: a class cancelled, moved or taken by a substitute,
+    or an extra class. The routine itself stays as published."""
+    CANCEL = 'cancel'
+    MOVE = 'move'
+    SUBSTITUTE = 'substitute'
+    EXTRA = 'extra'
+    KINDS: ClassVar[dict[str, str]] = {CANCEL: 'Cancelled', MOVE: 'Moved', SUBSTITUTE: 'Substitute', EXTRA: 'Extra class'}
+
+    __table_args__ = (
+        db.Index('ix_routine_change_entry_date', 'timetable_entry_id', 'date'),
+        db.Index('ix_routine_change_semester_date', 'semester_id', 'date'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    kind = db.Column(db.String(12), nullable=False)
+    # The routine class it changes, and that class's date in the routine (not set for an extra class).
+    timetable_entry_id = db.Column(db.Integer, db.ForeignKey('timetable_entry.id', ondelete='CASCADE'), nullable=True)
+    date = db.Column(db.Date, nullable=False)
+    # Move: the new date and times. Extra class: its times (on `date`).
+    new_date = db.Column(db.Date, nullable=True)
+    new_start_time = db.Column(db.Time, nullable=True)
+    new_end_time = db.Column(db.Time, nullable=True)
+    # Substitute: who takes the class. Extra class: who teaches it.
+    substitute_teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id', ondelete='SET NULL'), nullable=True)
+    # The class: copied from the entry, or chosen for an extra class.
+    department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
+    semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id', ondelete='CASCADE'), nullable=True)
+    title = db.Column(db.String(100), nullable=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('class_group.id', ondelete='CASCADE'), nullable=True)
+    room = db.Column(db.String(40), nullable=True)
+    reason = db.Column(db.String(200), nullable=False)
+    # The session that held an extra class (a routine class finds its session by entry and date).
+    session_id = db.Column(db.Integer, db.ForeignKey('class_session.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+    created_by_user_id = db.Column(
+        db.Integer, db.ForeignKey('user_account.id', ondelete='SET NULL', name='fk_routine_change_created_by_user'),
+        nullable=True,
+    )
+
+    entry = db.relationship('TimetableEntry')
+    substitute = db.relationship('Teacher')
+    semester = db.relationship('Semester')
+    subject = db.relationship('Subject')
+    group = db.relationship('ClassGroup')
+    session = db.relationship('ClassSession')
+    created_by = db.relationship('User', foreign_keys=[created_by_user_id])
+
+    @property
+    def kind_label(self):
+        return self.KINDS.get(self.kind, self.kind)
+
+
+class InstitutionSetting(db.Model):
+    """An institution-wide option the Principal changed in the app (services/settings.py).
+
+    One row per changed option; no row means the server's default, from the environment or
+    config.py. Key/value rather than one wide row, so new options need no migration.
+    """
+    key = db.Column(db.String(80), primary_key=True)
+    value = db.Column(db.Text, nullable=False)  # JSON
+    updated_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+    updated_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey('user_account.id', ondelete='SET NULL', name='fk_institution_setting_updated_by_user'),
+        nullable=True,
+    )
+
+    updated_by = db.relationship('User', foreign_keys=[updated_by_user_id])
 
 
 class Condonation(db.Model):

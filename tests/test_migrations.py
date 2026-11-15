@@ -261,3 +261,226 @@ def test_two_step_secret_migration_encrypts_and_restores(app, data):
         assert connection.exec_driver_sql(
             "SELECT totp_secret FROM user_account WHERE username = 'principal@example.com'").scalar() == 'JBSWY3DPEHPK3PXP'
     upgrade()
+
+
+def test_institution_settings_migration_round_trip(app, data):
+    """0017 adds institution_setting; down drops it and nothing else, up brings it back empty."""
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import InstitutionSetting, User
+
+    principal_id = User.query.filter_by(username=data.principal).one().id
+    db.session.add(InstitutionSetting(key='attendance_target', value='70', updated_by_user_id=principal_id))
+    db.session.commit()
+    accounts = User.query.count()
+    db.session.remove()
+
+    downgrade(revision='0016_encrypt_totp_secrets')
+    with db.engine.connect() as connection:
+        assert 'institution_setting' not in sa.inspect(connection).get_table_names()
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM user_account').scalar() == accounts
+
+    upgrade()
+    with db.engine.connect() as connection:
+        assert _foreign_keys(connection, 'institution_setting')['updated_by_user_id'] == ('user_account', 'SET NULL')
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM institution_setting').scalar() == 0
+
+
+def test_eligibility_at_lock_migration_round_trip(app, data):
+    """0018 adds the two percentages to semester; down drops them and keeps the lock itself."""
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import Semester
+    from attendqr.utils import utc_now
+
+    semester = db.session.get(Semester, data.sem1_id)
+    semester.attendance_locked_at = utc_now()
+    semester.locked_eligibility_percent, semester.locked_condonation_percent = 75, 65
+    db.session.commit()
+    db.session.remove()
+
+    downgrade(revision='0017_institution_settings')
+    with db.engine.connect() as connection:
+        columns = {column['name'] for column in sa.inspect(connection).get_columns('semester')}
+        assert 'locked_eligibility_percent' not in columns
+        assert connection.execute(sa.text('SELECT attendance_locked_at FROM semester WHERE id = :id'),
+                                  {'id': data.sem1_id}).scalar() is not None
+
+    upgrade()
+    with db.engine.connect() as connection:
+        assert connection.execute(sa.text('SELECT locked_eligibility_percent FROM semester WHERE id = :id'),
+                                  {'id': data.sem1_id}).scalar() is None
+
+
+def test_class_groups_migration_round_trip(app, data):
+    """0019 adds groups, memberships and class_session.group_id; down removes them and keeps the sessions."""
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import ClassGroup, ClassGroupMember
+    from conftest import add_session
+
+    group = ClassGroup(department_id=data.mca_id, semester_id=data.sem1_id, name='Gr-1')
+    db.session.add(group)
+    db.session.flush()
+    db.session.add(ClassGroupMember(group_id=group.id, student_id=data.student_id))
+    db.session.commit()
+    add_session(data, group_id=group.id)
+    add_session(data)
+    db.session.remove()
+
+    downgrade(revision='0018_eligibility_at_lock')
+    with db.engine.connect() as connection:
+        tables = sa.inspect(connection).get_table_names()
+        columns = {column['name'] for column in sa.inspect(connection).get_columns('class_session')}
+        assert 'class_group' not in tables and 'class_group_member' not in tables and 'group_id' not in columns
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM class_session').scalar() == 2
+
+    upgrade()
+    with db.engine.connect() as connection:
+        assert _foreign_keys(connection, 'class_session')['group_id'][0] == 'class_group'
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM class_group').scalar() == 0
+
+
+def test_subject_options_migration_round_trip(app, data):
+    """0020 adds counts_towards_attendance (on for existing subjects), subject.group_id, co-teachers and short names."""
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import Subject, Teacher
+
+    subject = db.session.get(Subject, data.subject_id)
+    subject.counts_towards_attendance = False
+    subject.co_teachers = [Teacher.query.filter_by(email='ravi@rcciit.org.in').one()]
+    db.session.commit()
+    db.session.remove()
+
+    downgrade(revision='0019_class_groups')
+    with db.engine.connect() as connection:
+        assert 'subject_teacher' not in sa.inspect(connection).get_table_names()
+        columns = {column['name'] for column in sa.inspect(connection).get_columns('subject')}
+        assert 'counts_towards_attendance' not in columns and 'group_id' not in columns
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM subject').scalar() == 2
+
+    upgrade()
+    with db.engine.connect() as connection:
+        counted = connection.exec_driver_sql('SELECT counts_towards_attendance FROM subject').scalars().all()
+        assert all(counted) and len(counted) == 2  # existing subjects count, as before
+        assert _foreign_keys(connection, 'subject_teacher')['teacher_id'] == ('teacher', 'CASCADE')
+
+
+def test_routine_migration_round_trip(app, data):
+    """0021 adds bell schedules, holidays and timetables; down drops them and leaves the rest."""
+    from datetime import date, time
+
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import BellPeriod, BellSchedule, Holiday, Teacher, Timetable, TimetableEntry
+
+    schedule = BellSchedule(name='Weekday')
+    schedule.periods = [BellPeriod(position=1, label='1', start_time=time(10), end_time=time(10, 50))]
+    timetable = Timetable(department_id=data.mca_id, semester_id=data.sem1_id, status='published',
+                          effective_from=date(2026, 11, 2))
+    entry = TimetableEntry(timetable=timetable, weekday=0, start_time=time(10), end_time=time(10, 50),
+                           subject_id=data.subject_id)
+    entry.teachers = [db.session.get(Teacher, data.teacher_id)]
+    db.session.add_all([schedule, Holiday(start_date=date(2026, 12, 25), end_date=date(2026, 12, 25), title='X'),
+                        timetable, entry])
+    db.session.commit()
+    db.session.remove()
+
+    downgrade(revision='0020_subject_options')
+    with db.engine.connect() as connection:
+        tables = set(sa.inspect(connection).get_table_names())
+        assert not tables & {'bell_schedule', 'bell_period', 'holiday', 'timetable', 'timetable_entry',
+                             'timetable_entry_teacher'}
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM subject').scalar() == 2
+
+    upgrade()
+    with db.engine.connect() as connection:
+        assert _foreign_keys(connection, 'timetable_entry_teacher')['entry_id'] == ('timetable_entry', 'CASCADE')
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM timetable').scalar() == 0
+
+
+def test_session_occurrence_migration_round_trip(app, data):
+    """0022 links sessions to routine classes; down drops the link and keeps the sessions."""
+    from datetime import date, time
+
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import Timetable, TimetableEntry
+    from conftest import add_session
+
+    timetable = Timetable(department_id=data.mca_id, semester_id=data.sem1_id, status='published',
+                          effective_from=date(2026, 11, 2))
+    entry = TimetableEntry(timetable=timetable, weekday=0, start_time=time(10), end_time=time(11), title='X')
+    db.session.add_all([timetable, entry])
+    db.session.commit()
+    session = add_session(data)
+    session.timetable_entry_id, session.occurrence_date = entry.id, date(2026, 11, 2)
+    db.session.commit()
+    db.session.remove()
+
+    downgrade(revision='0021_routine')
+    with db.engine.connect() as connection:
+        columns = {column['name'] for column in sa.inspect(connection).get_columns('class_session')}
+        assert 'timetable_entry_id' not in columns and 'occurrence_date' not in columns
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM class_session').scalar() == 1
+
+    upgrade()
+    with db.engine.connect() as connection:
+        assert _foreign_keys(connection, 'class_session')['timetable_entry_id'] == ('timetable_entry', 'SET NULL')
+
+
+def test_routine_changes_migration_round_trip(app, data):
+    """0023 adds one-date changes; down drops the table and nothing else."""
+    from datetime import date
+
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import RoutineChange
+
+    db.session.add(RoutineChange(kind='extra', date=date(2026, 11, 2), department_id=data.mca_id,
+                                 semester_id=data.sem1_id, title='Revision', reason='Before the exam'))
+    db.session.commit()
+    db.session.remove()
+
+    downgrade(revision='0022_session_occurrence')
+    with db.engine.connect() as connection:
+        assert 'routine_change' not in sa.inspect(connection).get_table_names()
+
+    upgrade()
+    with db.engine.connect() as connection:
+        assert _foreign_keys(connection, 'routine_change')['session_id'] == ('class_session', 'SET NULL')
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM routine_change').scalar() == 0
+
+
+def test_class_joined_at_migration_round_trip(app, data):
+    """0024 adds when a student joined their class (and kept it in the history); existing rows stay NULL,
+    so they count as before. Down drops both columns and keeps the students and the history."""
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import StudentClassHistory
+    from attendqr.utils import utc_now
+
+    db.session.add(StudentClassHistory(student_id=data.student_id, department_id=data.mca_id,
+                                       semester_id=data.sem2_id, left_at=utc_now()))
+    db.session.commit()
+    db.session.remove()
+
+    downgrade(revision='0023_routine_changes')
+    with db.engine.connect() as connection:
+        assert 'class_joined_at' not in {c['name'] for c in sa.inspect(connection).get_columns('student')}
+        assert 'joined_at' not in {c['name'] for c in sa.inspect(connection).get_columns('student_class_history')}
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM student_class_history').scalar() == 1
+
+    upgrade()
+    with db.engine.connect() as connection:
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM student WHERE class_joined_at IS NOT NULL').scalar() == 0
+        assert connection.exec_driver_sql('SELECT joined_at FROM student_class_history').scalar() is None
