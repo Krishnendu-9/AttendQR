@@ -5,7 +5,7 @@
 
 College attendance by QR code, built so that marking attendance for an absent friend is hard. The teacher's screen shows a code that changes every 10 seconds. A student scans it with their own phone, on the campus network, and confirms with their own account. Departments, roles, leave, reports, shortage lists and analytics are built around it, and every record can be audited: random spot checks in class, an integrity report that flags proxy patterns, and a tamper-evident activity log.
 
-Flask · SQLAlchemy · PostgreSQL or SQLite · server-rendered pages with htmx and Alpine.js · Docker · 330+ tests (90% coverage) in CI on two databases
+Flask · SQLAlchemy · PostgreSQL or SQLite · server-rendered pages with htmx and Alpine.js · Docker · 500+ tests (92% coverage) in CI on two databases
 
 ![A class session: the teacher's QR code changes, a student signs in and confirms on their phone, the name appears on the teacher's screen, a forwarded code has expired, and a spot check removes a student who was not in the room](docs/media/attendance-flow.gif)
 
@@ -65,13 +65,17 @@ Each rule has tests. What is *not* covered, such as registering a friend's phone
 
 - **Four roles, scoped by department.** Principal, HOD, Teacher and Student. Every query and page is limited to what the role may see ([docs/RBAC.md](docs/RBAC.md)).
 - **QR sessions.** Rotating codes, a live attendance list, manual corrections with reasons, and special classes (workshops) that are shown but not counted.
+- **Subjects as they are taught.** Co-teachers who share a subject's sessions, a subject for one group (an elective), and subjects that never count (a non-credit course).
+- **Class routine.** Built in the app: bell schedules, holidays, lab batches side by side, odd and even weeks, clash checks for teachers, rooms and groups, versions with dates, and a printable sheet. Teachers start sessions from Today's classes; classes can be cancelled, moved or given to a substitute for one date; a report compares planned with held. A class nobody recorded never counts against a student.
+- **Groups.** Lab batches and electives within a class. A batch's session counts only for its members, so the other batch is never marked absent; membership keeps its history.
 - **Leave.** Students apply; the HOD or Principal approves or rejects with a note, and can reopen a decision made by mistake. Classes during approved leave count neither way.
-- **Reports.** A per-session list, a student-by-session matrix, Excel and PDF exports, and a shortage list showing the classes each student needs to reach 80%.
+- **Reports.** A per-session list, a student-by-session matrix, Excel and PDF exports, and a shortage list showing the classes each student needs to reach the target (80% by default).
 - **Analytics.** The weekly class rate against the target, each subject's rate, and the students slipping in the last two weeks. Server-rendered SVG charts with tooltips and a table view.
 - **Integrity.** Spot checks during class, and a report that explains each flag: failed spot checks, buddy pairs, repeated new phones, frequent manual entries.
 - **Exam eligibility.** Eligible, needs condonation or detained against configurable limits (75% and 65% by default), condonation with a reason, and an Excel export.
 - **Final records.** A semester's attendance can be locked after exams, and the activity log is tamper-evident.
-- **Students moved between classes** stay in their old class's reports for the sessions they were part of.
+- **Students who change classes.** A student moved out stays in their old class's reports for the sessions they were part of, and a student added or moved in late is not marked absent for the classes held before they joined. One counting rule serves the dashboard, every report and the shortage list.
+- **Settings in the app.** The Principal sets the institution's name, the attendance target, the eligibility percentages, the time zone, the working days, the first day of the week, and the words the app uses ("Course", "Batch", "Director"). The server's values are the defaults, and security settings never move to the page.
 - **Accounts.** Two-step sign-in with any authenticator app (required for Principal and HOD), random one-time passwords, forced password changes, brute-force throttling per device, and every session signed out on a password change.
 
 ![The HOD's pages: analytics, the integrity report, exam eligibility, the shortage list and leave requests](docs/media/reports-tour.gif)
@@ -97,15 +101,17 @@ Each rule has tests. What is *not* covered, such as registering a friend's phone
 
 - **Tests.** pytest, with each test on its own database built by the real migrations. CI runs them on Python 3.11 to 3.13 and on PostgreSQL. It also runs a migration-versus-model check on both databases, pyright, ruff (including bandit's security rules), a coverage floor, `pip-audit` on the pinned dependencies, and a Docker smoke test that walks the attendance flow against the built image.
 - **Migrations.** Alembic, with tests that upgrade and downgrade with data in place, and an automatic upgrade path for databases created before migrations existed.
-- **Time.** Stored in UTC and shown in the college's time zone (`TIMEZONE`).
+- **Time.** Stored in UTC and shown in the college's time zone (set on the Settings page, starting from `TIMEZONE`).
 - **Security.** Two-step sign-in (TOTP, each code usable once, secrets encrypted at rest), CSRF on every form, a CSP with no inline scripts or styles, signed QR tokens, network allowlisting that fails closed, an HMAC-chained activity log, and a 30-day retention for scan IP addresses. See the [threat model](docs/THREAT_MODEL.md).
 - **Operations.** Request ids in every log line, optional JSON logs, an access log without IPs or tokens, Prometheus metrics behind a token, a health check, safe online backups, and a non-root Docker image.
 
 ```text
 attendqr/
-  blueprints/     routes: auth, attendance (QR), reports and analytics, leave, students, academics, accounts, api
-  services/       QR tokens, reports, analytics, leave, spot checks, integrity, eligibility, audit chain,
-                  two-step sign-in, semester locks, enrollment history, imports, backups, demo data
+  blueprints/     routes: auth, attendance (QR), reports and analytics, leave, students, academics, accounts,
+                  groups, routine, settings, api
+  services/       QR tokens, the counting rule, reports, analytics, leave, spot checks, integrity, eligibility,
+                  audit chain, two-step sign-in, semester locks, enrollment history, groups, the class routine
+                  and its one-date changes, settings, imports, backups, demo data
   access.py       roles and department scope        security.py   CSRF, CSP, passwords, throttling
   models.py       SQLAlchemy models                  observability.py   request ids, logs, metrics
 migrations/       Alembic migrations                 templates/, static/   pages, Tailwind CSS, vendored JS
