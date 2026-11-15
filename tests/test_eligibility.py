@@ -94,3 +94,25 @@ def test_page_and_actions_are_for_the_hod_and_principal_of_that_class(data, held
     other_hod = client_for(data.hod).get(f'/reports/eligibility?department_id={data.other_id}&semester_id={data.other_sem_id}')
     assert other_hod.status_code == 403
     assert post(client_for(data.teacher), condone_url(data, held.id), {'note': 'x'}).status_code == 403
+
+
+def test_a_locked_semester_keeps_the_percentages_it_was_locked_under(app, data, held, client_for):
+    """Third is at 70%: in the band at 75/65. After the lock, raising the settings leaves the report alone."""
+    from attendqr.services.settings import get_setting
+
+    hod = client_for(data.hod)
+    post(hod, f'/semesters/{data.sem1_id}/lock')
+    semester = db.session.get(Semester, data.sem1_id)
+    assert (semester.locked_eligibility_percent, semester.locked_condonation_percent) == (75, 65)
+    assert '(eligibility 75%, condonation from 65%)' in ActivityLog.query.filter_by(action='attendance_locked').one().description
+
+    post(client_for(data.principal), '/settings', {'eligibility_percent': '90', 'condonation_percent': '80'})
+    assert get_setting('eligibility_percent') == 90
+    assert statuses(app, data)['MCA003'] == (70.0, 'needs_condonation')
+    shown = page(hod.get(f'/reports/eligibility?department_id={data.mca_id}&semester_id={data.sem1_id}'))
+    assert 'limits in force when it was locked: eligible at 75%, condonable from 65%' in shown
+
+    post(client_for(data.principal), f'/semesters/{data.sem1_id}/unlock', {'note': 'Re-check after re-exam'})
+    db.session.refresh(semester)
+    assert semester.locked_eligibility_percent is None
+    assert statuses(app, data)['MCA003'] == (70.0, 'detained')  # now judged by 90/80
