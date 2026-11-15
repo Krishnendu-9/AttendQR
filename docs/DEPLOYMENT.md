@@ -221,7 +221,7 @@ The README lists the results and what limits them.
 - `TOTP_REQUIRED_ROLES` (default `principal,hod`): roles that must set up two-step sign-in at their next sign-in. `none` requires nobody (for a quick demo); `principal,hod,teacher` requires all staff.
 - `TOTP_ISSUER` (default `AttendQR`): the name authenticator apps show next to the code.
 - Codes depend on the clock: keep the server's time synchronised (Windows and Linux do this by default).
-- The secrets are stored in the database as they are, so treat database backups as sensitive.
+- The secrets are stored encrypted, under a key derived from `SECRET_KEY`, so a copy of the database alone cannot produce codes. Keep `instance/secret_key` (or your `SECRET_KEY`) with your backups: under a different key the secrets cannot be read, and those accounts must sign in with a recovery code or have their two-step sign-in reset by the Principal.
 
 ## Exam eligibility
 
