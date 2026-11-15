@@ -11,6 +11,7 @@ from sqlalchemy.orm import joinedload
 from ..access import (
     can_access_department,
     can_access_student,
+    can_reset_student_access,
     current_department_id,
     email_format_rule_message,
     is_principal,
@@ -390,7 +391,7 @@ def delete(id):
 @role_required('principal', 'hod', 'teacher')
 def reset_password(id):
     student = db.get_or_404(Student, id)
-    if not can_access_student(student):
+    if not can_reset_student_access(student):
         abort(403)
 
     ensure_student_account(student)
@@ -421,7 +422,7 @@ def reset_password(id):
 @role_required('principal', 'hod', 'teacher')
 def reset_device(id):
     student = db.get_or_404(Student, id)
-    if not can_access_student(student):
+    if not can_reset_student_access(student):
         abort(403)
 
     student.device_id = None
