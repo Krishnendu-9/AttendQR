@@ -233,12 +233,13 @@
   /*
    * Position blocks drawn on a time axis (the routine grid). The CSP forbids style="" attributes,
    * so the server writes percentages as data-top/-height/-left/-width and this applies them.
-   * [data-span-minutes] containers get a height in proportion to the minutes they cover.
+   * [data-span-minutes] grids (time from left to right) get a minimum width in proportion to the
+   * minutes they cover, plus the day names' column, so a long day scrolls instead of squeezing.
    */
   function placeBlocks(root) {
     var scope = root || document;
     scope.querySelectorAll('[data-span-minutes]').forEach(function (el) {
-      el.style.height = Math.max(320, Number(el.getAttribute('data-span-minutes')) * 1.15) + 'px';
+      el.style.minWidth = Math.max(736, 128 + Number(el.getAttribute('data-span-minutes')) * 1.4) + 'px';
     });
     scope.querySelectorAll('[data-place]').forEach(function (el) {
       var d = el.dataset;

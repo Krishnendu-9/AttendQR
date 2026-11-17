@@ -373,6 +373,8 @@ def test_grid_places_parallel_classes_side_by_side(app, data):
                TimetableEntry(weekday=0, start_time=time(10), end_time=time(11)),
                TimetableEntry(weekday=0, start_time=time(14), end_time=time(15))]
     grid = week_grid(entries, data.mca_id, days=[0])
-    blocks = grid['columns'][0]['blocks']
-    assert [(b['left'], b['width']) for b in blocks] == [(0.0, 50.0), (50.0, 50.0), (0.0, 100.0)]
-    assert blocks[0]['top'] == 0.0 and grid['span'] == 300
+    row = grid['rows'][0]
+    blocks = row['blocks']
+    assert [(b['lane_start'], b['lane_size']) for b in blocks] == [(0.0, 50.0), (50.0, 50.0), (0.0, 100.0)]
+    assert blocks[0]['start'] == 0.0 and grid['span'] == 300
+    assert row['lanes'] == 2  # the row is drawn taller for the two parallel classes

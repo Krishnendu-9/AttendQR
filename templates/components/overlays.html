@@ -15,7 +15,7 @@
 <div x-data="toast" x-show="visible" x-transition.opacity.duration.200ms data-sticky="{{ 'true' if sticky else 'false' }}"
   @mouseenter="pause" @mouseleave="schedule" class="toast pointer-events-auto" role="{{ 'alert' if tone == 'danger' else 'status' }}">
   <span class="mt-0.5 shrink-0 {{ tones[tone][1] }}">{{ icon(tones[tone][0]) }}</span>
-  <p class="min-w-0 flex-1 break-words text-body-md text-foreground" data-toast-message>{{ message }}</p>
+  <p class="min-w-0 flex-1 wrap-break-word text-body-md text-foreground" data-toast-message>{{ message }}</p>
   <button type="button" class="btn btn-ghost btn-sm btn-icon -mr-2 -mt-1.5 shrink-0" @click="dismiss" aria-label="Dismiss">{{ icon('x') }}</button>
 </div>
 {%- endmacro %}

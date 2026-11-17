@@ -76,7 +76,8 @@
   --muted-foreground: #A1A1AA;
   --placeholder: #71717A;
   --border: #27272A;
-  --input: #3F3F46;
+  /* At least 3:1 against the page, cards and dialogs, so field edges are visible (WCAG 1.4.11). */
+  --input: #65656F;
   --muted: #1C1C1F;
   --primary: #2563EB;
   --primary-foreground: #FFFFFF;
@@ -779,6 +780,52 @@
     left: 0;
     z-index: 1;
     border-right: 1px solid var(--border);
+  }
+
+  /* Subject colours (services/subject_colors.py): .subject-<key> sets the hue; .subject-tint
+     tints a routine block with it, .subject-chip an icon tile, .subject-dot a swatch. Tints are
+     16% (dark) and 12% (light) of the hue over the card; in light mode the secondary text inside
+     is darker, so every colour keeps text at 4.5:1 or more. */
+  .subject-blue { --subject: #3B82F6; }
+  .subject-violet { --subject: #8B5CF6; }
+  .subject-magenta { --subject: #D946EF; }
+  .subject-rose { --subject: #F43F5E; }
+  .subject-orange { --subject: #F97316; }
+  .subject-amber { --subject: #F59E0B; }
+  .subject-lime { --subject: #84CC16; }
+  .subject-green { --subject: #10B981; }
+  .subject-teal { --subject: #14B8A6; }
+  .subject-grey { --subject: #71717A; }
+
+  .subject-tint {
+    border-color: color-mix(in srgb, var(--subject) 45%, var(--card));
+    border-left: 3px solid var(--subject);
+    background-color: color-mix(in srgb, var(--subject) 12%, var(--card));
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .subject-tint .text-muted-foreground {
+    color: #475569;
+  }
+  .dark .subject-tint {
+    background-color: color-mix(in srgb, var(--subject) 16%, var(--card));
+  }
+  .dark .subject-tint .text-muted-foreground {
+    color: var(--muted-foreground);
+  }
+
+  .subject-chip {
+    background-color: color-mix(in srgb, var(--subject) 16%, var(--card));
+    color: var(--subject);
+  }
+
+  .subject-dot {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 9999px;
+    background-color: var(--subject);
   }
 
   .monogram {

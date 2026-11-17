@@ -59,7 +59,7 @@
       <ol class="px-6 py-2">
         {% for log in security_logs %}
         <li class="relative flex gap-4 py-3">
-          {% if not loop.last %}<span class="absolute left-[7px] top-8 bottom-0 w-px bg-border" aria-hidden="true"></span>{% endif %}
+          {% if not loop.last %}<span class="absolute left-1.75 top-8 bottom-0 w-px bg-border" aria-hidden="true"></span>{% endif %}
           <span class="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-secondary"><span class="size-1.5 rounded-full bg-vibrant"></span></span>
           <div class="min-w-0">
             <p class="text-body-md text-foreground">{{ log.description }}</p>

@@ -554,12 +554,15 @@ def _lanes(items):
 
 
 def week_grid(entries, department_id, days=None, keep_empty_days=False):
-    """Positions for drawing a week: days as columns, time downwards (percentages of the day's height).
+    """Positions for drawing a week: a row per day, time from left to right, like a printed routine.
+
+    `start`/`length` are percentages of the day along the time axis. Parallel classes (two lab
+    batches) share the slot in lanes: `lane_start`/`lane_size` are percentages of the row's height,
+    and each day's `lanes` (its most parallel classes) lets the page give that row more height.
 
     `entries` are TimetableEntry-like objects with weekday, start_time and end_time. Days default
     to the working days plus any day that has entries; a working day with neither periods nor
     classes is left out unless keep_empty_days (the editor keeps it, to add classes there).
-    Parallel classes (two lab batches) sit side by side.
     """
     periods = week_periods(department_id)
     if days is None:
@@ -577,24 +580,25 @@ def week_grid(entries, department_id, days=None, keep_empty_days=False):
     def pct(value):
         return round((minutes(value) - first) / span * 100, 3)
 
-    columns = []
+    rows = []
     by_day = defaultdict(list)
     for entry in entries:
         by_day[entry.weekday].append(entry)
     for day in days:
-        bands = [{'period': p, 'top': pct(p.start_time), 'height': round(pct(p.end_time) - pct(p.start_time), 3)}
+        bands = [{'period': p, 'start': pct(p.start_time), 'length': round(pct(p.end_time) - pct(p.start_time), 3)}
                  for p in periods[day]]
-        blocks = [{'entry': entry, 'top': pct(entry.start_time),
-                   'height': round(pct(entry.end_time) - pct(entry.start_time), 3),
-                   'left': round(lane / lanes * 100, 3), 'width': round(100 / lanes, 3)}
-                  for entry, lane, lanes in _lanes([(minutes(e.start_time), minutes(e.end_time), e)
-                                                    for e in by_day[day]])]
-        columns.append({'weekday': day, 'name': WEEKDAYS[day], 'bands': bands,
-                        'blocks': sorted(blocks, key=lambda b: (b['top'], b['left']))})
-    hours = [{'label': f"{(m // 60) % 12 or 12}{'am' if m < 720 else 'pm'}", 'top': round((m - first) / span * 100, 3)}
+        placed = _lanes([(minutes(e.start_time), minutes(e.end_time), e) for e in by_day[day]])
+        blocks = [{'entry': entry, 'start': pct(entry.start_time),
+                   'length': round(pct(entry.end_time) - pct(entry.start_time), 3),
+                   'lane_start': round(lane / lanes * 100, 3), 'lane_size': round(100 / lanes, 3)}
+                  for entry, lane, lanes in placed]
+        rows.append({'weekday': day, 'name': WEEKDAYS[day], 'bands': bands,
+                     'lanes': max((lanes for _, _, lanes in placed), default=1),
+                     'blocks': sorted(blocks, key=lambda b: (b['start'], b['lane_start']))})
+    hours = [{'label': f"{(m // 60) % 12 or 12}{'am' if m < 720 else 'pm'}", 'at': round((m - first) / span * 100, 3)}
              for m in range(-(-first // 60) * 60, last + 1, 60)]
-    # Minutes covered, so the page can give a long day more height.
-    return {'columns': columns, 'hours': hours, 'span': span}
+    # Minutes covered, so the page can give a long day more width.
+    return {'rows': rows, 'hours': hours, 'span': span}
 
 
 def print_table(entries, department_id, days):

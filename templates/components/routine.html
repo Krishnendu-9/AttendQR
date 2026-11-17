@@ -1,5 +1,6 @@
 {#- The week grid of a routine, shared by the class routine, its editor and personal routines.
-    Blocks carry their position as data-top/-height/-left/-width (percent of the day); static/js/app.js
+    Blocks carry their position as data-left/-width (percent of the day) and data-top/-height (percent
+    of their day's row, for parallel classes); static/js/app.js
     placeBlocks() applies them, since the CSP forbids inline styles. Phones get a list per day instead.
     Import with context: {% from 'components/routine.html' import routine_grid, routine_list, entry_text with context %} -#}
 {% from 'components/ui.html' import icon, badge %}
@@ -7,8 +8,14 @@
 {#- What a class says in the grid: "CS591 (Gr-1)", teachers' short names, room, odd/even weeks. -#}
 {% macro entry_text(entry, show_class=False) -%}
 {% set label = (entry.subject.paper_code or entry.subject.name) if entry.subject else (entry.title or 'Unassigned') %}
-<span class="block truncate text-label-md text-foreground">{{ label }}{% if entry.group %} <span class="text-muted-foreground">· {{ entry.group.name }}</span>{% endif %}</span>
-{% if entry.subject and entry.subject.paper_code %}<span class="block truncate text-body-sm text-muted-foreground">{{ entry.subject.name }}</span>{% endif %}
+{#- The group starts the second line, so it stays visible when two batches share a slot and the blocks are narrow. -#}
+<span class="block truncate text-label-md text-foreground">{{ label }}</span>
+{% if entry.group or (entry.subject and entry.subject.paper_code) %}
+<span class="block truncate text-body-sm text-muted-foreground">
+  {%- if entry.group %}<span class="font-medium text-foreground">{{ entry.group.name }}</span>{% if entry.subject and entry.subject.paper_code %} · {% endif %}{% endif -%}
+  {%- if entry.subject and entry.subject.paper_code %}{{ entry.subject.name }}{% endif -%}
+</span>
+{% endif %}
 <span class="block truncate text-body-sm text-muted-foreground">
   {{- entry_teachers(entry) }}{% if entry.room %}{{ ' · ' if entry_teachers(entry) }}{{ entry.room }}{% endif %}
   {%- if entry.week_pattern != 'every' %} · {{ 'odd' if entry.week_pattern == 'odd' else 'even' }} weeks{% endif %}
@@ -22,50 +29,53 @@
 {%- for teacher in entry.teachers %}{{ teacher_short_name(teacher) }}{% if not loop.last %}+{% endif %}{% endfor -%}
 {%- endmacro %}
 
-{#- The grid. editing: periods and blocks open the entry dialog (entry_values(entry) gives a block's values). -#}
+{#- The grid: a row per day, time from left to right, like the printed routine. Parallel classes
+    (lab batches) share their slot one above the other, and their day's row is taller.
+    editing: periods and blocks open the entry dialog (entry_values(entry) gives a block's values). -#}
 {% macro routine_grid(grid, editing=False, show_class=False, highlight_day=None) -%}
 <div class="hidden overflow-x-auto md:block">
-  <div class="flex min-w-[46rem]">
-    <div class="w-14 shrink-0">
-      <div class="h-10"></div>
-      <div class="relative" data-span-minutes="{{ grid.span }}">
+  <div class="pr-4" data-span-minutes="{{ grid.span }}">
+    <div class="flex">
+      <div class="w-28 shrink-0"></div>
+      <div class="relative h-8 min-w-0 flex-1">
         {% for hour in grid.hours %}
-        <span class="absolute -translate-y-1/2 pr-2 text-right text-body-sm tabular-nums text-muted-foreground" data-place data-top="{{ hour.top }}">{{ hour.label }}</span>
+        <span class="absolute bottom-2 -translate-x-1/2 text-body-sm tabular-nums text-muted-foreground" data-place data-left="{{ hour.at }}">{{ hour.label }}</span>
         {% endfor %}
       </div>
     </div>
-    {% for column in grid.columns %}
-    <div class="min-w-0 flex-1 border-l border-border">
-      <div class="flex h-10 items-center justify-center border-b border-border text-label-lg {{ 'text-primary' if column.weekday == highlight_day else 'text-foreground' }}">{{ column.name }}</div>
-      <div class="relative" data-span-minutes="{{ grid.span }}">
-        {% for band in column.bands %}
+    {% for row in grid.rows %}
+    {% set height = 'h-24' if row.lanes <= 1 else ('h-40' if row.lanes == 2 else 'h-56') %}
+    <div class="flex border-t border-border {{ 'border-b' if loop.last }}">
+      <div class="flex w-28 shrink-0 items-center pr-3 text-label-lg {{ 'text-primary' if row.weekday == highlight_day else 'text-foreground' }}">{{ row.name }}</div>
+      <div class="relative min-w-0 flex-1 border-l border-border {{ height }}">
+        {% for band in row.bands %}
         {% set p = band.period %}
         {% if editing and not p.is_break %}
-        <button type="button" class="absolute inset-x-0 border-b border-border/70 text-left hover:bg-accent focus-visible:shadow-focus focus-visible:outline-none"
-          data-place data-top="{{ band.top }}" data-height="{{ band.height }}"
-          data-record-dialog="entry-dialog" data-action="{{ add_entry_url }}" data-title="Add a class on {{ column.name }}" data-submit="Add class" data-mode="create"
-          data-values='{{ {"weekday": column.weekday, "start_time": p.start_time.strftime("%H:%M"), "end_time": p.end_time.strftime("%H:%M")}|tojson }}'
-          aria-label="Add a class on {{ column.name }}, period {{ p.label }}">
-          <span class="px-1.5 text-body-sm text-muted-foreground">{{ p.label }}</span>
+        <button type="button" class="absolute inset-y-0 border-r border-border/70 text-left hover:bg-accent focus-visible:shadow-focus focus-visible:outline-none"
+          data-place data-left="{{ band.start }}" data-width="{{ band.length }}"
+          data-record-dialog="entry-dialog" data-action="{{ add_entry_url }}" data-title="Add a class on {{ row.name }}" data-submit="Add class" data-mode="create"
+          data-values='{{ {"weekday": row.weekday, "start_time": p.start_time.strftime("%H:%M"), "end_time": p.end_time.strftime("%H:%M")}|tojson }}'
+          aria-label="Add a class on {{ row.name }}, period {{ p.label }}">
+          <span class="absolute left-1.5 top-1 text-body-sm text-muted-foreground">{{ p.label }}</span>
         </button>
         {% else %}
-        <div class="absolute inset-x-0 border-b border-border/70 {{ 'bg-muted' if p.is_break }}" data-place data-top="{{ band.top }}" data-height="{{ band.height }}">
-          <span class="px-1.5 text-body-sm text-muted-foreground">{{ 'Break' if p.is_break and p.label|lower != 'break' else p.label }}</span>
+        <div class="absolute inset-y-0 border-r border-border/70 {{ 'bg-muted' if p.is_break }}" data-place data-left="{{ band.start }}" data-width="{{ band.length }}">
+          <span class="absolute left-1.5 top-1 text-body-sm text-muted-foreground">{{ 'Break' if p.is_break and p.label|lower != 'break' else p.label }}</span>
         </div>
         {% endif %}
         {% endfor %}
-        {% for block in column.blocks %}
+        {% for block in row.blocks %}
         {% set e = block.entry %}
-        {% set tone = 'border-warning/40 bg-warning-soft' if e.is_unassigned else ('border-border bg-muted line-through' if e.status == 'cancelled' else 'border-secondary bg-accent') %}
+        {% set tone = 'border-warning/40 bg-warning-soft' if e.is_unassigned else ('border-border bg-muted line-through' if e.status == 'cancelled' else 'subject-tint subject-' ~ subject_color(e.subject)) %}
         {% if editing %}
         <button type="button" class="absolute p-0.5 text-left focus-visible:outline-none"
-          data-place data-top="{{ block.top }}" data-height="{{ block.height }}" data-left="{{ block.left }}" data-width="{{ block.width }}"
+          data-place data-left="{{ block.start }}" data-width="{{ block.length }}" data-top="{{ block.lane_start }}" data-height="{{ block.lane_size }}"
           data-record-dialog="entry-dialog" data-action="{{ url_for('routine.update_entry', id=e.id) }}" data-title="Edit class" data-submit="Save class" data-mode="edit"
           data-values='{{ entry_values(e)|tojson }}'>
           <span class="block h-full overflow-hidden rounded-lg border {{ tone }} px-2 py-1 hover:shadow-card">{{ entry_text(e, show_class) }}</span>
         </button>
         {% else %}
-        <div class="absolute p-0.5" data-place data-top="{{ block.top }}" data-height="{{ block.height }}" data-left="{{ block.left }}" data-width="{{ block.width }}"
+        <div class="absolute p-0.5" data-place data-left="{{ block.start }}" data-width="{{ block.length }}" data-top="{{ block.lane_start }}" data-height="{{ block.lane_size }}"
           title="{{ e.start_time.strftime('%I:%M %p') }} to {{ e.end_time.strftime('%I:%M %p') }}">
           <div class="h-full overflow-hidden rounded-lg border {{ tone }} px-2 py-1">{{ entry_text(e, show_class) }}</div>
         </div>
@@ -81,14 +91,14 @@
 {#- Phones: each day as a list. -#}
 {% macro routine_list(grid, editing=False, show_class=False) -%}
 <div class="space-y-5 md:hidden">
-  {% for column in grid.columns %}
+  {% for column in grid.rows %}
   <section>
     <h3 class="mb-2 text-label-lg text-foreground">{{ column.name }}</h3>
     {% if column.blocks %}
     <ul class="space-y-2">
       {% for block in column.blocks|sort(attribute='entry.start_time') %}
       {% set e = block.entry %}
-      <li class="flex gap-3 rounded-lg border border-border p-3">
+      <li class="flex gap-3 rounded-lg border p-3 {{ 'border-border bg-muted' if e.status == 'cancelled' else 'subject-tint subject-' ~ subject_color(e.subject) }}">
         <span class="w-20 shrink-0 text-body-sm tabular-nums text-muted-foreground">{{ e.start_time.strftime('%I:%M').lstrip('0') }}-{{ e.end_time.strftime('%I:%M %p').lstrip('0') }}</span>
         <span class="min-w-0 flex-1">{{ entry_text(e, show_class) }}</span>
         {% if editing %}
@@ -117,7 +127,8 @@
     {{ o.start_time.strftime('%I:%M').lstrip('0') }}-{{ o.end_time.strftime('%I:%M %p').lstrip('0') }}
   </span>
   <span class="min-w-0 flex-1">
-    <span class="block text-label-lg text-foreground {{ 'line-through' if o.status == 'cancelled' }}">
+    <span class="flex items-center gap-2 text-label-lg text-foreground {{ 'line-through' if o.status == 'cancelled' }}">
+      <span class="subject-dot subject-{{ subject_color(o.subject) }}" aria-hidden="true"></span>
       {{- name }}{% if o.group %} <span class="text-muted-foreground">&middot; {{ o.group.name }}</span>{% endif %}</span>
     <span class="block text-body-sm text-muted-foreground">
       {%- if show_class %}{{ o.semester.department.display_name }} {{ o.semester.name }} &middot; {% endif -%}
