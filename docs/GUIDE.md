@@ -4,9 +4,10 @@ The rules the app enforces, for staff and students. Installing and running it is
 
 ## Account Rules
 
-- Staff account emails must end with one of `ALLOWED_STAFF_DOMAINS`, for example `@rcciit.org.in`. It has no default, so set it before creating HOD or Teacher accounts; the server warns at startup if it is empty or includes a public domain such as `@gmail.com`
+- Staff account emails must end with one of `ALLOWED_STAFF_DOMAINS`, for example `@college.example`. It has no default, so set it before creating HOD or Teacher accounts; the server warns at startup if it is empty or includes a public domain such as `@gmail.com`
 - Principal can create Principal, HOD, and Teacher accounts; HOD can create Teacher accounts for their department
 - Only one active HOD is allowed per department
+- An HOD who also teaches: fill in **Teacher name** on the HOD's account (Accounts). It links a teacher profile with the account's email, creating one if there is none, so subjects can be assigned to the HOD. Emptying the field unlinks it; the profile, its subjects and its sessions stay
 - Passwords need at least 8 characters with letters and numbers, must not contain the user's email name or roll number, and must not be a common password or a common word plus digits (such as `Welcome@2026`)
 - New and reset accounts must change their password before using the app
 - Changing or resetting a password, deactivating an account, or logging out signs out all of that account's existing sessions, on every device. A copied login cookie stops working too.
@@ -56,6 +57,7 @@ Besides its paper code, name and main teacher, a subject (on **Subjects**) has:
 - **Co-teachers**: teachers who share it, such as the two teachers of a lab. They can start its sessions, open and correct every session of it (whoever started it), and see it in their reports.
 - **Only for group**: for an elective or a lab one batch takes. New sessions of the subject start for that group.
 - **Counts towards attendance** (on by default): untick it for something taught but never counted, such as a non-credit course. Its sessions are still listed in the reports and exports, but count in nobody's percentage, shortage, analytics or exam eligibility, like special classes.
+- **Colour in the routine** (HOD and Principal): *Automatic* by default, which gives the subjects of a class different colours in the order they were added. Pick one of ten colours to fix it. The colour is used in the routine grid, the week list on phones, the printed sheet and the Subjects page. A class in the routine that is not a subject (such as a tutorial slot) is grey.
 
 Teachers also have a **short name** (edited with their account; empty uses their initials, "Dr. Sutapa Chatterjee" is SC), used in the class routine.
 
@@ -82,7 +84,7 @@ The routine (timetable) says which classes each class has in a week. It is built
 ### Building and publishing a routine
 
 1. On **Class routines**, open a class and choose **Create routine** (or **Edit routine**). This opens a **draft**; nobody else sees it.
-2. Click a period in the grid, or **Add class**: choose the day, a period and its length (or any start and end time), the subject (or a title such as "Special Tutorial Class"), the group, the teachers, the room, and whether it repeats every week, in odd weeks or in even weeks. A class can also be limited to some dates.
+2. Click a period in the grid (a row per day, with the times across the top, like the printed sheet; two batches in the same slot share it, one above the other), or **Add class**: choose the day, a period and its length (or any start and end time), the subject (or a title such as "Special Tutorial Class"), the group, the teachers, the room, and whether it repeats every week, in odd weeks or in even weeks. A class can also be limited to some dates.
 3. Two lab batches can run side by side. The draft refuses a clash, and names it: the same teacher in two places (also in another class's routine), the same room twice, a whole-class class beside anything else, or one group twice. Two groups that share students only warn; tick **Save anyway** if they never attend both.
 4. **Copy a day** repeats one day on another. **Copy a routine** starts from another class: subjects are matched by paper code, and classes without a match stay to be assigned.
 5. **Publish** from a date. The routine in force until then ends the day before. A published routine never changes: editing makes a new draft, so every past week keeps the routine it really had. For the same reason a new version starts today or later; only a class's first routine can start in the past. **Print** gives the sheet for the notice board: days against periods, with the teachers' short names.
@@ -94,6 +96,7 @@ A locked semester's routine can be viewed but not changed.
 - **Today's classes** on a teacher's dashboard lists their classes, with **Start session** from 15 minutes before a class until it ends. The session gets the subject, the group and a duration up to the class's end. Once started it shows **Open session**, also for a co-teacher.
 - A session started by hand on **Generate QR** that matches a class under way (same class, subject and group) holds that class. Otherwise it is marked **Unscheduled**, but only in classes that have a routine; nothing is refused.
 - **My routine** shows a teacher every class they teach in a week, and a student their classes, with their groups only. The student dashboard shows **Today**.
+- An HOD with a teacher profile (see Account Rules) also gets **Today's classes** on the dashboard and **My routine**, and is recorded as the teacher of the sessions they start.
 
 ### Changes for one date
 

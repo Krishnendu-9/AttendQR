@@ -44,6 +44,8 @@ The system supports four roles:
 - Cannot access other departments.
 - Manages the groups (lab batches, electives) of the department's classes; every change is logged.
 - Builds and publishes the routines of the department's classes, manages its own bell schedules and holidays, and makes changes for one date (cancel, move, substitute, extra class).
+- Sets each subject's colour in the routine.
+- An HOD who also teaches (a teacher profile linked through **Teacher name** on the HOD's account) also gets Today's classes and My routine for the subjects they teach, and is recorded as the teacher of the sessions they start. Their rights stay department-wide; the profile adds no other right.
 
 ## Teacher
 
@@ -75,7 +77,7 @@ The system supports four roles:
 
 Sensitive staff accounts are created by Principal or scoped HOD users from the Accounts page. Student accounts are created automatically from student profiles or bulk student imports.
 
-HOD and Teacher usernames must use an email domain listed in `ALLOWED_STAFF_DOMAINS`, for example `@rcciit.org.in`. There is no default: until it is set, no staff accounts can be created. Public domains such as `@gmail.com` belong there only for testing.
+HOD and Teacher usernames must use an email domain listed in `ALLOWED_STAFF_DOMAINS`, for example `@college.example`. There is no default: until it is set, no staff accounts can be created. Public domains such as `@gmail.com` belong there only for testing.
 
 Teacher login usernames must match the linked teacher profile email.
 

@@ -40,6 +40,7 @@ AttendQR/
       retention.py      Clearing scan IP addresses after SCAN_IP_RETENTION_DAYS
       backup.py         Consistent SQLite backups (`flask backup-db`)
       settings.py       Institution settings: the registry, the server defaults, saving and resetting
+      subject_colors.py Subject colours in the routine: the palette, automatic colours by the order subjects were added
     blueprints/
       auth.py           /login, /logout, /account
       main.py           Dashboards; /healthz for container health checks
@@ -53,7 +54,7 @@ AttendQR/
       accounts.py       Staff account management (/accounts)
       settings.py       The Principal's Settings page (/settings)
       api.py            JSON endpoints used by the pages (/api/...)
-  migrations/           Alembic environment and versions (Flask-Migrate)
+  migrations/           Alembic environment and versions (Flask-Migrate), 0001_baseline to 0025_subject_color
   templates/            Jinja2 templates (see "Frontend" below)
     layouts/            app.html (sidebar, header, content) and auth.html (sign in, errors)
     components/         Shared macros (ui.html, forms.html), navigation (nav.html), shell parts, Lucide icons
@@ -67,6 +68,7 @@ AttendQR/
     js/app.js           Shared page helpers (dropdown loading, password meter)
     js/charts.js        Hover and keyboard tooltips for the analytics charts
     vendor/             Alpine.js (CSP build), htmx and the Inter font, served locally
+    favicon.svg, favicon.ico, apple-touch-icon.png   The logo as browser and home-screen icons
   tests/                pytest suite (conftest.py builds a fresh migrated database per test; TEST_DATABASE_URL
                         runs it on PostgreSQL)
   run.py                Local/LAN server (waitress; debug server on localhost with FLASK_DEBUG=1)
@@ -78,6 +80,7 @@ AttendQR/
   docs/                 DEPLOYMENT.md, GUIDE.md, THREAT_MODEL.md, RBAC.md, media/ (the README GIFs)
   scripts/tailwind.py   Builds static/css/app.css with the pinned Tailwind standalone CLI (no Node.js)
   scripts/lucide_icons.py  Copies the Lucide icons the templates use into templates/components/icons/
+                        (attendqr-mark.svg, the logo, is drawn by hand and not written by it)
 ```
 
 ## Frontend

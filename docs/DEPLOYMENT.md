@@ -107,7 +107,7 @@ To try AttendQR without entering a college by hand, load the sample data into an
 flask --app wsgi seed-demo
 ```
 
-It creates two departments, three classes, 40 students and six weeks of past QR sessions, including a few students below 80%, manual corrections, a special class and a void session. It then prints a Principal, HOD, Teacher and Student login, all with the password `AttendQR@demo1` and no forced password change. Staff addresses use the reserved domain `college.example`; to add more staff in the demo, add `@college.example` to `ALLOWED_STAFF_DOMAINS`.
+It creates two departments, three classes and 68 students. The MCA class (Semester 1, 40 students) has a full class routine with two lab batches, and six weeks of past QR sessions generated from it, including a few students below 80%, manual corrections, a special class, a void session, leave requests, spot checks and a pair for the integrity report to find. The coming weeks have a cancelled class, a substitute and a holiday. Its HOD, Dr. Manas Ghosh, also teaches RDBMS. The B.TECH - CSE department has two smaller classes without a routine. It then prints a Principal, HOD, Teacher and Student login, all with the password `AttendQR@demo1` and no forced password change. The student login is Chocolate (MCA2024003). Staff addresses use the reserved domain `college.example`; to add more staff in the demo, add `@college.example` to `ALLOWED_STAFF_DOMAINS`.
 
 - `--weeks 10` creates more history, `--password ...` sets a different password, and `--seed N` changes the attendance pattern (the same seed always gives the same data).
 - It refuses to run on a database that already has records. `--reset` deletes **everything** first and asks for confirmation. Never use it on real data.
