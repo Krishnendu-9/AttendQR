@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload
 from ..access import (
     department_filter,
     is_principal,
+    own_teacher_profile,
     role_required,
     session_display_name,
     user_role,
@@ -39,20 +40,23 @@ def render_student_dashboard():
 
 
 def routine_overview():
-    """Today's classes for a teacher, and the classes passed without a session this week (staff)."""
+    """Today's classes for whoever teaches (a teacher, or an HOD who also teaches), and the classes
+    passed without a session this week (the teacher's own; the department's for the HOD and Principal)."""
     today = local_now().date()
     role = user_role()
-    teacher = current_user.teacher if role == 'teacher' else None
+    teacher = own_teacher_profile()
     week_from = week_start(today)
-    if teacher is not None:
-        week = occurrences(week_from, today, teacher_id=teacher.id)
-    elif role in ('principal', 'hod'):
+    if role in ('principal', 'hod'):
         semester_ids = [s.id for s in visible_semesters_query().all()]
         week = occurrences(week_from, today, semester_ids=semester_ids) if semester_ids else []
+    elif teacher is not None:
+        week = occurrences(week_from, today, teacher_id=teacher.id)
     else:
         week = []
     return {
-        'today_classes': [o for o in week if o.day == today] if teacher is not None else [],
+        'show_today_classes': teacher is not None,
+        'today_classes': [o for o in week if o.day == today and any(t.id == teacher.id for t in o.teachers)]
+        if teacher is not None else [],
         'not_recorded_today': [o for o in week if o.day == today and o.status == NOT_RECORDED],
         'not_recorded_week': [o for o in week if o.status == NOT_RECORDED],
         'routine_week_from': week_from,

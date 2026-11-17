@@ -11,7 +11,7 @@
   {'id': 'overview', 'label': 'Overview', 'items': [
     {'label': 'Dashboard', 'icon': 'layout-dashboard', 'endpoint': 'main.dashboard', 'show': staff, 'match': ['main.dashboard'], 'keywords': 'home overview'},
     {'label': 'My attendance', 'icon': 'calendar-check', 'endpoint': 'main.student_attendance', 'show': role == 'student', 'match': ['main.'], 'keywords': 'home percentage'},
-    {'label': 'My routine', 'icon': 'calendar-range', 'endpoint': 'routine.mine', 'show': role in ['student', 'teacher'], 'match': ['routine.mine'], 'keywords': 'timetable week schedule today classes'},
+    {'label': 'My routine', 'icon': 'calendar-range', 'endpoint': 'routine.mine', 'show': role in ['student', 'teacher'] or (role == 'hod' and current_user.teacher is not none), 'match': ['routine.mine'], 'keywords': 'timetable week schedule today classes'},
   ]},
   {'id': 'attendance', 'label': 'Attendance', 'items': [
     {'label': 'Generate QR', 'icon': 'qr-code', 'endpoint': 'attendance.generate_qr', 'show': staff, 'match': ['attendance.'], 'keywords': 'session class scan'},

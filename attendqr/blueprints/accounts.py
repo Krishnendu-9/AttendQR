@@ -71,6 +71,27 @@ def _teacher_move_block(teacher, department_id):
         ))
 
 
+def _teacher_profile(username, teacher_name, department_id, current=None):
+    """The teacher profile an account teaches with: its current one, one already under this email,
+    or a new one. Renamed, moved and given the account's email. Raises AccountError."""
+    if len(teacher_name) > 100:
+        raise AccountError("Teacher name must be at most 100 characters")
+    existing = Teacher.query.filter(db.func.lower(Teacher.email) == username).first()
+    if current is not None and existing is not None and existing.id != current.id:
+        raise AccountError(f"Teacher email '{username}' already belongs to another teacher profile.")
+    teacher = current or existing
+    if teacher is None:
+        teacher = Teacher(name=teacher_name, email=username, department_id=department_id)
+        db.session.add(teacher)
+        db.session.flush()
+        return teacher
+    if not can_access_teacher(teacher):
+        raise AccountError("You can link teacher profiles only in your department")
+    _teacher_move_block(teacher, department_id)
+    teacher.name, teacher.email, teacher.department_id = teacher_name, username, department_id
+    return teacher
+
+
 def _create_account(roles):
     username = normalize_email(request.form.get('username', ''))
     password = request.form.get('password', '')
@@ -102,6 +123,8 @@ def _create_account(roles):
             raise AccountError("Valid department is required for HOD accounts")
         if has_active_hod(department_id):
             raise AccountError("This department already has an active HOD. Deactivate the current HOD first.")
+        if teacher_name:  # the HOD also teaches: Today's classes, My routine, subjects of their own
+            teacher_id = _teacher_profile(username, teacher_name, department_id).id
     elif role == 'teacher':
         department_id = parse_int_value(raw_department_id) if is_principal() else current_department_id()
         if not teacher_name:
@@ -207,6 +230,16 @@ def edit(id):
                 abort(403)
             if account.is_active and has_active_hod(department_id, exclude_user_id=account.id):
                 raise AccountError("This department already has an active HOD. Deactivate the current HOD first.")
+            if short_name and len(short_name) > 10:
+                raise AccountError("Keep the short name to 10 characters, such as SC or MG.")
+            if teacher_name:  # the HOD also teaches
+                teacher = _teacher_profile(username, teacher_name, department_id, account.teacher)
+                if 'teacher_short_name' in request.form:
+                    teacher.short_name = short_name
+                account.teacher_id = teacher.id
+            elif account.teacher_id:
+                # No longer teaches: the profile stays (with its subjects and sessions), unlinked.
+                account.teacher_id = None
             account.username = username
             account.department_id = department_id
         elif account.role == 'teacher':

@@ -69,7 +69,7 @@
               data-filter-role="{{ account.role }}" data-filter-status="{{ status }}">
             <td class="py-3">
               <div class="flex items-center gap-3">
-                {{ monogram(account.teacher.name if account.teacher else account.username.split('@')[0].replace('.', ' ')) }}
+                {{ monogram(account.teacher.name if account.teacher else account.username.split('@')[0], from_email=not account.teacher) }}
                 <div class="min-w-0">
                   <p class="truncate text-label-lg text-foreground">{{ account.teacher.name if account.teacher else account.username }}</p>
                   {% if account.teacher %}<p class="truncate text-body-sm text-muted-foreground">{{ account.username }}</p>{% endif %}
@@ -144,7 +144,7 @@
       <ol class="px-6 py-2">
         {% for log in recent_logs %}
         <li class="relative flex gap-4 py-3">
-          {% if not loop.last %}<span class="absolute left-[7px] top-8 bottom-0 w-px bg-border" aria-hidden="true"></span>{% endif %}
+          {% if not loop.last %}<span class="absolute left-1.75 top-8 bottom-0 w-px bg-border" aria-hidden="true"></span>{% endif %}
           <span class="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-secondary"><span class="size-1.5 rounded-full bg-vibrant"></span></span>
           <div class="min-w-0">
             <p class="text-body-md text-foreground">{{ log.description }}</p>
@@ -189,8 +189,9 @@
                     placeholder='name' ~ (staff_domains[0] if staff_domains else '@example.com'),
                     attrs={'pattern': email_pattern, 'title': email_hint, 'maxlength': 80, 'autocomplete': 'off'}, cls='sm:col-span-2') }}
       {{ select_input('role', 'Role', roles.items()|list, id='role', required=True) }}
-      <div data-role-field="teacher">
-        {{ text_input('teacher_name', 'Teacher name', placeholder='Full name', attrs={'maxlength': 100, 'autocomplete': 'off'}) }}
+      <div data-role-field="hod teacher">
+        {{ text_input('teacher_name', 'Teacher name', placeholder='Full name', hint='For an HOD, only if they also teach.',
+                      attrs={'maxlength': 100, 'autocomplete': 'off'}) }}
       </div>
       <div data-role-field="hod teacher">
         {{ select_input('department_id', term('department'), departments, id='department_id', placeholder='Select department',
@@ -223,10 +224,11 @@
   {{ text_input('username', 'Account email', id='edit_username', type='email', required=True, hint=email_hint,
                 attrs={'pattern': email_pattern, 'title': email_hint, 'maxlength': 80, 'autocomplete': 'off'}, cls='sm:col-span-2') }}
   {{ text_input('role_label', 'Role', id='edit_role_label', attrs={'readonly': True, 'tabindex': '-1'}) }}
-  <div data-role-field="teacher">
-    {{ text_input('teacher_name', 'Teacher name', id='edit_teacher_name', attrs={'maxlength': 100, 'autocomplete': 'off'}) }}
+  <div data-role-field="hod teacher">
+    {{ text_input('teacher_name', 'Teacher name', id='edit_teacher_name', hint='For an HOD, only if they also teach. Leave empty if they do not.',
+                  attrs={'maxlength': 100, 'autocomplete': 'off'}) }}
   </div>
-  <div data-role-field="teacher">
+  <div data-role-field="hod teacher">
     {{ text_input('teacher_short_name', 'Short name', id='edit_teacher_short_name', placeholder='e.g. SC',
                   hint='Shown in the class routine. Empty uses the initials of the name.', attrs={'maxlength': 10, 'autocomplete': 'off'}) }}
   </div>
@@ -251,7 +253,8 @@
       var shown = wrapper.getAttribute('data-role-field').split(' ').indexOf(role) !== -1;
       wrapper.hidden = !shown;
       wrapper.querySelectorAll('input, select').forEach(function (control) {
-        control.required = shown && (control.name === 'teacher_name' || control.name === 'department_id');
+        // An HOD's teacher name is optional (only if they also teach).
+        control.required = shown && (control.name === 'department_id' || (control.name === 'teacher_name' && role === 'teacher'));
       });
     });
   }

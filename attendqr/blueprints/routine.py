@@ -13,6 +13,7 @@ from ..access import (
     is_principal,
     log_activity,
     ordered_departments_query,
+    own_teacher_profile,
     role_required,
     session_display_name,
     subject_display_name,
@@ -534,9 +535,10 @@ def _week_days(found):
 
 @bp.route('/routine/me')
 @login_required
-@role_required('teacher', 'student')
+@role_required('teacher', 'hod', 'student')
 def mine():
-    """The current user's week: a student's classes (their groups only), or every class a teacher teaches."""
+    """The current user's week: a student's classes (their groups only), or every class a teacher (or an
+    HOD who also teaches) teaches."""
     start = _week(request.args.get('week'))
     end = start + timedelta(days=6)
     if user_role() == 'student':
@@ -555,7 +557,7 @@ def mine():
                            grid=week_grid(found, department_id, _week_days(found)),
                            previous_week=start - timedelta(days=7), next_week=start + timedelta(days=7),
                            allowed_kinds=allowed_kinds, can_undo=can_undo, may_run=may_run,
-                           show_class=user_role() == 'teacher')
+                           show_class=user_role() in ('teacher', 'hod'))
 
 
 @bp.route('/routine/class/<int:semester_id>/week')
@@ -606,8 +608,15 @@ def start_occurrence():
     else:
         subject = get_or_create_special_subject(occurrence.semester.department_id, occurrence.semester.id)
         special_title = occurrence.title
-    teacher_id = current_teacher_id() if user_role() == 'teacher' else (
-        occurrence.teachers[0].id if occurrence.teachers else None)
+    # The session's teacher: whoever starts it, if they teach this class (a teacher, or an HOD who
+    # also teaches); for an HOD starting someone else's class, its first teacher.
+    own = own_teacher_profile()
+    if own is not None and any(t.id == own.id for t in occurrence.teachers):
+        teacher_id = own.id
+    elif user_role() == 'teacher':
+        teacher_id = current_teacher_id()
+    else:
+        teacher_id = occurrence.teachers[0].id if occurrence.teachers else None
     started = utc_now()
     class_session = ClassSession(subject_id=subject.id, special_title=special_title, teacher_id=teacher_id,
                                  group_id=occurrence.group.id if occurrence.group else None,

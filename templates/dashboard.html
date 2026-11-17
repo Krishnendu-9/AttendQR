@@ -1,33 +1,7 @@
 {% extends 'layouts/app.html' %}
-{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state with context %}
+{% from 'components/ui.html' import icon, btn, badge, page_header, card, callout, empty_state, stat_card with context %}
 {% from 'components/routine.html' import occurrence_row, change_dialog with context %}
 {% set page_title = 'Dashboard' %}
-
-{#- A total that links to its page: the icon and label on top, the number centred below (with
-    what it is made of, as (count, name) pairs, beside it). Numbers from a million up are shortened
-    ("6M"); the exact figure is in the tooltip and read by screen readers. A long number or label
-    (a renamed term) steps down a size so it never touches the edge. The arrow shows where cards are wide. -#}
-{% macro stat(label, value, icon_name, href, breakdown=None) -%}
-{%- set shown = value|compact_number|string -%}
-{%- set exact = value|full_number|string -%}
-<a href="{{ href }}"{% if shown != exact %} title="{{ label }}: {{ exact }}"{% endif %} class="card group flex flex-col gap-1.5 px-4 py-3 transition-colors hover:border-input focus-visible:shadow-focus focus-visible:outline-none">
-  <div class="flex min-w-0 items-center gap-2.5">
-    <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-ink transition-colors group-hover:bg-secondary">{{ icon(icon_name, 'size-4') }}</span>
-    <p class="min-w-0 flex-1 truncate {{ 'text-label-lg' if label|length <= 12 else 'text-label-md' }} text-muted-foreground" title="{{ label }}">{{ label }}</p>
-    <span class="shrink-0 text-placeholder transition-colors group-hover:text-foreground 2xl:hidden">{{ icon('chevron-right') }}</span>
-  </div>
-  <div class="flex min-w-0 flex-1 items-center justify-center gap-3">
-    <p class="{{ 'text-headline-lg' if shown|length <= 7 else 'text-headline-md' }} tabular-nums text-foreground">
-      {%- if shown != exact %}<span aria-hidden="true">{{ shown }}</span><span class="sr-only">{{ exact }}</span>{% else %}{{ shown }}{% endif -%}
-    </p>
-    {% if breakdown %}
-    <ul class="min-w-0 border-l border-border pl-3 text-body-sm text-muted-foreground">
-      {% for count, name in breakdown %}<li class="truncate"><span class="tabular-nums text-foreground">{{ count|compact_number }}</span> {{ name }}</li>{% endfor %}
-    </ul>
-    {% endif %}
-  </div>
-</a>
-{%- endmacro %}
 
 {% block content %}
 {% call page_header('Dashboard', 'Overview of departments, students, sessions and attendance.') %}
@@ -44,7 +18,7 @@
 </div>
 {% endif %}
 
-{% if current_user.role == 'teacher' %}
+{% if show_today_classes %}
 <section class="card mb-6" aria-labelledby="today-title">
   <header class="flex items-start justify-between gap-3 px-6 pt-6">
     <div>
@@ -67,25 +41,25 @@
 {% if current_user.role in ['principal', 'hod'] %}
 {#- One row on wide screens. With the accounts breakdown, the last card gets more room for it. -#}
 <section aria-label="Totals" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 {{ '2xl:grid-cols-[repeat(5,minmax(0,1fr))_minmax(0,1.6fr)]' if accounts.principals is not none else '2xl:grid-cols-6' }}">
-  {{ stat(terms('department'), departments, 'building-2', url_for('academics.departments')) }}
-  {{ stat(terms('semester'), semesters, 'calendar-range', url_for('academics.semesters')) }}
-  {{ stat(terms('subject'), subjects, 'book-open', url_for('academics.subjects')) }}
-  {{ stat('Teachers', teachers, 'presentation', url_for('academics.teachers')) }}
-  {{ stat('Students', students, 'graduation-cap', url_for('students.index')) }}
+  {{ stat_card(terms('department'), departments, 'building-2', url_for('academics.departments'), narrow=True) }}
+  {{ stat_card(terms('semester'), semesters, 'calendar-range', url_for('academics.semesters'), narrow=True) }}
+  {{ stat_card(terms('subject'), subjects, 'book-open', url_for('academics.subjects'), narrow=True) }}
+  {{ stat_card('Teachers', teachers, 'presentation', url_for('academics.teachers'), narrow=True) }}
+  {{ stat_card('Students', students, 'graduation-cap', url_for('students.index'), narrow=True) }}
   {% if accounts.principals is not none %}
-  {{ stat('Accounts', accounts.total, 'shield-user', url_for('accounts.index'), [
+  {{ stat_card('Accounts', accounts.total, 'shield-user', url_for('accounts.index'), narrow=True, breakdown=[
        (accounts.principals, role_label('principal')), (accounts.hods, role_label('hod')),
        (accounts.teachers, role_label('teacher'))]) }}
   {% else %}
   {#- An HOD sees only their department's teacher accounts. -#}
-  {{ stat(role_label('teacher') ~ ' accounts', accounts.total, 'shield-user', url_for('accounts.index')) }}
+  {{ stat_card(role_label('teacher') ~ ' accounts', accounts.total, 'shield-user', url_for('accounts.index'), narrow=True) }}
   {% endif %}
 </section>
 {% else %}
 <section aria-label="Totals" class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-  {{ stat('Available subjects', subjects, 'book-open', url_for('academics.subjects')) }}
-  {{ stat('My sessions', sessions, 'calendar-check', url_for('attendance.generate_qr')) }}
-  {{ stat('Attendance records', attendance, 'square-check', url_for('reports.index')) }}
+  {{ stat_card('Available subjects', subjects, 'book-open', url_for('academics.subjects')) }}
+  {{ stat_card('My sessions', sessions, 'calendar-check', url_for('attendance.generate_qr')) }}
+  {{ stat_card('Attendance records', attendance, 'square-check', url_for('reports.index')) }}
 </section>
 {% endif %}
 
@@ -124,7 +98,7 @@
     <ol class="px-6 py-2">
       {% for log in recent_account_logs %}
       <li class="relative flex gap-4 py-3">
-        {% if not loop.last %}<span class="absolute left-[7px] top-8 bottom-0 w-px bg-border" aria-hidden="true"></span>{% endif %}
+        {% if not loop.last %}<span class="absolute left-1.75 top-8 bottom-0 w-px bg-border" aria-hidden="true"></span>{% endif %}
         <span class="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-secondary"><span class="size-1.5 rounded-full bg-vibrant"></span></span>
         <div class="min-w-0">
           <p class="text-body-md text-foreground">{{ log.description }}</p>
