@@ -1,18 +1,8 @@
 {% extends 'layouts/app.html' %}
-{% from 'components/ui.html' import icon, btn, badge, attendance_badge, page_header, empty_state, monogram with context %}
+{% from 'components/ui.html' import icon, btn, badge, attendance_badge, page_header, empty_state, monogram, stat_card with context %}
 {% from 'components/forms.html' import field %}
 {% from 'components/report_filters.html' import report_filters, report_filters_script with context %}
 {% set page_title = 'Shortage list' %}
-
-{% macro stat(label, value, icon_name) -%}
-<div class="card flex items-start justify-between gap-4 p-5">
-  <div class="min-w-0">
-    <p class="text-label-md text-muted-foreground">{{ label }}</p>
-    <p class="mt-2 text-headline-lg tabular-nums text-foreground">{{ value }}</p>
-  </div>
-  <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-ink">{{ icon(icon_name, 'size-5') }}</span>
-</div>
-{%- endmacro %}
 
 {% block content %}
 {% call page_header('Shortage list', 'Students below the attendance requirement, overall or in any subject.') %}
@@ -32,10 +22,10 @@
 
 {% if report %}
 <section aria-label="Totals" class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-  {{ stat('Class size', report.class_size, 'graduation-cap') }}
-  {{ stat('Below ' ~ threshold ~ '%', report.rows|length, 'triangle-alert') }}
-  {{ stat('Classes held', report.classes_held, 'calendar-check') }}
-  {{ stat(terms('subject'), report.subjects|length, 'book-open') }}
+  {{ stat_card('Class size', report.class_size, 'graduation-cap') }}
+  {{ stat_card('Below ' ~ threshold ~ '%', report.rows|length, 'triangle-alert') }}
+  {{ stat_card('Classes held', report.classes_held, 'calendar-check') }}
+  {{ stat_card(terms('subject'), report.subjects|length, 'book-open') }}
 </section>
 
 <section class="card mt-6 overflow-hidden" aria-label="Students below the requirement">

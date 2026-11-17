@@ -3,13 +3,13 @@
 {% set role = user_role() %}
 {% if role == 'student' and current_user.student %}
   {% set display_name = current_user.student.name %}
-{% elif role == 'teacher' and current_user.teacher %}
+{% elif current_user.teacher %}{#- a teacher, or an HOD who also teaches -#}
   {% set display_name = current_user.teacher.name %}
 {% else %}
   {% set display_name = current_user.username.split('@')[0]|capitalize %}
 {% endif %}
-{% set words = display_name.replace('.', ' ').replace('_', ' ').split() %}
-{% set initials = ((words[0][:1] if words else '?') ~ (words[1][:1] if words|length > 1 else ''))|upper %}
+{#- Titles (Dr, Prof) skipped; for a name taken from the email, a leading role word ("hod.") too. -#}
+{% set initials = avatar_initials(display_name, from_email=not (current_user.student or current_user.teacher)) %}
 
 <header class="sticky top-0 z-30 print:hidden flex h-header-sm items-center gap-3 border-b border-border bg-card px-4 md:h-header md:px-6 lg:px-8">
   <button type="button" class="btn btn-ghost btn-icon -ml-2 md:hidden" @click="openSidebar" aria-label="Open navigation" aria-controls="sidebar" :aria-expanded="sidebarOpen ? 'true' : 'false'">

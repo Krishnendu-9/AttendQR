@@ -85,9 +85,10 @@ btn btn-{{ variant }}{% if size %} btn-{{ size }}{% endif %}{% if icon_only %} b
 {%- endmacro %}
 
 {#- Initials tile for the first column of a list. -#}
-{% macro monogram(name, cls='') -%}
-{% set words = (name or '?').split() %}
-<span class="monogram {{ cls }}" aria-hidden="true">{{ (words[0][:1] ~ (words[1][:1] if words|length > 1 else ''))|upper }}</span>
+{#- A circle with someone's initials (titles such as "Dr." skipped). from_email: the name is the part of an
+    email before the @, whose leading role word ("hod.") is skipped too. -#}
+{% macro monogram(name, cls='', from_email=False) -%}
+<span class="monogram {{ cls }}" aria-hidden="true">{{ avatar_initials(name, from_email=from_email) }}</span>
 {%- endmacro %}
 
 {#- Page title, one-line description and actions (caller), Edit or New last. -#}
@@ -104,6 +105,38 @@ btn btn-{{ variant }}{% if size %} btn-{{ size }}{% endif %}{% if icon_only %} b
   <div class="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">{{ caller() }}</div>
   {% endif %}
 </div>
+{%- endmacro %}
+
+{#- A total: the icon and label on top, the number centred below, and optionally a note under it
+    (meta) or what it is made of beside it (breakdown: (count, name) pairs). With href the card is a
+    link, with an arrow where cards are wide. Numbers from a million up are shortened ("6M"); the
+    exact figure is in the tooltip and read by screen readers. A long number steps down a size so
+    it never touches the edge; narrow (cards several to a row on wide screens) does the same for
+    long labels. -#}
+{% macro stat_card(label, value, icon_name, href=None, meta=None, breakdown=None, narrow=False) -%}
+{%- set shown = value|compact_number|string -%}
+{%- set exact = value|full_number|string -%}
+{%- set tag = 'a' if href else 'div' -%}
+<{{ tag }}{% if href %} href="{{ href }}"{% endif %}{% if shown != exact %} title="{{ label }}: {{ exact }}"{% endif %} class="card flex flex-col gap-1.5 px-4 py-3{{ ' group transition-colors hover:border-input focus-visible:shadow-focus focus-visible:outline-none' if href else '' }}">
+  <div class="flex min-w-0 items-center gap-2.5">
+    <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-ink{{ ' transition-colors group-hover:bg-secondary' if href else '' }}">{{ icon(icon_name, 'size-4') }}</span>
+    <p class="min-w-0 flex-1 truncate {{ 'text-label-md' if narrow and label|length > 12 else 'text-label-lg' }} text-muted-foreground" title="{{ label }}">{{ label }}</p>
+    {% if href %}<span class="shrink-0 text-placeholder transition-colors group-hover:text-foreground 2xl:hidden">{{ icon('chevron-right') }}</span>{% endif %}
+  </div>
+  <div class="flex min-w-0 flex-1 flex-col items-center justify-center">
+    <div class="flex min-w-0 max-w-full items-center justify-center gap-3">
+      <p class="{{ 'text-headline-lg' if shown|length <= 7 else 'text-headline-md' }} tabular-nums text-foreground">
+        {%- if shown != exact %}<span aria-hidden="true">{{ shown }}</span><span class="sr-only">{{ exact }}</span>{% else %}{{ shown }}{% endif -%}
+      </p>
+      {% if breakdown %}
+      <ul class="min-w-0 border-l border-border pl-3 text-body-sm text-muted-foreground">
+        {% for count, name in breakdown %}<li class="truncate"><span class="tabular-nums text-foreground">{{ count|compact_number }}</span> {{ name }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% if meta %}<p class="max-w-full text-center text-body-sm text-muted-foreground">{{ meta }}</p>{% endif %}
+  </div>
+</{{ tag }}>
 {%- endmacro %}
 
 {#- Card with an optional titled header. flush: no body padding (tables). -#}
@@ -130,7 +163,7 @@ btn btn-{{ variant }}{% if size %} btn-{{ size }}{% endif %}{% if icon_only %} b
 {% macro detail_item(label, value=None, mono=False) -%}
 <div class="min-w-0">
   <dt class="text-label-md text-muted-foreground">{{ label }}</dt>
-  <dd class="mt-1 break-words text-label-lg {{ 'font-mono' if mono }}">
+  <dd class="mt-1 wrap-break-word text-label-lg {{ 'font-mono' if mono }}">
     {%- if caller %}{{ caller() }}{% elif value is not none and value != '' %}<span class="text-foreground">{{ value }}</span>{% else %}<span class="font-normal text-muted-foreground">Not set</span>{% endif -%}
   </dd>
 </div>
