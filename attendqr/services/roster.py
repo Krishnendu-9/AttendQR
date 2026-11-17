@@ -65,7 +65,7 @@ def department_labels(department):
 
 def import_template_rows():
     headers = ['name', 'roll_no', 'email', 'semester']
-    sample = ['Rahul Das', 'MCA2026001', 'mca2026001@rcciit.org.in', 'Semester 1']
+    sample = ['Rahul Das', 'MCA2026001', 'mca2026001@college.example', 'Semester 1']
     if is_principal():
         headers.append('department')
         department = Department.query.order_by(Department.branch, Department.name).first()

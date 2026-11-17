@@ -34,7 +34,7 @@ def staff_domains_from_env():
         domain = item.strip().lower()
         if not domain:
             continue
-        # Always compare against "@domain" so "evil-rcciit.org.in" cannot match "rcciit.org.in".
+        # Always compare against "@domain" so "evil-college.example" cannot match "college.example".
         domains.append(domain if domain.startswith('@') else f'@{domain}')
     return domains
 
