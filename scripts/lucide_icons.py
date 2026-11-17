@@ -5,6 +5,7 @@
 Each icon is stored as the inner shapes of its SVG; the icon() macro in
 templates/components/ui.html wraps them in one <svg> element. To add an icon,
 put its name (as listed on https://lucide.dev/icons) in ICONS and run this again.
+attendqr-mark.svg (the logo) is made by hand from qr-code and is not written here.
 The package is downloaded from npm at a pinned version and checked against
 its published integrity hash before anything is written.
 """

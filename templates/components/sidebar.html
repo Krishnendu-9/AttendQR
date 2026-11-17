@@ -6,7 +6,7 @@
   :data-open="sidebarOpen ? 'true' : 'false'">
   <div class="flex h-header-sm shrink-0 items-center justify-between gap-2 border-b border-border px-5 md:h-header md:max-lg:justify-center md:max-lg:px-0">
     <a href="{{ url_for('main.dashboard') }}" class="flex min-w-0 items-center gap-3 rounded-lg focus-visible:shadow-focus focus-visible:outline-none" aria-label="AttendQR home">
-      <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">{{ icon('qr-code', 'size-5') }}</span>
+      <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">{{ icon('attendqr-mark', 'size-5') }}</span>
       <span class="min-w-0 md:max-lg:hidden">
         <span class="block text-headline-sm text-foreground">AttendQR</span>
         <span class="block truncate text-body-sm text-muted-foreground"{% if institution_name %} title="{{ institution_name }}"{% endif %}>{{ institution_name or 'Attendance system' }}</span>
