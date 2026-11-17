@@ -39,7 +39,7 @@
         {% for cell in row.cells if cell.span %}
         <td class="border border-border p-2 text-center align-top {{ 'bg-muted' if cell.period and cell.period.is_break }}" colspan="{{ cell.span }}">
           {% for e in cell.entries %}
-          <div class="{{ 'mt-1 border-t border-border pt-1' if not loop.first }}">
+          <div class="rounded border p-1 subject-tint subject-{{ subject_color(e.subject) }} {{ 'mt-1' if not loop.first }}">
             <span class="text-label-md">{{ (e.subject.paper_code or e.subject.name) if e.subject else e.title }}</span>
             {%- if entry_teachers(e) %} ({{ entry_teachers(e) }}){% endif %}{% if e.group %} ({{ e.group.name }}){% endif %}
             {%- if e.week_pattern != 'every' %} <em>{{ e.week_pattern }} weeks</em>{% endif %}{% if e.room %}<br><span class="text-muted-foreground">{{ e.room }}</span>{% endif %}

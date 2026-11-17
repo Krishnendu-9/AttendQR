@@ -34,6 +34,7 @@ from ..models import (
     User,
 )
 from ..services.settings import get_setting, term, terms
+from ..services.subject_colors import SUBJECT_COLORS, parse_color
 from ..utils import (
     natural_key,
     normalize_branch,
@@ -299,6 +300,14 @@ def _subject_form(subject=None):
     # The page sends "0" before the checkbox, so an unticked box is "off"; a form without the field keeps it on.
     counts_values = request.form.getlist('counts_towards_attendance')
     counts = '1' in counts_values if counts_values else True
+    # Its colour in the routine; a form without the field keeps the current one.
+    if 'color' in request.form:
+        try:
+            color = parse_color(request.form.get('color'))
+        except ValueError as exc:
+            return None, str(exc)
+    else:
+        color = subject.color if subject is not None else None
 
     if not paper_code or not name:
         return None, f"{term('paper_code')} and {term('subject').lower()} name are required."
@@ -342,6 +351,7 @@ def _subject_form(subject=None):
         'teacher_id': teacher_id,
         'group_id': group_id,
         'counts_towards_attendance': counts,
+        'color': color,
         'co_teachers': co_teachers,
     }, None
 
@@ -355,6 +365,8 @@ def _subject_details(subject):
         parts.append(f"only for {subject.group.name}")
     if not subject.counts_towards_attendance:
         parts.append("does not count towards attendance")
+    if subject.color:
+        parts.append(f"colour {SUBJECT_COLORS[subject.color].lower()}")
     return f" ({'; '.join(parts)})" if parts else ""
 
 

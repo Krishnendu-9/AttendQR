@@ -49,7 +49,8 @@
               data-filter-department="{{ s.department_id }}" data-filter-semester="{{ s.semester_id }}">
             <td>
               <div class="flex items-center gap-3">
-                <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-ink">{{ icon('book-open') }}</span>
+                <span class="flex size-8 shrink-0 items-center justify-center rounded-lg subject-chip subject-{{ subject_color(s) }}"
+                      title="Colour in the routine: {{ dict(subject_color_choices)[subject_color(s)] }}{{ ' (automatic)' if not s.color }}">{{ icon('book-open') }}</span>
                 <div class="min-w-0">
                   <p class="truncate text-label-lg text-foreground">{{ s.name }}</p>
                   <p class="flex flex-wrap items-center gap-1.5 text-body-sm text-muted-foreground"><span class="font-mono">{{ s.paper_code or 'No paper code' }}</span>
@@ -73,7 +74,7 @@
                 {{ record_opener('Edit', 'subject-dialog', url_for('academics.edit_subject', id=s.id), 'Edit subject', 'Save changes',
                                  {'paper_code': s.paper_code or '', 'name': s.name, 'department_id': s.department_id,
                                   'semester_id': s.semester_id, 'teacher_id': s.teacher_id or '', 'group_id': s.group_id or '',
-                                  'counts': s.counts_towards_attendance, 'co_teacher_ids': s.co_teachers|map(attribute='id')|list}, 'pencil') }}
+                                  'counts': s.counts_towards_attendance, 'co_teacher_ids': s.co_teachers|map(attribute='id')|list, 'color': s.color or ''}, 'pencil') }}
                 {{ menu_separator() }}
                 {{ menu_form('Delete', url_for('academics.delete_subject', id=s.id), 'trash-2', danger=True,
                              confirm='Subjects that already have QR sessions cannot be deleted.',
@@ -121,6 +122,8 @@
       {% if not principal %}{% for t in teachers %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}{% endif %}
     </select>
   {% endcall %}
+  {{ select_input('color', 'Colour in the routine', subject_color_choices, id='subject_color', placeholder='Automatic',
+                  hint='Automatic gives each subject of a class a different colour.') }}
   {{ select_input('group_id', 'Only for group', [], id='subject_group', placeholder='Whole class',
                   hint='For an elective or a lab one batch takes. New sessions start for this group.') }}
   <div class="sm:col-span-2">
