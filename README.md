@@ -5,9 +5,9 @@
 
 College attendance by QR code, built so that marking attendance for an absent friend is hard. The teacher's screen shows a code that changes every 10 seconds. A student scans it with their own phone, on the campus network, and confirms with their own account. Departments, roles, leave, reports, shortage lists and analytics are built around it, and every record can be audited: random spot checks in class, an integrity report that flags proxy patterns, and a tamper-evident activity log.
 
-Flask · SQLAlchemy · PostgreSQL or SQLite · server-rendered pages with htmx and Alpine.js · Docker · 500+ tests (92% coverage) in CI on two databases
+Flask · SQLAlchemy · PostgreSQL or SQLite · server-rendered pages with htmx and Alpine.js · Docker · 530+ tests (92% coverage) in CI on two databases
 
-![A class session: the teacher's QR code changes, a student signs in and confirms on their phone, the name appears on the teacher's screen, a forwarded code has expired, and a spot check removes a student who was not in the room](docs/media/attendance-flow.gif)
+![A class session: the HOD, who also teaches, starts today's RDBMS class from the routine, the QR code changes, a student signs in and confirms on their phone, the name appears on the teacher's screen, a forwarded code has expired, and a spot check removes a student who was not in the room](docs/media/attendance-flow.gif)
 
 ## Try it in two minutes
 
@@ -26,9 +26,9 @@ Every demo account uses the password `AttendQR@demo1`:
 | Role | Sign in as | Try |
 | --- | --- | --- |
 | Principal | `principal@example.com` | Everything: all departments, accounts, reports |
-| HOD | `hod.partha.sarkar@college.example` | Integrity report, exam eligibility, analytics, approving leave |
+| HOD | `manas.ghosh@college.example` | The MCA department: integrity report, exam eligibility, analytics, approving leave. Also teaches RDBMS, so this account has Today's classes and its own routine |
 | Teacher | `ananya.mukherjee@college.example` | Start a QR session and scan it from a phone on the same Wi-Fi |
-| Student | `aditi.kundu@students.college.example` | Own attendance, applying for leave |
+| Student | `mca2024003@college.example` | Chocolate: own attendance, applying for leave |
 
 `seed-demo` refuses to touch a database that already has records. Docker, PostgreSQL, production settings and backups are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
@@ -63,10 +63,10 @@ Each rule has tests. What is *not* covered, such as registering a friend's phone
 
 ## Features
 
-- **Four roles, scoped by department.** Principal, HOD, Teacher and Student. Every query and page is limited to what the role may see ([docs/RBAC.md](docs/RBAC.md)).
+- **Four roles, scoped by department.** Principal, HOD, Teacher and Student. Every query and page is limited to what the role may see ([docs/RBAC.md](docs/RBAC.md)). An HOD who also teaches gets a teacher profile, Today's classes and their own routine, and keeps the department-wide rights.
 - **QR sessions.** Rotating codes, a live attendance list, manual corrections with reasons, and special classes (workshops) that are shown but not counted.
 - **Subjects as they are taught.** Co-teachers who share a subject's sessions, a subject for one group (an elective), and subjects that never count (a non-credit course).
-- **Class routine.** Built in the app: bell schedules, holidays, lab batches side by side, odd and even weeks, clash checks for teachers, rooms and groups, versions with dates, and a printable sheet. Teachers start sessions from Today's classes; classes can be cancelled, moved or given to a substitute for one date; a report compares planned with held. A class nobody recorded never counts against a student.
+- **Class routine.** Built in the app: bell schedules, holidays, lab batches side by side, odd and even weeks, clash checks for teachers, rooms and groups, versions with dates, and a printable sheet. Each subject has its own colour in the routine, picked automatically and changeable by the HOD. Teachers start sessions from Today's classes; classes can be cancelled, moved or given to a substitute for one date; a report compares planned with held. A class nobody recorded never counts against a student.
 - **Groups.** Lab batches and electives within a class. A batch's session counts only for its members, so the other batch is never marked absent; membership keeps its history.
 - **Leave.** Students apply; the HOD or Principal approves or rejects with a note, and can reopen a decision made by mistake. Classes during approved leave count neither way.
 - **Reports.** A per-session list, a student-by-session matrix, Excel and PDF exports, and a shortage list showing the classes each student needs to reach the target (80% by default).
@@ -78,7 +78,9 @@ Each rule has tests. What is *not* covered, such as registering a friend's phone
 - **Settings in the app.** The Principal sets the institution's name, the attendance target, the eligibility percentages, the time zone, the working days, the first day of the week, and the words the app uses ("Course", "Batch", "Director"). The server's values are the defaults, and security settings never move to the page.
 - **Accounts.** Two-step sign-in with any authenticator app (required for Principal and HOD), random one-time passwords, forced password changes, brute-force throttling per device, and every session signed out on a password change.
 
-![The HOD's pages: analytics, the integrity report, exam eligibility, the shortage list and leave requests](docs/media/reports-tour.gif)
+![The HOD's pages: the dashboard, analytics, the integrity report, exam eligibility, the shortage list and leave requests](docs/media/reports-tour.gif)
+
+![The class routine: a row per day with the times across the top, in subject colours, with rooms, teachers and two lab batches sharing a slot; a class cancelled for one date with its reason; a substitute taking another class; and planned against held](docs/media/routine-tour.gif)
 
 ## Measured performance
 
