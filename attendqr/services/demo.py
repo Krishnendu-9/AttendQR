@@ -1,9 +1,12 @@
 """Sample data for demonstrations: `flask seed-demo`.
 
-Builds a small college (two departments, three classes, about forty students)
-with several weeks of past QR sessions, so the dashboard, reports, exports and
-shortage list have something to show. Every account shares one demo password
-and needs no password change, so anyone trying the demo can sign in at once.
+Builds a small college with several weeks of past QR sessions, so the dashboard, reports,
+exports, shortage list and class routine have something to show. The department it shows
+first is MCA: one class whose routine follows a real college's printed routine (two lab
+batches side by side, a non-credit course, a tutorial slot), with its sessions generated
+from that routine. Its HOD, Dr. Manas Ghosh, also teaches (RDBMS). A smaller B.TECH - CSE
+department has two classes without a routine. Every account shares one demo password and
+needs no password change, so anyone trying the demo can sign in at once.
 
 Never run this on a database with real records: `--reset` deletes everything.
 """
@@ -41,7 +44,7 @@ from ..models import (
     User,
 )
 from ..schema import discard_used_initial_password
-from ..utils import local_now, local_to_utc, normalize_email, to_local, utc_now
+from ..utils import local_now, local_to_utc, normalize_email, utc_now
 from .audit import seal_pending
 from .settings import forget_cached
 
@@ -59,37 +62,77 @@ MANUAL_REASONS = (
     'Device lock reset after a phone change',
 )
 
-# (department name, branch, HOD name, teachers, classes)
-# Each class: (semester, roll prefix, student count, subjects as (code, name, teacher index)).
+# The other departments: (department name, branch, HOD name, teachers, classes). Each class:
+# (semester, roll prefix, student count, subjects as (code, name, teacher index)). Their subjects
+# meet on alternating weekdays in one of PERIODS; they have no routine.
 COLLEGE = (
     (
         'Computer Science and Engineering (CSE)', 'B.TECH', 'Partha Sarkar',
-        ('Ananya Mukherjee', 'Sourav Banerjee', 'Ritika Sharma', 'Arindam Ghosh'),
+        ('Debashis Roy', 'Moumita Paul', 'Rupam Saha'),
         (
             ('Semester 5', 'CSE21', 18, (
                 ('CS501', 'Operating Systems', 0),
                 ('CS502', 'Computer Networks', 1),
                 ('CS503', 'Database Management Systems', 2),
-                ('CS504', 'Software Engineering', 3),
             )),
             ('Semester 3', 'CSE22', 10, (
                 ('CS301', 'Data Structures and Algorithms', 0),
-                ('CS302', 'Digital Logic Design', 3),
                 ('CS303', 'Discrete Mathematics', 1),
             )),
         ),
     ),
-    (
-        'Master of Computer Applications (MCA)', '', 'Sudipta Bose',
-        ('Debashis Roy', 'Moumita Paul'),
-        (
-            ('Semester 1', 'MCA24', 12, (
-                ('MCA101', 'Programming in Python', 0),
-                ('MCA102', 'Computer Organisation', 1),
-                ('MCA103', 'Mathematical Foundations', 0),
-            )),
-        ),
-    ),
+)
+
+# ── The MCA class the demo shows ─────────────────────────────
+
+MCA_DEPARTMENT = 'Department of Computer Application (MCA)'  # shown as "MCA"
+MCA_HOD = 'Manas Ghosh'  # the HOD, who also teaches RDBMS and its lab
+MCA_TEACHERS = ('Ananya Mukherjee', 'Sourav Banerjee', 'Ritika Sharma', 'Arindam Ghosh')
+MCA_SEMESTER, MCA_ROLL_PREFIX, MCA_SIZE = 'Semester 1', 'MCA2024', 40
+EXAMPLE_ROLL, EXAMPLE_NAME = 3, 'Chocolate'  # MCA2024003: the student demo login
+# (paper code, name, teacher: 'hod' or an index of MCA_TEACHERS, co-teacher, counts towards attendance)
+MCA_SUBJECTS = (
+    ('MCA C101', 'Programming Concept with C', 0, None, True),
+    ('MCA C102', 'RDBMS', 'hod', None, True),
+    ('MCA C103', 'Discrete Mathematics', 1, None, True),
+    ('MCA C104', 'Computer Organisation and Architecture', 2, None, True),
+    ('MCA C105', 'Operating Systems', 3, None, True),
+    ('MCA C191', 'C Programming Lab', 0, None, True),
+    ('MCA C192', 'RDBMS Lab', 'hod', 3, True),
+    ('INTEL AI', 'Intel AI Foundation (non-credit)', 1, None, False),
+)
+LAB_CODES = ('MCA C191', 'MCA C192')
+TUTORIAL = 'Special Tutorial Class'  # a slot in the routine that is not a subject
+# The bell schedule, as on the printed routine: (label, start, end, is a break).
+BELL_PERIODS = (
+    ('1', time(10, 0), time(10, 50), False), ('2', time(10, 50), time(11, 40), False),
+    ('3', time(11, 40), time(12, 30), False), ('4', time(12, 30), time(13, 20), False),
+    ('Break', time(13, 20), time(14, 10), True), ('5', time(14, 10), time(15, 0), False),
+    ('6', time(15, 0), time(15, 50), False), ('7', time(15, 50), time(16, 40), False),
+    ('8', time(16, 40), time(17, 30), False),
+)
+# The week: (weekday, start, end, paper code or a title, group, room). The two lab batches run side
+# by side on Monday afternoon and Tuesday morning, each in a different lab.
+MCA_ROUTINE = (
+    (0, time(10, 0), time(11, 40), 'MCA C102', None, '416'),
+    (0, time(11, 40), time(13, 20), 'MCA C103', None, '416'),
+    (0, time(14, 10), time(15, 50), 'MCA C191', 'Gr-1', 'Lab 1'),
+    (0, time(14, 10), time(15, 50), 'MCA C192', 'Gr-2', 'Lab 2'),
+    (1, time(10, 0), time(12, 30), 'MCA C192', 'Gr-1', 'Lab 2'),
+    (1, time(10, 0), time(12, 30), 'MCA C191', 'Gr-2', 'Lab 1'),
+    (1, time(14, 10), time(15, 50), 'MCA C104', None, '416'),
+    (1, time(15, 50), time(17, 30), 'MCA C105', None, '416'),
+    (2, time(10, 0), time(10, 50), 'INTEL AI', None, '416'),
+    (2, time(10, 50), time(12, 30), 'MCA C101', None, '416'),
+    (2, time(12, 30), time(13, 20), 'MCA C105', None, '416'),
+    (2, time(14, 10), time(15, 50), 'MCA C103', None, '416'),
+    (2, time(15, 50), time(17, 30), TUTORIAL, None, '416'),
+    (3, time(10, 0), time(11, 40), 'MCA C104', None, '416'),
+    (3, time(11, 40), time(13, 20), 'MCA C102', None, '416'),
+    (3, time(14, 10), time(15, 50), 'MCA C101', None, '416'),
+    (4, time(10, 0), time(11, 40), 'MCA C105', None, '416'),
+    (4, time(11, 40), time(13, 20), 'MCA C104', None, '416'),
+    (4, time(14, 10), time(15, 50), 'MCA C102', None, '416'),
 )
 
 FIRST_NAMES = (
@@ -155,34 +198,29 @@ def seed_demo(password=DEFAULT_DEMO_PASSWORD, weeks=6, seed=2026, reset=False):
 
     today = local_now().date()
     first_day = today - timedelta(weeks=weeks)
+    first_day -= timedelta(days=first_day.weekday())  # a Monday, so the routine's first week is whole
     totals = {'sessions': 0, 'attendance': 0, 'manual': 0}
-    student_number = 0
+    student_number = _add_mca_department(rng, password_hash, summary, first_day, today, totals)
+    names_used = student_number
 
-    for dept_index, (dept_name, branch, hod_name, teacher_names, classes) in enumerate(COLLEGE):
+    for dept_name, branch, hod_name, teacher_names, classes in COLLEGE:
         department = Department(name=dept_name, branch=branch or None)
         db.session.add(department)
         db.session.flush()
-
-        hod = _staff_account(_staff_email(hod_name, prefix='hod'), 'hod', password_hash, department_id=department.id)
-        if dept_index == 0:
-            summary.logins.append(('HOD', hod.username, f'{department.display_name}: teachers, students, corrections'))
+        _staff_account(_staff_email(hod_name, prefix='hod'), 'hod', password_hash, department_id=department.id)
 
         teachers = []
-        for teacher_index, name in enumerate(teacher_names):
+        for name in teacher_names:
             teacher = Teacher(name=f'Dr. {name}', email=_staff_email(name), department_id=department.id)
             db.session.add(teacher)
             db.session.flush()
-            account = _staff_account(teacher.email, 'teacher', password_hash,
-                                     department_id=department.id, teacher_id=teacher.id)
-            teachers.append((teacher, account))
-            if dept_index == 0 and teacher_index == 0:
-                summary.logins.append(('Teacher', account.username, 'start a QR session, view reports'))
+            teachers.append((teacher, _staff_account(teacher.email, 'teacher', password_hash,
+                                                     department_id=department.id, teacher_id=teacher.id)))
 
-        for class_index, (semester_name, roll_prefix, size, subject_specs) in enumerate(classes):
+        for semester_name, roll_prefix, size, subject_specs in classes:
             semester = Semester(name=semester_name, department_id=department.id)
             db.session.add(semester)
             db.session.flush()
-
             subjects = []
             for code, name, teacher_index in subject_specs:
                 teacher, account = teachers[teacher_index]
@@ -194,8 +232,8 @@ def seed_demo(password=DEFAULT_DEMO_PASSWORD, weeks=6, seed=2026, reset=False):
 
             students = []
             for roll in range(1, size + 1):
-                name = _student_name(student_number)
-                student_number += 1
+                name = _student_name(names_used)
+                names_used += 1
                 student = Student(
                     name=name, roll_no=f'{roll_prefix}{roll:03d}',
                     email=f"{name.lower().replace(' ', '.')}@{STUDENT_DOMAIN}",
@@ -206,21 +244,8 @@ def seed_demo(password=DEFAULT_DEMO_PASSWORD, weeks=6, seed=2026, reset=False):
             db.session.flush()
             for student, _ in students:
                 db.session.add(_student_account(student, password_hash))
-            if dept_index == 0 and class_index == 0:
-                # The steadiest attender of the class, so the student dashboard looks typical.
-                example = max(students, key=lambda item: item[1])[0]
-                summary.logins.append(('Student', example.email, 'own attendance, scan a QR'))
-
+            student_number += size
             _add_sessions(rng, subjects, students, first_day, today, totals)
-            if dept_index == 0 and class_index == 0:
-                totals['groups'] = _add_lab_groups(rng, department, semester, teachers, students, first_day, today,
-                                                   totals)
-                _add_uncounted_course(rng, department, semester, teachers, students, first_day, today, totals)
-                totals['routine classes'] = _add_routine(rng, department, semester, subjects, teachers, hod, first_day,
-                                                         today)
-                _add_special_and_void_sessions(rng, department, semester, subjects, students, today, totals)
-                totals['leave'] = _add_leave_requests(students, hod, today)
-                totals['spot checks'] = _add_integrity_story(rng, subjects, students, today)
 
     db.session.add(ActivityLog(
         actor_username='System', action='demo_data_loaded', created_at=utc_now(),
@@ -231,7 +256,7 @@ def seed_demo(password=DEFAULT_DEMO_PASSWORD, weeks=6, seed=2026, reset=False):
     discard_used_initial_password()
 
     summary.counts = {
-        'departments': len(COLLEGE),
+        'departments': len(COLLEGE) + 1,
         'students': student_number,
         'sessions': totals['sessions'],
         'attendance entries': totals['attendance'],
@@ -357,49 +382,6 @@ def _add_session(rng, subject, teacher, account, start, students, totals,
     return session
 
 
-# The lab of the first class runs in two batches, each once a week: (weekday, start time).
-# Two teachers share it, like "MG + SC" on a printed routine.
-LAB_CODE, LAB_NAME, LAB_TEACHER, LAB_CO_TEACHER = 'CS591', 'Computer Networks Lab', 1, 3
-# A non-credit course taught weekly that never counts towards attendance.
-EXTRA_CODE, EXTRA_NAME, EXTRA_TEACHER, EXTRA_DAY = 'CS580', 'Industry Readiness (non-credit)', 2, 4  # Fridays
-LAB_BATCHES = (('Gr-1', 1, time(14, 30)), ('Gr-2', 3, time(14, 30)))  # Tuesday and Thursday afternoons
-
-
-def _add_lab_groups(rng, department, semester, teachers, students, first_day, today, totals):
-    """A lab subject taken in two roll-number batches. Each batch's sessions count only for its members."""
-    teacher, account = teachers[LAB_TEACHER]
-    lab = Subject(name=LAB_NAME, paper_code=LAB_CODE, department_id=department.id, semester_id=semester.id,
-                  teacher_id=teacher.id, co_teachers=[teachers[LAB_CO_TEACHER][0]])
-    db.session.add(lab)
-    db.session.flush()
-    half = (len(students) + 1) // 2
-    joined = local_to_utc(datetime.combine(first_day - timedelta(days=1), time(9, 0)))
-    for (name, weekday, start_time), batch in zip(LAB_BATCHES, (students[:half], students[half:]), strict=True):
-        group = ClassGroup(department_id=department.id, semester_id=semester.id, name=name, created_at=joined)
-        db.session.add(group)
-        db.session.flush()
-        for student, _ in batch:
-            db.session.add(ClassGroupMember(group_id=group.id, student_id=student.id, joined_at=joined))
-        for day in _class_days(first_day, today):
-            if day.weekday() == weekday:
-                _add_session(rng, lab, teacher, account, datetime.combine(day, start_time), batch, totals,
-                             group_id=group.id)
-    return len(LAB_BATCHES)
-
-
-def _add_uncounted_course(rng, department, semester, teachers, students, first_day, today, totals):
-    """A weekly non-credit course: listed in reports, counted in nobody's percentage."""
-    teacher, account = teachers[EXTRA_TEACHER]
-    course = Subject(name=EXTRA_NAME, paper_code=EXTRA_CODE, department_id=department.id, semester_id=semester.id,
-                     teacher_id=teacher.id, counts_towards_attendance=False)
-    db.session.add(course)
-    db.session.flush()
-    for day in _class_days(first_day, today):
-        if day.weekday() == EXTRA_DAY:
-            _add_session(rng, course, teacher, account, datetime.combine(day, time(16, 32)), students, totals,
-                         turnout=0.6)
-
-
 def _add_leave_requests(students, hod, today):
     """One approved (for the weakest attender), one waiting for the HOD, one rejected."""
     by_habit = sorted(students, key=lambda item: item[1])
@@ -473,12 +455,9 @@ def _add_integrity_story(rng, subjects, students, today):
 
 def _add_special_and_void_sessions(rng, department, semester, subjects, students, today, totals):
     """A special class (not counted in percentages) and a session ended before anyone scanned (void)."""
-    special = Subject(name=SPECIAL_CLASS_SUBJECT_NAME, paper_code=None,
-                      department_id=department.id, semester_id=semester.id)
-    db.session.add(special)
-    db.session.flush()
+    special = _special_subject(department, semester)
     last_friday = today - timedelta(days=(today.weekday() - 4) % 7 or 7)
-    _add_session(rng, special, None, None, datetime.combine(last_friday, time(15, 30)), students, totals,
+    _add_session(rng, special, None, None, datetime.combine(last_friday, time(16, 0)), students, totals,
                  special_title='Placement aptitude workshop', turnout=0.7)
 
     subject, teacher, account = subjects[0]
@@ -487,89 +466,157 @@ def _add_special_and_void_sessions(rng, department, semester, subjects, students
                  turnout=0.0, active=False)
 
 
-# ── The routine of the first class ───────────────────────────
+# ── The MCA department ───────────────────────────────────────
 
-# The bell schedule: (label, start, end, is_break). Sessions above start inside these periods.
-BELL_PERIODS = (
-    ('1', time(9, 30), time(10, 20), False), ('2', time(10, 30), time(11, 20), False),
-    ('3', time(11, 30), time(12, 20), False), ('Lunch', time(12, 20), time(13, 30), True),
-    ('4', time(13, 30), time(14, 20), False), ('5', time(14, 30), time(15, 20), False),
-    ('6', time(15, 30), time(16, 20), False), ('7', time(16, 30), time(17, 20), False),
-)
+def _add_mca_department(rng, password_hash, summary, first_day, today, totals):
+    """The department the demo shows: its HOD (who also teaches), teachers, the MCA class with its
+    groups and routine, and a history of sessions held from that routine. Returns the number of students."""
+    department = Department(name=MCA_DEPARTMENT, branch=None)
+    db.session.add(department)
+    db.session.flush()
+
+    hod_teacher = Teacher(name=f'Dr. {MCA_HOD}', email=_staff_email(MCA_HOD), department_id=department.id)
+    db.session.add(hod_teacher)
+    db.session.flush()
+    hod = _staff_account(hod_teacher.email, 'hod', password_hash, department_id=department.id,
+                         teacher_id=hod_teacher.id)
+    summary.logins.append(('HOD', hod.username, 'MCA, and teaches RDBMS: integrity, eligibility, analytics, leave'))
+    staff = []
+    for index, name in enumerate(MCA_TEACHERS):
+        teacher = Teacher(name=f'Dr. {name}', email=_staff_email(name), department_id=department.id)
+        db.session.add(teacher)
+        db.session.flush()
+        account = _staff_account(teacher.email, 'teacher', password_hash, department_id=department.id,
+                                 teacher_id=teacher.id)
+        staff.append((teacher, account))
+        if index == 0:
+            summary.logins.append(('Teacher', account.username, "start today's class from the routine, view reports"))
+
+    def who(ref):
+        return (hod_teacher, hod) if ref == 'hod' else staff[ref]
+    accounts = {teacher.id: account for teacher, account in [who('hod'), *staff]}
+
+    semester = Semester(name=MCA_SEMESTER, department_id=department.id)
+    db.session.add(semester)
+    db.session.flush()
+    subjects = {}
+    for code, name, ref, co_ref, counts in MCA_SUBJECTS:
+        subject = Subject(name=name, paper_code=code, department_id=department.id, semester_id=semester.id,
+                          teacher_id=who(ref)[0].id, counts_towards_attendance=counts)
+        if co_ref is not None:
+            subject.co_teachers = [who(co_ref)[0]]
+        db.session.add(subject)
+        subjects[code] = subject
+    db.session.flush()
+
+    students = []
+    for roll in range(1, MCA_SIZE + 1):
+        roll_no = f'{MCA_ROLL_PREFIX}{roll:03d}'
+        if roll == EXAMPLE_ROLL:
+            name, habit = EXAMPLE_NAME, 0.94  # a steady attender, so the student dashboard looks typical
+        else:
+            name, habit = _student_name(roll), _attendance_habit(rng)
+        student = Student(name=name, roll_no=roll_no, email=f'{roll_no.lower()}@{STAFF_DOMAIN}',
+                          department_id=department.id, semester_id=semester.id)
+        db.session.add(student)
+        students.append((student, habit))
+    db.session.flush()
+    for student, _ in students:
+        db.session.add(_student_account(student, password_hash))
+    example = students[EXAMPLE_ROLL - 1][0]
+    summary.logins.append(('Student', example.email, f'{example.name}: own attendance, applying for leave'))
+
+    # Two lab batches by roll number, members since before the first class.
+    joined = local_to_utc(datetime.combine(first_day - timedelta(days=1), time(9, 0)))
+    half = len(students) // 2
+    groups, members = {}, {}
+    for name, batch in (('Gr-1', students[:half]), ('Gr-2', students[half:])):
+        group = ClassGroup(department_id=department.id, semester_id=semester.id, name=name, created_at=joined)
+        db.session.add(group)
+        db.session.flush()
+        for student, _ in batch:
+            db.session.add(ClassGroupMember(group_id=group.id, student_id=student.id, joined_at=joined))
+        groups[name], members[name] = group, batch
+    totals['groups'] = len(groups)
+
+    entries = _add_mca_routine(department, semester, subjects, groups, hod, first_day)
+    totals['routine classes'] = len(entries)
+    _add_routine_history(rng, department, semester, entries, students, members, accounts, first_day, today, totals)
+
+    theory = [(subjects[code], who(ref)[0], who(ref)[1]) for code, _, ref, _, counts in MCA_SUBJECTS
+              if counts and code not in LAB_CODES]
+    _add_special_and_void_sessions(rng, department, semester, theory, students, today, totals)
+    others = [item for item in students if item[0] is not example]  # Chocolate stays out of the stories
+    totals['leave'] = _add_leave_requests(others, hod, today)
+    # The pair the integrity report should find: two of Gr-2 (same labs as each other, Chocolate is in
+    # Gr-1), paired in every class they share, labs and the non-credit course too, so they scan
+    # together in well over half their scans.
+    every_subject = [(subjects[code], who(ref)[0], who(ref)[1]) for code, _, ref, _, _ in MCA_SUBJECTS]
+    totals['spot checks'] = _add_integrity_story(rng, every_subject, members['Gr-2'], today)
+    _add_routine_changes(department, semester, entries, subjects, staff, hod, today)
+    return len(students)
 
 
-def _add_routine(rng, department, semester, subjects, teachers, hod, first_day, today):
-    """A bell schedule, the class's published routine (matching the sessions above, which are then
-    linked to it), a weekly seminar that is rarely recorded, and a few one-date changes."""
+def _add_mca_routine(department, semester, subjects, groups, hod, first_day):
+    """The bell schedule and the class's published routine (MCA_ROUTINE). Returns its entries."""
     schedule = BellSchedule(name='Weekday')
     schedule.periods = [BellPeriod(position=i + 1, label=label, start_time=start, end_time=end, is_break=is_break)
                         for i, (label, start, end, is_break) in enumerate(BELL_PERIODS)]
     schedule.days = [BellScheduleDay(weekday=day) for day in range(5)]
     db.session.add(schedule)
-    starts_on = first_day - timedelta(days=first_day.weekday())
     routine = Timetable(department_id=department.id, semester_id=semester.id, status=Timetable.PUBLISHED,
-                        effective_from=starts_on, published_at=utc_now(), created_by_user_id=hod.id,
+                        effective_from=first_day, published_at=utc_now(), created_by_user_id=hod.id,
                         published_by_user_id=hod.id)
     db.session.add(routine)
-
-    def entry(weekday, start, end, room, subject=None, title=None, group=None, entry_teachers=()):
-        added = TimetableEntry(timetable=routine, weekday=weekday, start_time=start, end_time=end, subject=subject,
-                               title=title, group=group, room=room)
-        db.session.add(added)
-        added.teachers = list(entry_teachers)
-        return added
-
-    for index, (subject, teacher, _) in enumerate(subjects):
-        start = PERIODS[index % len(PERIODS)]
-        end = (datetime.combine(today, start) + timedelta(minutes=50)).time()
-        for weekday in range(5):
-            if (weekday + index) % 2 == 0:
-                entry(weekday, start, end, 'Room 301', subject=subject, entry_teachers=[teacher])
-    lab = Subject.query.filter_by(semester_id=semester.id, paper_code=LAB_CODE).one()
-    lab_teachers = [lab.teacher, *list(lab.co_teachers)]
-    for (_, weekday, start_time), group in zip(LAB_BATCHES, ClassGroup.query.filter_by(semester_id=semester.id)
-                                                  .order_by(ClassGroup.name), strict=True):
-        entry(weekday, start_time, time(16, 20), 'Lab 2', subject=lab, group=group, entry_teachers=lab_teachers)
-    course = Subject.query.filter_by(semester_id=semester.id, paper_code=EXTRA_CODE).one()
-    entry(EXTRA_DAY, time(16, 30), time(17, 20), 'Room 301', subject=course, entry_teachers=[course.teacher])
-    seminar = entry(2, time(15, 30), time(16, 20), 'Seminar hall', title='Department seminar',
-                    entry_teachers=[teachers[0][0]])
+    entries = []
+    for weekday, start, end, what, group, room in MCA_ROUTINE:
+        subject = subjects.get(what)
+        entry = TimetableEntry(timetable=routine, weekday=weekday, start_time=start, end_time=end, subject=subject,
+                               title=None if subject else what, group=groups.get(group), room=room)
+        db.session.add(entry)
+        entry.teachers = [t for t in [subject.teacher, *list(subject.co_teachers)] if t] if subject else []
+        entries.append(entry)
     db.session.flush()
+    return entries
 
-    # Link each session held to the routine class it was.
-    entries = list(routine.entries)
-    for session in ClassSession.query.join(Subject).filter(Subject.semester_id == semester.id,
-                                                            ClassSession.special_title.is_(None)):
-        local = to_local(session.created_at)
-        match = next((e for e in entries if e.subject_id == session.subject_id and e.group_id == session.group_id
-                      and e.weekday == local.weekday() and e.start_time <= local.time() < e.end_time), None)
-        if match is not None:
-            session.timetable_entry_id, session.occurrence_date = match.id, local.date()
 
-    # The seminar was recorded once (last week); the other weeks show as not recorded.
-    last_wednesday = today - timedelta(days=(today.weekday() - 2) % 7 or 7)
-    seminar_session = _add_session(rng, _special_subject(department, semester), teachers[0][0], teachers[0][1],
-                                   datetime.combine(last_wednesday, time(15, 32)), [], {'sessions': 0, 'attendance': 0,
-                                                                                         'manual': 0},
-                                   special_title='Department seminar', turnout=0)
-    seminar_session.timetable_entry_id, seminar_session.occurrence_date = seminar.id, last_wednesday
+def _add_routine_history(rng, department, semester, entries, students, members, accounts, first_day, today, totals):
+    """A session for every class of the routine held so far, linked to it. The tutorial slot was
+    recorded only last week, so the other weeks show it as not recorded."""
+    last_week = today - timedelta(days=7)
+    for day in _class_days(first_day, today):
+        for entry in (e for e in entries if e.weekday == day.weekday()):
+            start = datetime.combine(day, entry.start_time) + timedelta(minutes=rng.randint(0, 6))
+            if entry.subject is None:
+                if day < last_week:
+                    continue
+                session = _add_session(rng, _special_subject(department, semester), None, None, start, [], totals,
+                                       special_title=entry.title, turnout=0)
+            else:
+                teacher = entry.teachers[0]
+                batch = members[entry.group.name] if entry.group else students
+                turnout = None if entry.subject.counts_towards_attendance else 0.6
+                session = _add_session(rng, entry.subject, teacher, accounts.get(teacher.id), start, batch, totals,
+                                       turnout=turnout, group_id=entry.group_id)
+            session.timetable_entry_id, session.occurrence_date = entry.id, day
 
-    # Coming changes: a class cancelled, one taken by a substitute, a holiday.
+
+def _add_routine_changes(department, semester, entries, subjects, staff, hod, today):
+    """Coming changes for one date: a class cancelled, one taken by a substitute; and a holiday."""
     def next_day(weekday, after=1):
         return today + timedelta(days=(weekday - today.weekday()) % 7 or 7) + timedelta(days=7 * (after - 1))
-    first_entry = next(e for e in entries if e.subject_id == subjects[0][0].id)
-    second_entry = next(e for e in entries if e.subject_id == subjects[1][0].id)
+    cancelled = next(e for e in entries if e.subject is subjects['MCA C101'])
+    substituted = next(e for e in entries if e.subject is subjects['MCA C103'])
     db.session.add_all([
-        RoutineChange(kind=RoutineChange.CANCEL, timetable_entry_id=first_entry.id, date=next_day(first_entry.weekday),
-                      department_id=department.id, semester_id=semester.id, subject_id=first_entry.subject_id,
+        RoutineChange(kind=RoutineChange.CANCEL, timetable_entry_id=cancelled.id, date=next_day(cancelled.weekday),
+                      department_id=department.id, semester_id=semester.id, subject_id=cancelled.subject_id,
                       reason='Teacher at a university meeting', created_by_user_id=hod.id),
-        RoutineChange(kind=RoutineChange.SUBSTITUTE, timetable_entry_id=second_entry.id,
-                      date=next_day(second_entry.weekday, 2), substitute_teacher_id=teachers[3][0].id,
-                      department_id=department.id, semester_id=semester.id, subject_id=second_entry.subject_id,
+        RoutineChange(kind=RoutineChange.SUBSTITUTE, timetable_entry_id=substituted.id,
+                      date=next_day(substituted.weekday, 2), substitute_teacher_id=staff[2][0].id,
+                      department_id=department.id, semester_id=semester.id, subject_id=substituted.subject_id,
                       reason='Teacher on leave', created_by_user_id=hod.id),
         Holiday(start_date=today + timedelta(days=17), end_date=today + timedelta(days=18), title='College foundation day'),
     ])
-    return len(entries)
 
 
 def _special_subject(department, semester):

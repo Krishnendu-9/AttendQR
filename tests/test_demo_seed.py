@@ -16,11 +16,11 @@ def test_seed_demo_loads_a_college_and_prints_logins(app):
 
     assert result.exit_code == 0, result.output
     assert Department.query.count() == 2
-    assert Student.query.count() == 40
+    assert Student.query.count() == 68
     assert ClassSession.query.count() > 50
     assert Attendance.query.filter_by(source=Attendance.SOURCE_MANUAL).count() > 0
     # Every student has a login, and nobody is asked to change their password first.
-    assert User.query.filter_by(role='student').count() == 40
+    assert User.query.filter_by(role='student').count() == 68
     assert User.query.filter_by(must_change_password=True).count() == 0
     assert DEMO_PASSWORD in result.output
     assert 'principal@example.com' in result.output
@@ -46,7 +46,7 @@ def test_demo_has_students_in_shortage_and_pages_render(app, client_for):
     shortage = client.get(f'/reports/shortage?department_id={department.id}&semester_id='
                           f'{department.semesters[0].id}')
     assert shortage.status_code == 200
-    assert b'CSE21' in shortage.data  # roll numbers of that class appear in the shortage table
+    assert b'MCA2024' in shortage.data  # roll numbers of the MCA class appear in the shortage table
     for url in ('/', '/reports', '/students', '/generate_qr'):
         assert client.get(url).status_code == 200, url
 
@@ -72,7 +72,7 @@ def test_reset_replaces_existing_records(app, data):
 
     assert result.exit_code == 0, result.output
     assert Student.query.filter_by(email='rahul@example.com').first() is None
-    assert Student.query.count() == 40
+    assert Student.query.count() == 68
 
 
 def test_reset_asks_for_confirmation(app, data):
@@ -104,9 +104,9 @@ def test_demo_has_a_lab_split_into_two_batches(app):
     seed_demo(DEMO_PASSWORD)
     groups = ClassGroup.query.order_by(ClassGroup.name).all()
     assert [g.name for g in groups] == ['Gr-1', 'Gr-2']
-    assert ClassGroupMember.query.count() == 18
+    assert ClassGroupMember.query.count() == 40
     lab_sessions = ClassSession.query.filter(ClassSession.group_id.isnot(None)).all()
-    assert lab_sessions and all(s.subject.paper_code == 'CS591' for s in lab_sessions)
+    assert lab_sessions and {s.subject.paper_code for s in lab_sessions} == {'MCA C191', 'MCA C192'}
 
     semester = groups[0].semester
     filters = ReportFilters(department_id=semester.department_id, semester_id=semester.id, subject_id=None,
@@ -115,16 +115,16 @@ def test_demo_has_a_lab_split_into_two_batches(app):
         sessions, rows = build_attendance_matrix(filters)
     gr1_lab = next(s for s in sessions if s.group_id == groups[0].id)
     marks = [row['attendance'][gr1_lab.id] for row in rows]
-    assert marks.count(NOT_IN_GROUP) == 9
+    assert marks.count(NOT_IN_GROUP) == 20
 
 
 def test_demo_has_a_co_taught_lab_and_a_course_that_does_not_count(app):
     from attendqr.models import Subject
 
     seed_demo(DEMO_PASSWORD)
-    lab = Subject.query.filter_by(paper_code='CS591').one()
+    lab = Subject.query.filter_by(paper_code='MCA C192').one()
     assert lab.teacher and len(lab.co_teachers) == 1
-    course = Subject.query.filter_by(paper_code='CS580').one()
+    course = Subject.query.filter_by(paper_code='INTEL AI').one()
     assert course.counts_towards_attendance is False and course.sessions
 
 
@@ -143,10 +143,47 @@ def test_demo_has_a_published_routine_its_sessions_hold(app, client_for):
     today = local_now().date()
     found = occurrences(today - timedelta(days=21), today, semester_ids=[routine.semester_id])
     statuses = {o.status for o in found}
-    assert HELD in statuses and NOT_RECORDED in statuses  # the seminar, rarely recorded
+    assert HELD in statuses and NOT_RECORDED in statuses  # the tutorial slot, recorded only last week
 
-    hod = client_for('hod.partha.sarkar@college.example', DEMO_PASSWORD)
+    hod = client_for('manas.ghosh@college.example', DEMO_PASSWORD)
     assert hod.get(f'/routine/class/{routine.semester_id}').status_code == 200
     assert hod.get(f'/reports/routine?semester_id={routine.semester_id}').status_code == 200
     teacher = client_for('ananya.mukherjee@college.example', DEMO_PASSWORD)
     assert teacher.get('/routine/me').status_code == 200
+
+
+def test_demo_shows_an_mca_class_with_chocolate_and_an_hod_who_teaches(app, client_for):
+    from attendqr.models import Subject, Timetable
+
+    seed_demo(DEMO_PASSWORD)
+    chocolate = Student.query.filter_by(roll_no='MCA2024003').one()
+    assert (chocolate.name, chocolate.email) == ('Chocolate', 'mca2024003@college.example')
+    assert chocolate.department.display_name == 'MCA' and chocolate.semester.name == 'Semester 1'
+
+    hod = User.query.filter_by(username='manas.ghosh@college.example').one()
+    assert hod.role == 'hod' and hod.teacher.name == 'Dr. Manas Ghosh'
+    rdbms = Subject.query.filter_by(paper_code='MCA C102').one()
+    assert rdbms.name == 'RDBMS' and rdbms.teacher_id == hod.teacher_id
+    routine = Timetable.query.filter_by(status='published').one()
+    assert routine.semester_id == chocolate.semester_id
+    # The two lab batches run side by side, in different labs.
+    side_by_side = [e for e in routine.entries if e.weekday == 1 and e.group is not None]
+    assert {e.group.name for e in side_by_side} == {'Gr-1', 'Gr-2'} and len({e.start_time for e in side_by_side}) == 1
+
+    client = client_for('manas.ghosh@college.example', DEMO_PASSWORD)
+    assert client.get('/routine/me').status_code == 200
+    assert '<span class="avatar">MG</span>' in client.get('/').get_data(as_text=True)
+
+
+def test_the_integrity_report_finds_the_demo_pair(app):
+    """Two students who always scan seconds apart from one address: the report must flag them."""
+    from attendqr.models import Semester
+    from attendqr.services.integrity import build_integrity_report
+
+    seed_demo(DEMO_PASSWORD)
+    semester = Semester.query.filter_by(name='Semester 1').join(Department).filter(
+        Department.name.like('%(MCA)')).one()
+    with app.test_request_context():
+        report = build_integrity_report(semester.department_id, semester.id)
+    assert len(report.pairs) == 1 and report.pairs[0]['share'] >= 50
+    assert report.failed_checks >= 1
