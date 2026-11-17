@@ -66,6 +66,7 @@ class IsolatedClient(FlaskClient):
         g.pop('institution_settings', None)  # services/settings.py keeps the saved settings per context
         g.pop('taught_classes', None)  # access.taught_classes() keeps the current teacher's classes
         g.pop('taught_subject_ids', None)  # and access.taught_subject_ids() their subjects
+        g.pop('subject_color_order', None)  # services/subject_colors.py keeps each class's subject order
         return super().open(*args, **kwargs)
 
 

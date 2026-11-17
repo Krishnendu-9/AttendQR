@@ -12,6 +12,7 @@ from werkzeug.exceptions import BadRequest
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .access import (
+    avatar_initials,
     can_edit_account,
     can_manage_account,
     can_reset_staff_account,
@@ -310,6 +311,12 @@ def _register_template_helpers(app):
     # Counts: `n|full_number` is "6,000,000"; `n|compact_number` is "6M" for a small space.
     app.jinja_env.filters['full_number'] = full_number
     app.jinja_env.filters['compact_number'] = compact_number
+    # A global, not a context value, so macros imported without context (monogram) can use it.
+    app.jinja_env.globals['avatar_initials'] = avatar_initials
+    # Subject colours in the routine: subject_color(subject) is a key for the .subject-<key> class.
+    from .services.subject_colors import SUBJECT_COLORS, subject_color
+    app.jinja_env.globals['subject_color'] = subject_color
+    app.jinja_env.globals['subject_color_choices'] = list(SUBJECT_COLORS.items())
 
     @app.context_processor
     def inject_helpers():

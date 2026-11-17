@@ -113,6 +113,17 @@ def current_teacher_id():
     return None
 
 
+def own_teacher_profile():
+    """The current user's teacher profile when they teach: a teacher, or an HOD who also teaches.
+
+    Only for their own classes (Today's classes, My routine). Scoping stays by role:
+    current_teacher_id() is for the teacher role alone, and an HOD keeps department-wide rights.
+    """
+    if current_user.is_authenticated and user_role() in ('teacher', 'hod'):
+        return current_user.teacher
+    return None
+
+
 def own_teacher_filter(column):
     """SQL condition: `column` is the current teacher. Never true without a teacher profile,
     because `column == None` would become `IS NULL` and match every unassigned row."""
@@ -386,6 +397,24 @@ def subject_display_name(subject):
 
 # Titles left out of automatic initials: "Dr. Sutapa Chatterjee" is SC.
 _NAME_TITLES = frozenset({'dr', 'prof', 'mr', 'mrs', 'ms', 'smt', 'sri', 'shri', 'miss'})
+
+
+# Role words that start some usernames ("hod.partha.sarkar"): not part of the person's name.
+_ROLE_WORDS = frozenset({'principal', 'hod', 'teacher', 'student'})
+
+
+def avatar_initials(name, from_email=False):
+    """Up to two letters for an avatar: "Dr. Manas Ghosh" is "MG", "Chocolate" is "C".
+
+    Titles (Dr, Prof, ...) are skipped. from_email: the name is the part of an email address
+    before the @, where a leading role word is skipped too ("hod.partha.sarkar" is "PS").
+    """
+    words = re.findall(r"[^\W\d_]+", name or '')
+    named = [word for word in words if word.lower() not in _NAME_TITLES]
+    if from_email and len(named) > 1 and named[0].lower() in _ROLE_WORDS:
+        named = named[1:]
+    letters = ''.join(word[0] for word in named[:2]).upper()
+    return letters or (words[0][0].upper() if words else '?')
 
 
 def teacher_short_name(teacher):
