@@ -2,6 +2,7 @@
 import os
 import sqlite3
 import stat
+from contextlib import closing
 
 import pytest
 
@@ -15,7 +16,8 @@ def test_backup_contains_the_data(app, data, tmp_path):
     result = app.test_cli_runner().invoke(args=['backup-db', '--output', str(target)])
     assert result.exit_code == 0, result.output
     assert 'Backed up the database' in result.output
-    with sqlite3.connect(target) as copy:
+    # sqlite3's own `with` only commits; closing() closes the file as well.
+    with closing(sqlite3.connect(target)) as copy:
         assert copy.execute("SELECT COUNT(*) FROM student").fetchone()[0] == 3
         assert copy.execute("SELECT version_num FROM alembic_version").fetchone()[0]
 
