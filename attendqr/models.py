@@ -134,6 +134,9 @@ class Subject(db.Model):
     # The group the subject is for (an elective, or a lab one batch takes); new sessions default to it.
     group_id = db.Column(db.Integer, db.ForeignKey('class_group.id', ondelete='SET NULL', name='fk_subject_group'),
                          nullable=True)
+    # Its colour in the routine (a key of services/subject_colors.SUBJECT_COLORS). NULL: chosen
+    # automatically, so a class's subjects differ without anyone setting them.
+    color = db.Column(db.String(12), nullable=True)
     teacher = db.relationship('Teacher', backref=db.backref('assigned_subjects', lazy=True), foreign_keys=[teacher_id])
     group = db.relationship('ClassGroup', foreign_keys=[group_id])
     # Teachers besides the main one (subject.teacher) who run and correct its sessions.

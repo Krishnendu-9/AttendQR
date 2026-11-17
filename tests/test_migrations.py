@@ -1,5 +1,6 @@
 """Upgrading databases created before migrations existed."""
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -69,7 +70,8 @@ INSERT INTO activity_log VALUES (2, 2, 'principal2@gmail.com', 1, 'x', NULL, NUL
 
 def test_legacy_database_is_upgraded_without_losing_data(tmp_path, initial_password_file):
     path = tmp_path / 'legacy.db'
-    with sqlite3.connect(path) as conn:
+    # sqlite3's own `with` only commits; closing() closes the file as well.
+    with closing(sqlite3.connect(path)) as conn:
         conn.executescript(LEGACY_SCHEMA)
 
     app = create_app({
@@ -132,6 +134,7 @@ def test_upgrading_twice_is_a_no_op(tmp_path):
             from attendqr.extensions import db
             from attendqr.models import User
             assert User.query.count() == 1
+            db.session.remove()  # hand the connection back first, or dispose() orphans it unclosed
             db.engine.dispose()
 
 
@@ -484,3 +487,24 @@ def test_class_joined_at_migration_round_trip(app, data):
     with db.engine.connect() as connection:
         assert connection.exec_driver_sql('SELECT COUNT(*) FROM student WHERE class_joined_at IS NOT NULL').scalar() == 0
         assert connection.exec_driver_sql('SELECT joined_at FROM student_class_history').scalar() is None
+
+
+def test_subject_color_migration_round_trip(app, data):
+    """0025 adds subject.color (NULL: automatic); down drops it and keeps the subjects."""
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import Subject
+
+    db.session.get(Subject, data.subject_id).color = 'teal'
+    db.session.commit()
+    db.session.remove()
+
+    downgrade(revision='0024_class_joined_at')
+    with db.engine.connect() as connection:
+        assert 'color' not in {c['name'] for c in sa.inspect(connection).get_columns('subject')}
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM subject').scalar() == 2
+
+    upgrade()
+    with db.engine.connect() as connection:
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM subject WHERE color IS NOT NULL').scalar() == 0
