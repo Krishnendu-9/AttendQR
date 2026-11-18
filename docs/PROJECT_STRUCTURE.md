@@ -101,7 +101,7 @@ The interface is server-rendered Jinja templates. There is no separate frontend 
 - **No inline styles or scripts:** the policy blocks `style="..."` and un-nonced `<script>`;
   `tests/test_auth.py` checks every template. Page scripts go in `{% block scripts %}` with `nonce="{{ csp_nonce() }}"`.
 - **Pages:** extend `layouts/app.html`, set `page_title` and `breadcrumbs` at the top, and build the page from
-  the macros in `components/ui.html` and `components/forms.html`. Navigation (sidebar and Ctrl K palette) is
+  the macros in `components/ui.html` and `components/forms.html`. Navigation (sidebar and Ctrl L palette) is
   defined once in `components/nav.html`. Attendance status badges come only from `attendance_badge()`.
 - **Lists:** Students pages on the server (htmx swaps the list). Smaller lists (departments, semesters,
   subjects, teachers, accounts) load in full and filter instantly with `clientFilter` (ui.js); add and edit

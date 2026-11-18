@@ -231,14 +231,14 @@
   document.addEventListener('alpine:init', function () {
     var Alpine = window.Alpine;
 
-    /* App shell: phone drawer and the Ctrl K palette shortcut. */
+    /* App shell: phone drawer and the Ctrl L palette shortcut. */
     Alpine.data('shell', function () {
       return {
         sidebarOpen: false,
         openSidebar: function () { this.sidebarOpen = true; },
         closeSidebar: function () { this.sidebarOpen = false; },
         onKeydown: function (event) {
-          if ((event.ctrlKey || event.metaKey) && (event.key === 'k' || event.key === 'K')) {
+          if ((event.ctrlKey || event.metaKey) && (event.key === 'l' || event.key === 'L')) {
             event.preventDefault();
             window.dispatchEvent(new CustomEvent('palette:open'));
           } else if (event.key === 'Escape' && this.sidebarOpen) {
@@ -381,7 +381,7 @@
       };
     });
 
-    /* Ctrl K command palette over the pages and actions listed in the layout. */
+    /* Ctrl L command palette over the pages and actions listed in the layout. */
     Alpine.data('palette', function () {
       return {
         query: '',
