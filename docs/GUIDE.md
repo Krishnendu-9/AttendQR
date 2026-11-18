@@ -120,7 +120,7 @@ The rule that never changes: a class in the routine that nobody recorded counts 
 
 ## Leave
 
-Students ask to be excused from classes on the **Leave** page: the type (medical, personal, college duty), the first and last day, and a reason. A request covers at most 30 days, can start up to 30 days in the past (certificates often come later) and at most 90 days ahead, and cannot overlap another waiting or approved request. Until it is decided, the student can withdraw it.
+Students ask to be excused from classes on the **Leave** page: the type (medical, personal, college duty), the first and last day, and a reason. A request covers at most 30 days, can start up to 30 days in the past (certificates often come later) and at most 90 days ahead, and cannot overlap another waiting or approved request. Until it is decided, the student can withdraw it. A student can send at most 5 requests in 7 days, withdrawn and rejected ones included.
 
 The student's HOD or the Principal approves or rejects it on **Leave requests**. A rejection needs a note, which the student sees. A decision made by mistake can be reopened from **Recent decisions**, with a reason: the request waits for a decision again, and its days count as usual until then. A request cannot be reopened while another waiting or approved request covers the same days. Every request, decision and reopening is in the activity log, with who made it.
 
@@ -145,7 +145,7 @@ Buddy pairs need scan addresses, which are kept for `SCAN_IP_RETENTION_DAYS`; th
 
 ## Locking a semester
 
-When a semester's attendance is final (usually after exams), the HOD or the Principal locks it from **Semesters**. From then on nothing in it can change: no new sessions, no scans, no manual entries or removals, no spot checks, no session deletions, and no leave decisions (or reopened decisions) for its students. A student who scanned just before the lock is told at once, before they confirm. Only the Principal can unlock it, and must give a reason. Locking and unlocking are in the activity log. The lock also keeps the exam eligibility percentages in force at that moment, so a later change in **Settings** does not change a final semester's eligibility; unlocking lets it follow the current settings again. Condonations (below) can still be granted.
+When a semester's attendance is final (usually after exams), the HOD or the Principal locks it from **Semesters**. From then on nothing in it can change: no new sessions, no scans, no manual entries or removals, no spot checks, no session deletions, no leave decisions (or reopened decisions) for its students, and no change to whether a subject counts towards attendance. A student who scanned just before the lock is told at once, before they confirm. Only the Principal can unlock it, and must give a reason. Locking and unlocking are in the activity log. The lock also keeps the exam eligibility percentages in force at that moment, so a later change in **Settings** does not change a final semester's eligibility; unlocking lets it follow the current settings again. Condonations (below) can still be granted.
 
 ## Exam eligibility
 

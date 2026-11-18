@@ -23,7 +23,7 @@ The system supports four roles:
 - Manages the groups of every class (lab batches, electives): creates, renames, deletes, splits by roll number and sets members.
 - Manages the institution's bell schedules and holidays, and every class's routine: drafts, publishes, and changes for one date (cancel, move, substitute, extra class).
 - Changes the institution's settings on the **Settings** page: its name, the attendance target, the exam eligibility and condonation percentages, the time zone, the working days, the first day of the week, whether teachers may change their own classes, and the words the app uses (including the role names). Only the Principal sees the page; every change is in the activity log.
-- Resets two-step sign-in for HOD and Teacher accounts (lost phone).
+- Resets two-step sign-in for HOD and Teacher accounts (lost phone). Resetting another Principal's password or two-step sign-in asks for the Principal's own password first.
 - Must use two-step sign-in (by default).
 
 ## HOD
@@ -57,7 +57,7 @@ The system supports four roles:
 - May turn on two-step sign-in (optional by default).
 - Cannot decide leave requests; classes during approved leave show as `L` in their reports.
 - Views attendance only for own sessions.
-- Creates or bulk-imports student profiles for the assigned department.
+- Creates or bulk-imports student profiles only for classes where they teach a subject.
 - Can reset student passwords and device locks only for students in classes where they teach a subject (either reset hands over the account).
 - Cannot manage users or academic master data.
 - Sees the groups of the classes they teach (read only), and can start a session for one group.
@@ -97,4 +97,4 @@ Newly created or reset accounts must change their password before they can use t
 - Logging out signs out every session of that account.
 - Department, semester, subject, and teacher deletes are blocked when linked records would make the action unsafe.
 
-Bulk student import is available from the Students page. Principal uploads include department information; HOD and Teacher imports are automatically limited to their assigned department.
+Bulk student import is available from the Students page. Principal uploads include department information; HOD imports are automatically limited to their assigned department, and Teacher imports to the classes where they teach a subject.
