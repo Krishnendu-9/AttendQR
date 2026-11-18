@@ -19,6 +19,8 @@ from ..access import (
     log_activity,
     ordered_departments_query,
     role_required,
+    taught_classes,
+    user_role,
     visible_semesters_query,
     visible_students_query,
 )
@@ -99,6 +101,9 @@ def _student_form():
     semester = db.session.get(Semester, values['semester_id'])
     if not semester or semester.department_id != values['department_id']:
         return None, "Selected semester does not belong to the selected department."
+    if user_role() == 'teacher' and (semester.department_id, semester.id) not in taught_classes():
+        # As for password and device resets: a teacher looks after the classes they teach.
+        return None, "Selected semester is not a class you teach. Ask your HOD to add students to it."
     return values, None
 
 
@@ -126,6 +131,8 @@ def _render_form(student=None, error=None, status=200):
     if department_id is None and len(departments) == 1:
         department_id = departments[0].id
     semesters = visible_semesters_query().filter(Semester.department_id == department_id).all() if department_id else []
+    if user_role() == 'teacher':
+        semesters = [s for s in semesters if (s.department_id, s.id) in taught_classes()]
 
     default_return = url_for('students.view', id=student.id) if student else url_for('students.index')
     return_to = safe_return_to(value('return_to', request.args.get('return_to'))) or default_return
@@ -406,7 +413,7 @@ def reset_password(id):
 
     temporary_password = generate_temporary_password()
     account.password = hash_temporary_password(temporary_password)
-    account.is_active = True
+    # A reset hands over a password; it does not undo a deactivation.
     account.must_change_password = True
     account.rotate_session_token()
     clear_login_failures(account.username)

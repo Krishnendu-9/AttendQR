@@ -107,3 +107,33 @@ def test_oversized_import_is_refused_before_adding_anyone(app, data, client_for)
     }, content_type='multipart/form-data', follow_redirects=True)
     assert 'more than 3 student rows' in response.get_data(as_text=True)
     assert not User.query.filter(User.username.like('bulk%')).count()
+
+
+def test_a_teacher_adds_students_only_to_classes_they_teach(data, client_for):
+    teacher = client_for(data.teacher)
+    add_student(teacher, data)  # Semester 1, where Asha teaches DBMS
+    response = post(teacher, '/students', {
+        'name': 'Other Class', 'roll_no': 'MCA299', 'email': 'other.class@example.com',
+        'department_id': data.mca_id, 'semester_id': data.sem2_id,
+    }, follow_redirects=True)
+    assert 'not a class you teach' in response.get_data(as_text=True)
+    assert User.query.filter_by(username='other.class@example.com').first() is None
+
+
+def test_a_teacher_imports_students_only_into_classes_they_teach(data, client_for):
+    rows = "Taught,MCA060,taught@example.com,Semester 1\nNot Taught,MCA260,not.taught@example.com,Semester 2\n"
+    response = post(client_for(data.teacher), '/students/import', {
+        'student_file': (io.BytesIO(("name,roll_no,email,semester\n" + rows).encode()), 'students.csv'),
+    }, content_type='multipart/form-data', follow_redirects=True)
+    assert 'Semester 2 is not a class you teach' in response.get_data(as_text=True)
+    assert User.query.filter_by(username='taught@example.com').first() is not None
+    assert User.query.filter_by(username='not.taught@example.com').first() is None
+
+
+def test_a_password_reset_does_not_reactivate_a_deactivated_student(data, client_for):
+    account = User.query.filter_by(username=data.student).one()
+    account.is_active = False
+    db.session.commit()
+    post(client_for(data.hod), f'/students/reset-password/{data.student_id}')
+    db.session.expire_all()
+    assert db.session.get(User, account.id).is_active is False

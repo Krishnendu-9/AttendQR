@@ -6,7 +6,14 @@ import itertools
 import openpyxl
 from flask import current_app
 
-from ..access import can_access_department, current_department_id, is_principal, is_valid_email
+from ..access import (
+    can_access_department,
+    current_department_id,
+    is_principal,
+    is_valid_email,
+    taught_classes,
+    user_role,
+)
 from ..extensions import db
 from ..models import Department, Semester, Student, User
 from ..security import generate_temporary_password, hash_temporary_password
@@ -197,6 +204,9 @@ def import_students_from_rows(rows):
         semester = resolve_import_semester(row, department.id)
         if not semester:
             errors.append(f"Row {index}: valid semester is required for {department.display_name}")
+            continue
+        if user_role() == 'teacher' and (department.id, semester.id) not in taught_classes():
+            errors.append(f"Row {index}: {semester.name} is not a class you teach")
             continue
 
         roll_key = (roll_no, department.id, semester.id)
