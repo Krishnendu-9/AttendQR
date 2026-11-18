@@ -155,11 +155,11 @@ def test_without_staff_domains_no_staff_account_can_be_created(app, data, client
     page = client.get('/accounts').get_data(as_text=True)
     assert 'cannot be created until the server administrator sets' in page
     response = post(client, '/accounts', {
-        'username': 'new.teacher@rcciit.org.in', 'role': 'teacher', 'teacher_name': 'New Teacher',
+        'username': 'new.teacher@college.example', 'role': 'teacher', 'teacher_name': 'New Teacher',
         'department_id': data.mca_id, 'password': 'Passw0rd!x', 'confirm_password': 'Passw0rd!x',
     }, follow_redirects=True)
     assert 'must set ALLOWED_STAFF_DOMAINS' in response.get_data(as_text=True)
-    assert not User.query.filter_by(username='new.teacher@rcciit.org.in').first()
+    assert not User.query.filter_by(username='new.teacher@college.example').first()
 
 
 def test_staff_domain_setting_has_no_built_in_default(monkeypatch):
@@ -200,10 +200,10 @@ def test_teacher_account_without_a_profile_sees_nothing(app, data, client_for):
     orphan = ClassSession(subject_id=special.id, teacher_id=None, special_title='Hidden Workshop',
                           created_at=now, expires_at=now, is_active=True)
     db.session.add(orphan)
-    make_account('ghost@rcciit.org.in', 'teacher', department_id=data.mca_id)
+    make_account('ghost@college.example', 'teacher', department_id=data.mca_id)
     db.session.commit()
 
-    client = client_for('ghost@rcciit.org.in')
+    client = client_for('ghost@college.example')
     assert 'Hidden Workshop' not in client.get('/').get_data(as_text=True)
     assert 'Hidden Workshop' not in client.get('/generate_qr').get_data(as_text=True)
     assert client.get(f'/generate_qr?session_id={orphan.id}').status_code == 403
@@ -218,14 +218,14 @@ def test_teacher_account_without_a_profile_sees_nothing(app, data, client_for):
 
 
 def test_hod_without_a_department_manages_no_accounts(app, data, client_for):
-    make_account('lost-hod@rcciit.org.in', 'hod')
-    make_account('loose-teacher@rcciit.org.in', 'teacher')
+    make_account('lost-hod@college.example', 'hod')
+    make_account('loose-teacher@college.example', 'teacher')
     db.session.commit()
-    client = client_for('lost-hod@rcciit.org.in')
+    client = client_for('lost-hod@college.example')
 
     page = client.get('/accounts').get_data(as_text=True)
-    assert data.principal not in page and 'loose-teacher@rcciit.org.in' not in page
-    loose = User.query.filter_by(username='loose-teacher@rcciit.org.in').one()
+    assert data.principal not in page and 'loose-teacher@college.example' not in page
+    loose = User.query.filter_by(username='loose-teacher@college.example').one()
     assert post(client, f'/toggle_admin_status/{loose.id}').status_code == 403
     assert post(client, f'/reset_admin_password/{loose.id}').status_code == 403
     assert client.get('/').status_code == 200

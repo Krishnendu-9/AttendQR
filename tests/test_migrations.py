@@ -54,7 +54,7 @@ CREATE TABLE activity_log (id INTEGER NOT NULL, actor_admin_id INTEGER, actor_us
 
 INSERT INTO department VALUES (1, 'Master of Computer Application(MCA)');
 INSERT INTO semester VALUES (1, 'Semester 1', 1);
-INSERT INTO teacher VALUES (1, 'Asha', 'asha@rcciit.org.in', 1);
+INSERT INTO teacher VALUES (1, 'Asha', 'asha@college.example', 1);
 INSERT INTO subject VALUES (1, 'DBMS', 1, 1);
 INSERT INTO student VALUES (1, 'A', 'R1', 'a@example.com', 1, 1, 'shared-phone');
 INSERT INTO student VALUES (2, 'B', 'R2', 'b@example.com', 1, 1, 'shared-phone');
@@ -356,7 +356,7 @@ def test_subject_options_migration_round_trip(app, data):
 
     subject = db.session.get(Subject, data.subject_id)
     subject.counts_towards_attendance = False
-    subject.co_teachers = [Teacher.query.filter_by(email='ravi@rcciit.org.in').one()]
+    subject.co_teachers = [Teacher.query.filter_by(email='ravi@college.example').one()]
     db.session.commit()
     db.session.remove()
 

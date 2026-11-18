@@ -37,9 +37,9 @@ def test_a_teacher_called_doctor_gets_their_own_initials(data, client_for):
 
 
 def test_an_hod_named_by_their_email_skips_the_role_word(data, client_for):
-    make_account('hod.partha.sarkar@rcciit.org.in', 'hod', department_id=data.mca_id)
+    make_account('hod.partha.sarkar@college.example', 'hod', department_id=data.mca_id)
     db.session.commit()
-    assert avatar(client_for('hod.partha.sarkar@rcciit.org.in').get('/').get_data(as_text=True)) == 'PS'
+    assert avatar(client_for('hod.partha.sarkar@college.example').get('/').get_data(as_text=True)) == 'PS'
 
 
 def test_the_teachers_list_uses_the_same_initials(data, client_for):

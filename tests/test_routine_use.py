@@ -181,12 +181,12 @@ def test_a_teacher_starts_the_session_of_a_routine_class(data, client_for, live)
 
 def test_only_its_teachers_and_the_hod_may_start_it(data, client_for, live):
     occurrence = today_occurrence(data)
-    other = Teacher(name='Mitali Ghosh', email='mitali@rcciit.org.in', department_id=data.mca_id)
+    other = Teacher(name='Mitali Ghosh', email='mitali@college.example', department_id=data.mca_id)
     db.session.add(other)
     db.session.flush()
-    make_account('mitali@rcciit.org.in', 'teacher', department_id=data.mca_id, teacher_id=other.id)
+    make_account('mitali@college.example', 'teacher', department_id=data.mca_id, teacher_id=other.id)
     db.session.commit()
-    assert post(client_for('mitali@rcciit.org.in'), '/routine/occurrences/start', {'key': occurrence.key}).status_code == 403
+    assert post(client_for('mitali@college.example'), '/routine/occurrences/start', {'key': occurrence.key}).status_code == 403
     assert post(client_for(data.hod), '/routine/occurrences/start', {'key': occurrence.key}).status_code == 302
     assert post(client_for(data.hod), '/routine/occurrences/start', {'key': 'entry-999-2026-01-01'}).status_code == 404
 
@@ -288,10 +288,10 @@ def test_a_class_is_moved_to_another_time(data, client_for, every_day):
 
 
 def test_a_substitute_takes_and_runs_the_class(data, client_for, live):
-    substitute = Teacher(name='Mitali Ghosh', email='mitali@rcciit.org.in', department_id=data.mca_id)
+    substitute = Teacher(name='Mitali Ghosh', email='mitali@college.example', department_id=data.mca_id)
     db.session.add(substitute)
     db.session.flush()
-    make_account('mitali@rcciit.org.in', 'teacher', department_id=data.mca_id, teacher_id=substitute.id)
+    make_account('mitali@college.example', 'teacher', department_id=data.mca_id, teacher_id=substitute.id)
     db.session.commit()
     occurrence = today_occurrence(data)
     assert post(client_for(data.teacher), '/routine/occurrences/change',
@@ -302,7 +302,7 @@ def test_a_substitute_takes_and_runs_the_class(data, client_for, live):
     post(client_for(data.hod), '/routine/occurrences/change',
          {'key': occurrence.key, 'kind': 'substitute', 'substitute_teacher_id': substitute.id, 'reason': 'On leave'})
     assert [t.name for t in today_occurrence(data).teachers] == ['Mitali Ghosh']
-    mitali = client_for('mitali@rcciit.org.in')
+    mitali = client_for('mitali@college.example')
     assert 'MCA101' in page(mitali.get('/routine/me'))
     post(mitali, '/routine/occurrences/start', {'key': occurrence.key})
     assert ClassSession.query.one().teacher_id == substitute.id

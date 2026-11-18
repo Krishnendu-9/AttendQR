@@ -42,10 +42,10 @@ def test_an_hod_created_with_a_teacher_name_teaches(data, client_for):
     old = hod_account(data)
     old.is_active = False  # one active HOD per department
     db.session.commit()
-    post(principal, '/accounts', {'username': 'manas.ghosh@rcciit.org.in', 'role': 'hod', 'department_id': data.mca_id,
+    post(principal, '/accounts', {'username': 'manas.ghosh@college.example', 'role': 'hod', 'department_id': data.mca_id,
                                   'teacher_name': 'Dr. Manas Ghosh', 'password': 'Mca-hod-2026x',
                                   'confirm_password': 'Mca-hod-2026x'})
-    account = User.query.filter_by(username='manas.ghosh@rcciit.org.in').one()
+    account = User.query.filter_by(username='manas.ghosh@college.example').one()
     assert account.role == 'hod' and account.teacher.name == 'Dr. Manas Ghosh'
 
 

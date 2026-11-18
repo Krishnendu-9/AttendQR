@@ -292,9 +292,9 @@ def test_another_departments_hod_cannot_manage_groups(data, client_for, labs):
     from conftest import make_account
 
     gr1, _, _ = labs
-    make_account('hod2@rcciit.org.in', 'hod', department_id=data.other_id)
+    make_account('hod2@college.example', 'hod', department_id=data.other_id)
     db.session.commit()
-    other = client_for('hod2@rcciit.org.in')
+    other = client_for('hod2@college.example')
     assert other.get(f'/semesters/{data.sem1_id}/groups').status_code == 403
     assert post(other, f'/groups/{gr1.id}/rename', {'name': 'Mine'}).status_code == 403
 

@@ -88,10 +88,10 @@ def test_sessions_of_a_subject_that_does_not_count_count_nowhere(app, data, clie
 
 def co_teacher(data):
     """A second MCA teacher with a login and no subjects of their own."""
-    teacher = Teacher(name='Mitali Ghosh', email='mitali@rcciit.org.in', department_id=data.mca_id)
+    teacher = Teacher(name='Mitali Ghosh', email='mitali@college.example', department_id=data.mca_id)
     db.session.add(teacher)
     db.session.flush()
-    make_account('mitali@rcciit.org.in', 'teacher', department_id=data.mca_id, teacher_id=teacher.id)
+    make_account('mitali@college.example', 'teacher', department_id=data.mca_id, teacher_id=teacher.id)
     db.session.commit()
     return teacher
 
@@ -108,7 +108,7 @@ def test_hod_adds_a_co_teacher_and_it_is_logged(data, client_for):
 
 
 def test_a_co_teacher_from_another_department_is_refused(data, client_for):
-    other = Teacher.query.filter_by(email='ravi@rcciit.org.in').one()
+    other = Teacher.query.filter_by(email='ravi@college.example').one()
     response = post(client_for(data.principal), f'/subjects/edit/{data.subject2_id}', subject_form(
         data, paper_code='MCA102', name='Networks', co_teacher_ids=[other.id]), follow_redirects=True)
     assert "Co-teachers must be teachers of the subject's department." in page(response)
@@ -121,7 +121,7 @@ def test_a_co_teacher_runs_and_corrects_the_shared_class(data, client_for):
     subject.co_teachers = [mitali]
     db.session.commit()
     main_teachers_session = add_session(data, subject_id=subject.id)  # started by Asha, the main teacher
-    client = client_for('mitali@rcciit.org.in')
+    client = client_for('mitali@college.example')
 
     form = {'class_mode': 'regular', 'department_id': data.mca_id, 'semester_id': data.sem1_id,
             'subject_id': subject.id, 'duration': 30}
@@ -143,7 +143,7 @@ def test_a_co_teacher_runs_and_corrects_the_shared_class(data, client_for):
 
 def test_co_teaching_counts_as_teaching_the_class(data, client_for):
     mitali = co_teacher(data)
-    client = client_for('mitali@rcciit.org.in')
+    client = client_for('mitali@college.example')
     assert client.get(f'/semesters/{data.sem1_id}/groups').status_code == 403
     db.session.get(Subject, data.subject2_id).co_teachers = [mitali]
     db.session.commit()
@@ -180,7 +180,7 @@ def test_teacher_short_names_default_to_initials():
 
 
 def test_hod_sets_a_teacher_short_name(data, client_for):
-    form = {'name': 'Asha Teacher', 'email': 'asha@rcciit.org.in', 'department_id': data.mca_id, 'short_name': 'AT'}
+    form = {'name': 'Asha Teacher', 'email': 'asha@college.example', 'department_id': data.mca_id, 'short_name': 'AT'}
     post(client_for(data.hod), f'/teachers/edit/{data.teacher_id}', form)
     assert db.session.get(Teacher, data.teacher_id).short_name == 'AT'
     response = post(client_for(data.hod), f'/teachers/edit/{data.teacher_id}', dict(form, short_name='TOO-LONG-NAME'),

@@ -67,7 +67,7 @@ def test_rows_fill_the_draft_and_bad_rows_are_listed(data, client_for):
     draft = open_draft(hod, data)
     response = upload(hod, draft, workbook([
         ('Monday', '10:00', '10:50', '', '', 'mca101', '', '', 'AT', '416', 'every'),
-        ('Tue', '', '', '2', '2', 'MCA102', '', 'Gr-1', 'asha@rcciit.org.in', 'Lab 2', 'odd'),
+        ('Tue', '', '', '2', '2', 'MCA102', '', 'Gr-1', 'asha@college.example', 'Lab 2', 'odd'),
         ('3', '14:00', '15:00', '', '', '', 'Special Tutorial Class', '', '', '', ''),
         ('Funday', '10:00', '10:50', '', '', 'MCA101', '', '', '', '', ''),
         ('Thursday', '10:00', '10:50', '', '', 'MCA999', '', '', '', '', ''),

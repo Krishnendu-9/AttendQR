@@ -86,7 +86,7 @@ def app(tmp_path):
         'SQLALCHEMY_DATABASE_URI': fresh_database_uri(tmp_path),
         'DEFAULT_PRINCIPAL_EMAIL': 'principal@example.com',
         'DEFAULT_PRINCIPAL_PASSWORD': 'Initial123',
-        'ALLOWED_STAFF_DOMAINS': ['@rcciit.org.in', '@gmail.com'],
+        'ALLOWED_STAFF_DOMAINS': ['@college.example', '@gmail.com'],
         'APP_BASE_URL': 'http://attendqr.test',
         # The test client connects from 127.0.0.1, which the default (private ranges) excludes.
         'SCAN_ALLOWED_NETWORKS': '127.0.0.0/8',
@@ -151,8 +151,8 @@ def data(app):
     db.session.add_all([sem1, sem2, other_sem])
     db.session.flush()
 
-    teacher = Teacher(name='Asha Teacher', email='asha@rcciit.org.in', department_id=mca.id)
-    other_teacher = Teacher(name='Ravi Teacher', email='ravi@rcciit.org.in', department_id=other.id)
+    teacher = Teacher(name='Asha Teacher', email='asha@college.example', department_id=mca.id)
+    other_teacher = Teacher(name='Ravi Teacher', email='ravi@college.example', department_id=other.id)
     db.session.add_all([teacher, other_teacher])
     db.session.flush()
 
@@ -161,9 +161,9 @@ def data(app):
     db.session.add_all([subject, subject2])
     db.session.flush()
 
-    teacher_account = make_account('asha@rcciit.org.in', 'teacher', department_id=mca.id, teacher_id=teacher.id)
-    hod_account = make_account('hod@rcciit.org.in', 'hod', department_id=mca.id)
-    other_teacher_account = make_account('ravi@rcciit.org.in', 'teacher', department_id=other.id, teacher_id=other_teacher.id)
+    teacher_account = make_account('asha@college.example', 'teacher', department_id=mca.id, teacher_id=teacher.id)
+    hod_account = make_account('hod@college.example', 'hod', department_id=mca.id)
+    other_teacher_account = make_account('ravi@college.example', 'teacher', department_id=other.id, teacher_id=other_teacher.id)
 
     student = make_student('Rahul Das', 'MCA001', 'rahul@example.com', mca, sem1)
     student2 = make_student('Priya Sen', 'MCA002', 'priya@example.com', mca, sem1)

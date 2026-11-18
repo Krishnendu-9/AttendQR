@@ -333,9 +333,9 @@ def test_who_can_see_and_edit_a_routine(data, client_for, hod):
     assert 'MCA - Semester 1' in page(teacher.get('/routine/classes'))
     assert client_for(data.student).get(f'/routine/class/{data.sem1_id}').status_code == 403
 
-    make_account('hod2@rcciit.org.in', 'hod', department_id=data.other_id)
+    make_account('hod2@college.example', 'hod', department_id=data.other_id)
     db.session.commit()
-    other_hod = client_for('hod2@rcciit.org.in')
+    other_hod = client_for('hod2@college.example')
     assert other_hod.get(f'/routine/class/{data.sem1_id}').status_code == 403
     assert post(other_hod, f'/routine/class/{data.sem1_id}/draft').status_code == 403
 
