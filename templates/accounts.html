@@ -97,7 +97,15 @@
                                  'teacher_short_name': account.teacher.short_name or '' if account.teacher else '',
                                  'department_id': account.department_id or ''}, 'pencil') }}
                 {% endif %}
-                {% if can_reset %}
+                {% if can_reset and account.role == 'principal' %}
+                {#- Another Principal's sign-in: confirmed with your own password (accounts._own_password_error). -#}
+                {{ record_opener('Reset password', 'principal-reset-dialog', url_for('accounts.reset_password', id=account.id),
+                                 'Reset password for ' ~ account.username ~ '?', 'Reset password', {}, 'key-round') }}
+                {% if account.totp_secret %}
+                {{ record_opener('Reset two-step sign-in', 'principal-reset-dialog', url_for('accounts.reset_two_step', id=account.id),
+                                 'Reset two-step sign-in for ' ~ account.username ~ '?', 'Reset', {}, 'smartphone') }}
+                {% endif %}
+                {% elif can_reset %}
                 {{ menu_form('Reset password', url_for('accounts.reset_password', id=account.id), 'key-round',
                              confirm='A temporary password is created and shown once. They must change it at next sign-in, and are signed out everywhere.',
                              confirm_title='Reset password for ' ~ account.username ~ '?', confirm_label='Reset password') }}
@@ -218,6 +226,12 @@
     </div>
   </form>
 </dialog>
+
+{#- Reset another Principal's sign-in -#}
+{% call record_dialog('principal-reset-dialog', 'Reset sign-in', 'Reset', busy_label='Resetting...') %}
+  <p class="text-body-md text-muted-foreground sm:col-span-2">This hands over an account with every right, so confirm it is you. They are signed out everywhere.</p>
+  {{ password_input('current_password', 'Your password', id='principal_reset_password', required=True, cls='sm:col-span-2') }}
+{% endcall %}
 
 {#- Edit account -#}
 {% call record_dialog('account-edit-dialog', 'Edit account', 'Save changes') %}

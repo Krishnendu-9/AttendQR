@@ -1,6 +1,6 @@
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
-from flask_login import login_required
-from werkzeug.security import generate_password_hash
+from flask_login import current_user, login_required
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from ..access import (
     ROLE_LABELS,
@@ -29,13 +29,17 @@ from ..extensions import db
 from ..models import ActivityLog, ClassSession, Subject, Teacher, User
 from ..security import (
     clear_login_failures,
+    client_ip,
     generate_temporary_password,
     hash_temporary_password,
+    is_login_locked,
     locked_usernames,
     password_policy_error,
+    register_login_failure,
 )
 from ..services import two_factor
 from ..utils import normalize_email, normalize_text, parse_int_value
+from .auth import LOCKED_LOGIN_MESSAGE
 
 bp = Blueprint('accounts', __name__)
 
@@ -338,6 +342,25 @@ def toggle_status(id):
     return redirect(url_for('accounts.index'))
 
 
+def _own_password_error(account):
+    """Why a reset of a Principal's sign-in may not go ahead, or None.
+
+    Resetting another Principal's password or two-step sign-in hands over an account with
+    every right, so the Principal doing it confirms with their own password: a session left
+    open on a shared machine, or a copied cookie, is not enough. Wrong passwords count like
+    failed logins.
+    """
+    if account.role != 'principal':
+        return None
+    throttle_name, ip = normalize_email(current_user.username), client_ip()
+    if is_login_locked(throttle_name, ip):
+        return LOCKED_LOGIN_MESSAGE
+    if not check_password_hash(current_user.password, request.form.get('current_password', '')):
+        register_login_failure(throttle_name, ip)
+        return f"Enter your own password to reset another {role_label('principal')}'s sign-in."
+    return None
+
+
 @bp.route('/reset_admin_password/<int:id>', methods=['POST'])
 @login_required
 @role_required('principal', 'hod')
@@ -345,6 +368,10 @@ def reset_password(id):
     account = db.get_or_404(User, id)
     if not can_reset_staff_account(account):
         abort(403)
+    error = _own_password_error(account)
+    if error:
+        flash(error, 'danger')
+        return redirect(url_for('accounts.index'))
 
     temporary_password = generate_temporary_password()
     account.password = hash_temporary_password(temporary_password)
@@ -369,6 +396,10 @@ def reset_two_step(id):
         abort(403)
     if not two_factor.is_enabled(account):
         flash(f"{account.username} does not use two-step sign-in.", 'warning')
+        return redirect(url_for('accounts.index'))
+    error = _own_password_error(account)
+    if error:
+        flash(error, 'danger')
         return redirect(url_for('accounts.index'))
     two_factor.disable(account)
     account.rotate_session_token()
