@@ -1,0 +1,22 @@
+# Weekly pull requests for newer versions. Known vulnerabilities in the pinned versions are
+# caught separately by the pip-audit job in ci.yml (on every push and weekly).
+version: 2
+updates:
+  # The actions in .github/workflows are pinned to commit SHAs; this keeps the SHAs and their
+  # version comments up to date.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Dependabot reads the ranges in requirements.txt, not requirements.lock (a pip freeze
+  # under a name it does not know). After merging one of these, regenerate the lock file:
+  # install requirements.txt into a clean venv and run pip freeze (see its header).
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
