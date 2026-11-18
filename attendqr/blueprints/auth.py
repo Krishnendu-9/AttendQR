@@ -29,7 +29,7 @@ from ..security import (
     register_login_failure,
 )
 from ..services import two_factor
-from ..services.qr import clear_scan_grant, qr_data_uri
+from ..services.qr import SCAN_GRANT_KEY, clear_scan_grant, qr_data_uri
 from ..utils import normalize_email
 
 bp = Blueprint('auth', __name__)
@@ -110,7 +110,12 @@ def login():
 
 def _complete_login(user, next_url, how=None):
     clear_login_failures(normalize_email(user.username))
-    session.pop('_flashes', None)
+    # A fresh session (and with it a new CSRF token) for the signed-in user. Only the scan grant
+    # carries over: a student who scanned before signing in must still be able to confirm.
+    grant = session.get(SCAN_GRANT_KEY)
+    session.clear()
+    if grant is not None:
+        session[SCAN_GRANT_KEY] = grant
     login_user(user)
     mark_session_active()
     if user.role != 'student':
