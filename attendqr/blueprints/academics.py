@@ -7,6 +7,7 @@ from ..access import (
     can_access_teacher,
     current_department_id,
     describe_delete_block,
+    has_active_hod,
     is_allowed_staff_email,
     is_principal,
     log_activity,
@@ -33,6 +34,7 @@ from ..models import (
     TimetableEntry,
     User,
 )
+from ..services.locks import semester_lock_error
 from ..services.settings import get_setting, term, terms
 from ..services.subject_colors import SUBJECT_COLORS, parse_color
 from ..utils import (
@@ -415,6 +417,12 @@ def edit_subject(id):
         error = error or "Check the subject details and try again."
         flash(error, "warning" if "already exists" in error else "danger")
         return redirect(url_for('academics.subjects'))
+    lock_error = semester_lock_error(subject.semester)
+    if lock_error and bool(values['counts_towards_attendance']) != bool(subject.counts_towards_attendance):
+        # Whether it counts changes every student's percentage, which a locked semester keeps final.
+        flash(f"{lock_error} Until then, whether '{subject_display_name(subject)}' counts towards attendance "
+              "cannot change.", 'warning')
+        return redirect(url_for('academics.subjects'))
     moving = (values['department_id'], values['semester_id']) != (subject.department_id, subject.semester_id)
     sessions_count = ClassSession.query.filter_by(subject_id=subject.id).count() if moving else 0
     if moving and TimetableEntry.query.filter_by(subject_id=subject.id).count():
@@ -524,12 +532,25 @@ def edit_teacher(id):
         if block:
             flash(block, 'warning')
             return redirect(url_for('academics.teachers'))
+    linked_account = User.query.filter_by(teacher_id=teacher.id).first()
+    if linked_account and linked_account.role != 'teacher':
+        # The profile of an HOD who also teaches: its email is that HOD's login and its department
+        # theirs, and only the Principal manages HOD accounts.
+        if not is_principal() and email != normalize_email(teacher.email):
+            flash(f"This teacher profile belongs to the {role_label(linked_account.role)} account "
+                  f"'{linked_account.username}'. Only the {role_label('principal')} can change its email.", 'warning')
+            return redirect(url_for('academics.teachers'))
+        if (linked_account.role == 'hod' and linked_account.is_active and department_id != linked_account.department_id
+                and has_active_hod(department_id, exclude_user_id=linked_account.id)):
+            flash(f"This teacher profile belongs to the {role_label('hod')} account '{linked_account.username}', "
+                  f"and that {term('department').lower()} already has an active {role_label('hod')}. "
+                  f"Deactivate that {role_label('hod')} first.", 'warning')
+            return redirect(url_for('academics.teachers'))
     teacher.name = name
     teacher.email = email
     teacher.department_id = department_id
     if 'short_name' in request.form:  # older forms without the field leave it alone
         teacher.short_name = short_name
-    linked_account = User.query.filter_by(teacher_id=teacher.id).first()
     if linked_account:
         linked_account.username = email
         linked_account.department_id = department_id
@@ -549,8 +570,17 @@ def delete_teacher(id):
     if block:
         flash(block, 'warning')
         return redirect(url_for('academics.teachers'))
+    # Only teacher logins go with the profile. Another account that teaches with it (an HOD) keeps
+    # its login: the Principal unlinks it, and only the Principal manages those accounts.
+    other_logins = User.query.filter(User.teacher_id == teacher.id, User.role != 'teacher').all()
+    if other_logins and not is_principal():
+        flash(f"This teacher profile belongs to the {role_label(other_logins[0].role)} account "
+              f"'{other_logins[0].username}'. Only the {role_label('principal')} can remove it.", 'warning')
+        return redirect(url_for('academics.teachers'))
     log_activity('teacher_deleted', f"Deleted teacher profile '{teacher.name}'.", 'teacher', teacher.id, teacher.department_id)
-    User.query.filter_by(teacher_id=teacher.id).delete()
+    for account in other_logins:
+        account.teacher_id = None
+    User.query.filter_by(teacher_id=teacher.id, role='teacher').delete()
     db.session.delete(teacher)
     db.session.commit()
     return redirect(url_for('academics.teachers'))
