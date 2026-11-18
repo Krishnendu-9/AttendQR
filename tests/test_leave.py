@@ -122,7 +122,7 @@ def test_decided_requests_cannot_be_decided_again(data, client_for):
 def test_only_the_students_hod_or_the_principal_can_decide(data, client_for, app):
     from conftest import make_account
 
-    other_hod = make_account('hod2@rcciit.org.in', 'hod', department_id=data.other_id)
+    other_hod = make_account('hod2@college.example', 'hod', department_id=data.other_id)
     db.session.commit()
     leave = approved_leave(data.student_id, today(), status=LeaveRequest.PENDING)
 
@@ -195,7 +195,7 @@ def test_a_rejection_is_not_reopened_over_a_newer_request_for_the_same_days(data
 def test_only_the_students_hod_or_the_principal_can_reopen(data, client_for):
     from conftest import make_account
 
-    other_hod = make_account('hod2@rcciit.org.in', 'hod', department_id=data.other_id)
+    other_hod = make_account('hod2@college.example', 'hod', department_id=data.other_id)
     db.session.commit()
     leave = approved_leave(data.student_id, today())
 
@@ -288,3 +288,16 @@ def test_student_dashboard_mentions_excused_classes(data, client_for):
 
     text = page(client_for(data.student).get('/student/attendance'))
     assert '1 class during your approved leave is not counted' in text
+
+
+def test_a_student_can_send_only_a_few_requests_a_week_withdrawn_ones_included(data, client_for):
+    from attendqr.services.leave import MAX_REQUESTS_PER_PERIOD
+    student = client_for(data.student)
+    for offset in range(MAX_REQUESTS_PER_PERIOD):
+        request_leave(student, today() + timedelta(days=offset * 2))
+        leave = LeaveRequest.query.order_by(LeaveRequest.id.desc()).first()
+        post(student, f'/leave/{leave.id}/withdraw')  # withdrawing does not give the request back
+    assert LeaveRequest.query.count() == 0
+    response = request_leave(student, today() + timedelta(days=40))
+    assert 'the most allowed' in page(response)
+    assert LeaveRequest.query.count() == 0
