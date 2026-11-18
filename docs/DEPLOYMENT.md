@@ -88,7 +88,7 @@ Backup files are readable only by the account running the server (on Windows the
 
 ## Initial Login
 
-When the database has no accounts, the first Principal account is created as `DEFAULT_PRINCIPAL_EMAIL` (default `principal@example.com`) with a random one-time password. The password is written to `instance/initial_principal_password`, readable only by the account running the server. The server log shows that path, never the password itself:
+When the database has no accounts, the first Principal account is created as `DEFAULT_PRINCIPAL_EMAIL` (default `principal@example.com`) with a random one-time password. The password is written to `instance/initial_principal_password`, readable only by the account running the server (on Windows the file inherits the folder's permissions). The server log shows that path, never the password itself:
 
 ```powershell
 Get-Content instance\initial_principal_password                                  # run.py
@@ -138,7 +138,7 @@ To keep network locality on a public deployment, set `SCAN_ALLOWED_NETWORKS` (be
 
 ### Restricting scans to the campus network
 
-`SCAN_ALLOWED_NETWORKS` controls which client addresses may open a scan link. Staff pages, reports and student logins are not affected. Only `/scan/` is checked, because attendance can only be marked after a scan there.
+`SCAN_ALLOWED_NETWORKS` controls which client addresses may open a scan link. Staff pages, reports and student logins are not affected. It is checked when the scan link is opened (`/scan/`), because attendance can only be marked after a scan there, and again when the student confirms attendance, because the scan is held in a browser cookie that could be copied to a browser elsewhere.
 
 | Value | Scans accepted from |
 | --- | --- |
@@ -185,7 +185,7 @@ An IP address is personal data, so AttendQR keeps as little of it as it can, for
 
 - **What is stored:** for each attendance entry made by QR scan, the IP address the scan link was opened from (`attendance.scan_ip`). On a LAN this is the phone's address on the campus Wi-Fi. On a public deployment it is usually the network's public address, which everyone on the same campus Wi-Fi or mobile carrier shares. Manual entries have none. Nothing else about the device, browser or location is recorded.
 - **Why:** so staff can spot a scan that came from a different network than the rest of the class (a forwarded QR), and see that `SCAN_ALLOWED_NETWORKS` is doing its job. Nothing automatic is decided from it.
-- **Who can see it:** only the session view, which is open to the teacher who ran the session, the HOD of its department, and the Principal. It is not shown to students, and is not in reports, the detailed report, Excel/PDF exports or the reports API. Students are told on the confirmation page that it is recorded and for how long.
+- **Who can see it:** only the session view, which is open to the teacher who ran the session, the subject's teachers (its main teacher and co-teachers), the HOD of its department, and the Principal. It is not shown to students, and is not in reports, the detailed report, Excel/PDF exports or the reports API. Students are told on the confirmation page that it is recorded and for how long.
 - **How long:** `SCAN_IP_RETENTION_DAYS`, 30 days by default. The app clears older addresses itself, on the first request after startup and then hourly; the attendance entry stays. `flask purge-scan-ips` does the same on demand. `0` stops recording and clears every stored address.
 
 The limit is built in rather than left to a scheduled job, because attendance entries are kept for years while an address stops being useful after a few weeks.
@@ -211,7 +211,7 @@ SQLite suits one server process. For several worker processes, use PostgreSQL: i
 - Every response carries an `X-Request-ID` header, and every log line includes it. A valid id sent by a reverse proxy is kept, so one id follows a request through the proxy and the app.
 - `LOG_FORMAT=json` writes one JSON object per line for log collectors. The default is plain text.
 - The access log (`ACCESS_LOG=1`, on by default) records the method, the **route pattern** (`/scan/<token>`), the status and the duration. It never records the real path, query string or client address, so QR tokens and IP addresses stay out of the logs.
-- `/metrics` serves Prometheus metrics when `METRICS_TOKEN` is set, to requests with `Authorization: Bearer <METRICS_TOKEN>`; otherwise it is a 404. It reports requests and their duration per route, QR scan outcomes (`granted`, `marked`, `token_expired`, `network_refused`, `device_rejected`...), sign-in outcomes, and the number of live QR sessions. The counters belong to one process: with several workers, scrape each.
+- `/metrics` serves Prometheus metrics when `METRICS_TOKEN` is set, to requests with `Authorization: Bearer <METRICS_TOKEN>`. Without `METRICS_TOKEN` it is a 404; with it set, a request without the right header gets a 403. It reports requests and their duration per route, QR scan outcomes (`granted`, `marked`, `token_expired`, `network_refused`, `device_rejected`...), sign-in outcomes, and the number of live QR sessions. The counters belong to one process: with several workers, scrape each.
 
 ## Load testing
 
