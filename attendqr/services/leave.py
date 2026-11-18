@@ -8,8 +8,8 @@ from collections import defaultdict
 from datetime import timedelta
 
 from ..extensions import db
-from ..models import LeaveRequest
-from ..utils import local_day_start_utc, local_now, normalize_text, parse_iso_date
+from ..models import ActivityLog, LeaveRequest
+from ..utils import local_day_start_utc, local_now, normalize_text, parse_iso_date, utc_now
 
 # Matrix mark for a class held during the student's approved leave.
 ON_LEAVE = 'on_leave'
@@ -22,6 +22,10 @@ MAX_DAYS_IN_PAST = 30
 MAX_DAYS_AHEAD = 90
 MAX_REASON_LENGTH = 300
 MAX_NOTE_LENGTH = 200
+# Requests a student may send in REQUEST_LIMIT_DAYS, withdrawn and rejected ones included, so one
+# student cannot fill the HOD's list by asking again after every rejection.
+MAX_REQUESTS_PER_PERIOD = 5
+REQUEST_LIMIT_DAYS = 7
 
 
 class LeaveWindows:
@@ -84,6 +88,24 @@ def parse_leave_form(form, student):
             f"{overlapping.start_date:%d %b} to {overlapping.end_date:%d %b}."
         )
     return {'kind': kind, 'reason': reason, 'start_date': start, 'end_date': end}, None
+
+
+def recent_requests_error(user_id):
+    """Why the student may not send another request now, or None.
+
+    Counted from the activity log rather than the requests, so a request withdrawn
+    (deleted) counts too: otherwise asking, withdrawing and asking again has no end.
+    """
+    since = utc_now() - timedelta(days=REQUEST_LIMIT_DAYS)
+    sent = ActivityLog.query.filter(
+        ActivityLog.actor_user_id == user_id,
+        ActivityLog.action == 'leave_requested',
+        ActivityLog.created_at >= since,
+    ).count()
+    if sent >= MAX_REQUESTS_PER_PERIOD:
+        return (f"You have sent {sent} leave requests in the last {REQUEST_LIMIT_DAYS} days, the most allowed. "
+                "Wait a few days, or ask your HOD.")
+    return None
 
 
 def overlapping_request(student_id, start, end, exclude_id=None):

@@ -6,7 +6,13 @@ from sqlalchemy.orm import joinedload
 from ..access import can_access_student, department_filter, is_principal, log_activity, role_required, user_role
 from ..extensions import db
 from ..models import LeaveRequest, Student
-from ..services.leave import MAX_NOTE_LENGTH, describe_range, overlapping_request, parse_leave_form
+from ..services.leave import (
+    MAX_NOTE_LENGTH,
+    describe_range,
+    overlapping_request,
+    parse_leave_form,
+    recent_requests_error,
+)
 from ..services.locks import semester_lock_error
 from ..utils import normalize_text, utc_now
 
@@ -33,7 +39,9 @@ def _student_page():
         abort(403)
     form_error = None
     if request.method == 'POST':
-        values, form_error = parse_leave_form(request.form, student)
+        values, form_error = None, recent_requests_error(current_user.id)
+        if form_error is None:
+            values, form_error = parse_leave_form(request.form, student)
         if values is not None:
             leave = LeaveRequest(student_id=student.id, **values)
             db.session.add(leave)
