@@ -476,7 +476,7 @@ def test_common_passwords_are_refused(app, password):
 
 
 def test_passwords_containing_the_email_name_or_roll_number_are_refused(app):
-    assert 'email name' in password_policy_error('asha2026!', ['asha@rcciit.org.in'])
+    assert 'email name' in password_policy_error('asha2026!', ['asha@college.example'])
     assert 'roll number' in password_policy_error('x-MCA2026001-y', ['s@example.com', 'MCA2026001'])
     # Very short email names are not treated as contained.
     assert password_policy_error('Bright7Lamp', ['al@example.com']) is None
@@ -494,3 +494,63 @@ def test_throttling_treats_ipv4_mapped_addresses_as_the_same_device(app, data):
           environ_base={'REMOTE_ADDR': '::ffff:192.0.2.9'})
     keys = {row.key for row in LoginThrottle.query.filter_by(username=data.teacher)}
     assert f'ip:192.0.2.9|{data.teacher}' in keys
+
+
+# ── Resetting another Principal's sign-in ────────────────────
+
+def second_principal():
+    from conftest import make_account
+    account = make_account('second.principal@college.example', 'principal')
+    db.session.commit()
+    return account
+
+
+def test_resetting_another_principals_password_needs_your_own_password(data, client_for):
+    other = second_principal()
+    old_hash = other.password
+    principal = client_for(data.principal)
+    accounts_page = principal.get('/accounts').get_data(as_text=True)
+    assert 'principal-reset-dialog' in accounts_page and 'Your password' in accounts_page
+    response = post(principal, f'/reset_admin_password/{other.id}', {'current_password': 'wrong'},
+                    follow_redirects=True)
+    assert 'Enter your own password' in response.get_data(as_text=True)
+    db.session.expire_all()
+    assert db.session.get(User, other.id).password == old_hash
+
+    post(principal, f'/reset_admin_password/{other.id}', {'current_password': PASSWORD})
+    db.session.expire_all()
+    assert db.session.get(User, other.id).password != old_hash
+
+
+def test_resetting_another_principals_two_step_needs_your_own_password(data, client_for):
+    other = second_principal()
+    other.totp_secret = 'encrypted-secret'
+    db.session.commit()
+    principal = client_for(data.principal)
+    post(principal, f'/accounts/{other.id}/reset-two-step', {'current_password': 'wrong'})
+    db.session.expire_all()
+    assert db.session.get(User, other.id).totp_secret == 'encrypted-secret'
+    post(principal, f'/accounts/{other.id}/reset-two-step', {'current_password': PASSWORD})
+    db.session.expire_all()
+    assert db.session.get(User, other.id).totp_secret is None
+
+
+def test_resetting_a_teacher_password_needs_no_extra_password(data, client_for):
+    teacher = User.query.filter_by(username=data.teacher).one()
+    old_hash = teacher.password
+    post(client_for(data.principal), f'/reset_admin_password/{teacher.id}')
+    db.session.expire_all()
+    assert db.session.get(User, teacher.id).password != old_hash
+
+
+def test_signing_in_starts_a_fresh_session_with_a_new_csrf_token(app, data):
+    client = app.test_client()
+    client.get('/login')
+    with client.session_transaction() as sess:
+        before = sess['_csrf_token']
+        sess['leftover'] = 'from before sign-in'
+    login(client, data.student)
+    client.get('/')
+    with client.session_transaction() as sess:
+        assert sess.get('_csrf_token') != before
+        assert 'leftover' not in sess
