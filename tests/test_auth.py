@@ -554,3 +554,20 @@ def test_signing_in_starts_a_fresh_session_with_a_new_csrf_token(app, data):
     with client.session_transaction() as sess:
         assert sess.get('_csrf_token') != before
         assert 'leftover' not in sess
+
+
+def test_signing_out_clears_the_whole_session(app, data, client_for):
+    client = client_for(data.teacher)
+    client.get('/')
+    with client.session_transaction() as sess:
+        before = sess['_csrf_token']
+        sess['leftover'] = 'from the signed-in session'
+
+    post(client, '/logout')
+    with client.session_transaction() as sess:
+        assert '_csrf_token' not in sess and 'leftover' not in sess
+    # The login page hands out a new token, and signing in again works.
+    client.get('/login')
+    with client.session_transaction() as sess:
+        assert sess['_csrf_token'] != before
+    assert client_for(data.teacher).get('/').status_code == 200

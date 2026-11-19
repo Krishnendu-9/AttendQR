@@ -29,7 +29,7 @@ from ..security import (
     register_login_failure,
 )
 from ..services import two_factor
-from ..services.qr import SCAN_GRANT_KEY, clear_scan_grant, qr_data_uri
+from ..services.qr import SCAN_GRANT_KEY, qr_data_uri
 from ..utils import normalize_email
 
 bp = Blueprint('auth', __name__)
@@ -255,7 +255,9 @@ def logout():
         current_user.rotate_session_token()
         db.session.commit()
     logout_user()
-    clear_scan_grant()
+    # Nothing from the signed-in session is left in the cookie: the CSRF token, a scan grant,
+    # a half-finished two-step sign-in. The device cookie is separate and stays.
+    session.clear()
     return redirect(url_for('auth.login'))
 
 
