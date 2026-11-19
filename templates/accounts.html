@@ -155,7 +155,7 @@
           {% if not loop.last %}<span class="absolute left-1.75 top-8 bottom-0 w-px bg-border" aria-hidden="true"></span>{% endif %}
           <span class="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-secondary"><span class="size-1.5 rounded-full bg-vibrant"></span></span>
           <div class="min-w-0">
-            <p class="text-body-md text-foreground">{{ log.description }}</p>
+            <p class="text-body-md text-foreground wrap-break-word">{{ log.description }}</p>
             <p class="mt-0.5 text-body-sm text-muted-foreground">{{ log.actor_username }} &middot; {{ format_12h(log.created_at) }}</p>
           </div>
         </li>
