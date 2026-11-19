@@ -3,7 +3,6 @@ import csv
 import io
 import itertools
 
-import openpyxl
 from flask import current_app
 
 from ..access import (
@@ -25,6 +24,7 @@ from ..utils import (
     normalize_text,
     utc_now,
 )
+from .spreadsheet import xlsx_rows
 
 
 def ensure_student_account(student):
@@ -102,20 +102,14 @@ def parse_student_import(file_storage):
         return _limited(csv.DictReader(io.StringIO(content)), limit)
 
     if filename.endswith('.xlsx'):
-        workbook = openpyxl.load_workbook(file_storage.stream, read_only=True, data_only=True)
-        try:
-            sheet = workbook.active or workbook.worksheets[0]
-            rows = sheet.iter_rows(values_only=True)
-            header_row = next(rows, None)
-            if header_row is None:
-                return []
-            headers = [normalize_header(value) for value in header_row]
-            return _limited((
-                {headers[index]: value for index, value in enumerate(values) if index < len(headers)}
-                for values in rows
-            ), limit)
-        finally:
-            workbook.close()
+        header_row, rows = xlsx_rows(file_storage.stream, limit)
+        if header_row is None:
+            return []
+        headers = [normalize_header(value) for value in header_row]
+        return _limited((
+            {headers[index]: value for index, value in enumerate(values) if index < len(headers)}
+            for values in rows
+        ), limit)
 
     raise ValueError("Upload a .csv or .xlsx file")
 

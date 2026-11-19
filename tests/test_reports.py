@@ -117,6 +117,38 @@ def test_import_reports_unreadable_files_without_internal_details(data, client_f
     assert 'could not be read' in body and 'Traceback' not in body and 'BadZipFile' not in body
 
 
+def test_import_refuses_a_spreadsheet_with_xml_entities(data, client_for):
+    """Uploaded .xlsx files are parsed with defusedxml, so XML entities (the start of a
+    "billion laughs" file) are refused instead of expanded."""
+    import zipfile
+
+    book = openpyxl.Workbook()
+    sheet = book.active
+    sheet.append(['name', 'roll_no', 'email', 'department', 'semester'])
+    sheet.append(['PLACEHOLDER', 'MCA778', 'entity@example.com', 'MCA', 'Semester 1'])
+    plain = io.BytesIO()
+    book.save(plain)
+
+    crafted = io.BytesIO()
+    with zipfile.ZipFile(plain) as source, zipfile.ZipFile(crafted, 'w') as target:
+        for item in source.infolist():
+            content = source.read(item.filename)
+            if item.filename == 'xl/worksheets/sheet1.xml':
+                text = content.decode()
+                declaration_end = text.index('?>') + 2 if text.startswith('<?xml') else 0
+                text = (text[:declaration_end] + '<!DOCTYPE worksheet [<!ENTITY who "Entity Student">]>'
+                        + text[declaration_end:])
+                content = text.replace('PLACEHOLDER', '&who;').encode()
+            target.writestr(item, content)
+
+    response = post(client_for(data.principal), '/students/import', {
+        'student_file': (io.BytesIO(crafted.getvalue()), 'students.xlsx'),
+    }, content_type='multipart/form-data', follow_redirects=True)
+    body = response.get_data(as_text=True)
+    assert 'could not be read' in body and 'Unable to read workbook' not in body
+    assert Student.query.filter_by(roll_no='MCA778').count() == 0
+
+
 def test_dashboard_counts(data, client_for):
     add_session(data, present=[data.student_id, data.student2_id])
     html = client_for(data.teacher).get('/').get_data(as_text=True)
