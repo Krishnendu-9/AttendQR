@@ -77,6 +77,23 @@ def test_remove_attendance_requires_reason_and_is_logged(data, client_for):
     assert 'scan entry' in log.description and 'outside the classroom' in log.description
 
 
+def test_a_long_reason_is_kept_whole_in_the_activity_log(data, client_for):
+    """The reason comes last in the description; a 255-character column used to cut it off."""
+    from attendqr.services.audit import verify_chain
+
+    class_session = add_session(data, present=[data.student_id])
+    entry = Attendance.query.one()
+    reason = 'Seen leaving before the roll call; ' + 'x' * 120 + ' (checked with the class representative)'
+    assert len(reason) <= 200
+
+    post(client_for(data.teacher), f'/sessions/{class_session.id}/attendance/{entry.id}/remove', {'note': reason})
+
+    log = ActivityLog.query.filter_by(action='attendance_removed').one()
+    assert len(log.description) > 255
+    assert log.description.endswith(f'Reason: {reason}')
+    assert verify_chain().ok
+
+
 def test_remove_rejects_entry_from_another_session(data, client_for):
     first = add_session(data, present=[data.student_id])
     second = add_session(data)

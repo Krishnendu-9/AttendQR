@@ -483,6 +483,11 @@ OWN_SECURITY_ACTIONS = (
 SIGN_IN_ATTEMPT_ACTOR = 'Sign-in attempt'
 
 
+# A bound, not a column limit: the longest entries (names, a session title and a 200-character
+# reason) stay far below it, so the reason at the end is always kept.
+MAX_ACTIVITY_DESCRIPTION = 2000
+
+
 def log_activity(action, description, target_type=None, target_id=None, department_id=None, anonymous_actor='System'):
     authenticated = current_user.is_authenticated
     db.session.add(ActivityLog(
@@ -492,7 +497,7 @@ def log_activity(action, description, target_type=None, target_id=None, departme
         action=action,
         target_type=target_type,
         target_id=target_id,
-        description=description[:255],
+        description=description[:MAX_ACTIVITY_DESCRIPTION],
         created_at=utc_now(),
     ))
 
