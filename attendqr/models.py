@@ -328,7 +328,8 @@ class ActivityLog(db.Model):
     action = db.Column(db.String(80), nullable=False)
     target_type = db.Column(db.String(40), nullable=True)
     target_id = db.Column(db.Integer, nullable=True)
-    description = db.Column(db.String(255), nullable=False)
+    # Text, not a short string: the reason for a correction comes last and must not be cut off.
+    description = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     # Tamper evidence (services/audit.py): position in the chain and a keyed hash over this
     # entry and the previous one. Empty until the entry is sealed, right after its request.

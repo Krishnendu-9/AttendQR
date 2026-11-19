@@ -508,3 +508,39 @@ def test_subject_color_migration_round_trip(app, data):
     upgrade()
     with db.engine.connect() as connection:
         assert connection.exec_driver_sql('SELECT COUNT(*) FROM subject WHERE color IS NOT NULL').scalar() == 0
+
+
+def test_activity_log_text_migration_round_trip(app, data, caplog):
+    """0026 makes descriptions TEXT without changing them, so the chain still verifies. Down goes
+    back to 255 characters, but refuses while a longer entry exists rather than cut sealed text."""
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.access import log_activity
+    from attendqr.extensions import db
+    from attendqr.models import ActivityLog
+    from attendqr.services.audit import seal_pending, verify_chain
+
+    with app.test_request_context():
+        log_activity('test_short', 'A short entry.')
+        db.session.commit()
+    seal_pending()
+    db.session.remove()
+
+    downgrade(revision='0025_subject_color')
+    with db.engine.connect() as connection:
+        column = next(c for c in sa.inspect(connection).get_columns('activity_log') if c['name'] == 'description')
+        assert getattr(column['type'], 'length', None) == 255
+
+    upgrade()
+    with db.engine.connect() as connection:
+        column = next(c for c in sa.inspect(connection).get_columns('activity_log') if c['name'] == 'description')
+        assert getattr(column['type'], 'length', None) is None
+    assert verify_chain().ok
+
+    db.session.add(ActivityLog(actor_username='test', action='test_long', description='y' * 300))
+    db.session.commit()
+    db.session.remove()
+    # Flask-Migrate logs the migration's error and exits.
+    with pytest.raises(SystemExit):
+        downgrade(revision='0025_subject_color')
+    assert 'longer than 255 characters' in caplog.text
