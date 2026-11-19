@@ -27,6 +27,7 @@ import time
 import pyotp
 from cryptography.fernet import Fernet, InvalidToken
 from flask import current_app
+from pyotp.totp import TOTP
 
 from ..security import TEMPORARY_PASSWORD_ALPHABET
 from ..utils import utc_now
@@ -85,7 +86,7 @@ def pending_secret(user):
 
 def provisioning_uri(user, secret):
     """otpauth:// link encoded in the setup QR code."""
-    return pyotp.TOTP(secret).provisioning_uri(name=user.username, issuer_name=current_app.config['TOTP_ISSUER'])
+    return TOTP(secret).provisioning_uri(name=user.username, issuer_name=current_app.config['TOTP_ISSUER'])
 
 
 def grouped(secret):
@@ -118,7 +119,7 @@ def _accept(user, secret, code):
     code = _digits(code)
     if not re.fullmatch(r'\d{6}', code):
         return False
-    totp = pyotp.TOTP(secret)
+    totp = TOTP(secret)
     now_step = int(time.time()) // STEP_SECONDS
     for step in (now_step - 1, now_step, now_step + 1):
         if user.totp_last_step is not None and step <= user.totp_last_step:
