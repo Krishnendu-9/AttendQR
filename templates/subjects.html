@@ -67,7 +67,7 @@
             {% endif %}
             {% if show_department %}<td class="whitespace-nowrap text-body-md text-muted-foreground">{{ s.department.display_name }}</td>{% endif %}
             <td class="whitespace-nowrap text-body-md text-muted-foreground">{{ s.semester.name }}
-              <a href="{{ url_for('groups.index', semester_id=s.semester_id) }}" class="ml-1 text-body-sm text-primary hover:underline">Groups</a></td>
+              <a href="{{ url_for('groups.index', semester_id=s.semester_id) }}" class="ml-1 text-body-sm text-link hover:underline">Groups</a></td>
             {% if can_manage %}
             <td class="col-actions">
               {% call dropdown('Actions for ' ~ s.name) %}

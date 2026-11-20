@@ -69,7 +69,7 @@
         {% call detail_item(terms('group')) %}
           {%- if groups %}{% for group in groups %}{{ badge(group.name, 'neutral') }}{% if not loop.last %} {% endif %}{% endfor %}
           {%- else %}<span class="font-normal text-muted-foreground">None</span>{% endif %}
-          <a href="{{ url_for('groups.index', semester_id=student.semester_id) }}" class="ml-1 text-body-sm font-normal text-primary hover:underline">Class groups</a>
+          <a href="{{ url_for('groups.index', semester_id=student.semester_id) }}" class="ml-1 text-body-sm font-normal text-link hover:underline">Class groups</a>
         {%- endcall %}
       {% endcall %}
     {% endcall %}

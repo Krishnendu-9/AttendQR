@@ -46,7 +46,7 @@
     {% for row in grid.rows %}
     {% set height = 'h-24' if row.lanes <= 1 else ('h-40' if row.lanes == 2 else 'h-56') %}
     <div class="flex border-t border-border {{ 'border-b' if loop.last }}">
-      <div class="flex w-28 shrink-0 items-center pr-3 text-label-lg {{ 'text-primary' if row.weekday == highlight_day else 'text-foreground' }}">{{ row.name }}</div>
+      <div class="flex w-28 shrink-0 items-center pr-3 text-label-lg {{ 'text-link' if row.weekday == highlight_day else 'text-foreground' }}">{{ row.name }}</div>
       <div class="relative min-w-0 flex-1 border-l border-border {{ height }}">
         {% for band in row.bands %}
         {% set p = band.period %}
@@ -60,7 +60,7 @@
         </button>
         {% else %}
         <div class="absolute inset-y-0 border-r border-border/70 {{ 'bg-muted' if p.is_break }}" data-place data-left="{{ band.start }}" data-width="{{ band.length }}">
-          <span class="absolute left-1.5 top-1 text-body-sm text-muted-foreground">{{ 'Break' if p.is_break and p.label|lower != 'break' else p.label }}</span>
+          <span class="absolute left-1.5 top-1 text-body-sm {{ 'text-muted-strong' if p.is_break else 'text-muted-foreground' }}">{{ 'Break' if p.is_break and p.label|lower != 'break' else p.label }}</span>
         </div>
         {% endif %}
         {% endfor %}

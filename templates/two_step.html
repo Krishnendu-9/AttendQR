@@ -25,5 +25,5 @@
     {{ submit_button('Continue', 'Checking...', icon_name='shield-check', extra='w-full') }}
   </form>
 </div>
-<p class="mt-6 text-center text-body-sm text-muted-foreground"><a class="rounded text-primary underline-offset-2 hover:underline focus-visible:shadow-focus focus-visible:outline-none" href="{{ url_for('auth.login') }}">Start again</a> &middot; No phone and no recovery code? Ask the Principal to reset your two-step sign-in.</p>
+<p class="mt-6 text-center text-body-sm text-muted-foreground"><a class="rounded text-link underline-offset-2 hover:underline focus-visible:shadow-focus focus-visible:outline-none" href="{{ url_for('auth.login') }}">Start again</a> &middot; No phone and no recovery code? Ask the Principal to reset your two-step sign-in.</p>
 {% endblock %}

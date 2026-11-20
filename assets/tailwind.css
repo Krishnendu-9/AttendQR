@@ -35,6 +35,8 @@
   --popover: #FFFFFF;
   --foreground: #0F172A;
   --muted-foreground: #64748B;
+  /* Secondary text on a tinted or muted surface (badges, routine blocks), where #64748B falls below 4.5:1. */
+  --muted-strong: #475569;
   --placeholder: #94A3B8;
   --border: #E2E8F0;
   --input: #E2E8F0;
@@ -47,11 +49,14 @@
   --accent: #EFF6FF;
   --ink: #1E40AF;
   --ring: #2563EB;
-  --success: #059669;
+  /* Blue text: links and the highlighted day. */
+  --link: #2563EB;
+  /* The 700 shades: text on the soft backgrounds below stays at 4.8:1 or more (the 600s were 3.1-4.4). */
+  --success: #047857;
   --success-soft: #ECFDF5;
-  --warning: #D97706;
+  --warning: #B45309;
   --warning-soft: #FFFBEB;
-  --destructive: #DC2626;
+  --destructive: #B91C1C;
   --destructive-soft: #FEF2F2;
   /* Solid red for the confirm button of a destructive action (white text stays readable in both themes). */
   --destructive-solid: #DC2626;
@@ -74,6 +79,7 @@
   --popover: #18181B;
   --foreground: #E4E4E7;
   --muted-foreground: #A1A1AA;
+  --muted-strong: #A1A1AA;
   --placeholder: #71717A;
   --border: #27272A;
   /* At least 3:1 against the page, cards and dialogs, so field edges are visible (WCAG 1.4.11). */
@@ -87,6 +93,8 @@
   --accent: #202024;
   --ink: #BFDBFE;
   --ring: #60A5FA;
+  /* The button blue (#2563EB) is 3.6:1 on the dark card; text needs the lighter blue (7.4:1). */
+  --link: #60A5FA;
   --success: #34D399;
   --success-soft: #13291F;
   --warning: #FBBF24;
@@ -170,6 +178,7 @@
   --color-popover: var(--popover);
   --color-foreground: var(--foreground);
   --color-muted-foreground: var(--muted-foreground);
+  --color-muted-strong: var(--muted-strong);
   --color-placeholder: var(--placeholder);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -182,6 +191,7 @@
   --color-accent: var(--accent);
   --color-ink: var(--ink);
   --color-ring: var(--ring);
+  --color-link: var(--link);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
@@ -358,7 +368,7 @@
     color: var(--primary-hover);
   }
   .dark .btn-link {
-    color: var(--ring);
+    color: var(--link);
   }
   .btn-sm {
     height: 2rem;
@@ -560,7 +570,7 @@
   .badge-warning { background-color: var(--warning-soft); color: var(--warning); }
   .badge-danger { background-color: var(--destructive-soft); color: var(--destructive); }
   .badge-info { background-color: var(--secondary); color: var(--ink); }
-  .badge-neutral { background-color: var(--muted); color: var(--muted-foreground); }
+  .badge-neutral { background-color: var(--muted); color: var(--muted-strong); }
   .badge-outline { border: 1px solid var(--border); color: var(--foreground); }
 
   /* Surfaces ------------------------------------------------- */
@@ -804,14 +814,8 @@
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
-  .subject-tint .text-muted-foreground {
-    color: #475569;
-  }
   .dark .subject-tint {
     background-color: color-mix(in srgb, var(--subject) 16%, var(--card));
-  }
-  .dark .subject-tint .text-muted-foreground {
-    color: var(--muted-foreground);
   }
 
   .subject-chip {
@@ -953,4 +957,12 @@
 }
 .qr-stage:fullscreen #scanUrlText {
   font-size: var(--text-body-md);
+}
+
+/* ── Outside the layers ───────────────────────────────────── */
+/* Unlayered rules beat every layer, including Tailwind's utilities: inside a routine block's tint,
+   .text-muted-foreground is darker in the light theme so it stays at 4.5:1 on every subject colour
+   (the same colour as the utility in the dark theme). */
+.subject-tint .text-muted-foreground {
+  color: var(--muted-strong);
 }

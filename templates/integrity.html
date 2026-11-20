@@ -54,7 +54,7 @@
       <tbody>
         {% for row in report.students %}
         <tr>
-          <td class="align-top"><a href="{{ url_for('students.view', id=row.student.id) }}" class="block truncate rounded text-label-lg text-foreground hover:text-primary focus-visible:shadow-focus focus-visible:outline-none">{{ row.student.name }}</a>
+          <td class="align-top"><a href="{{ url_for('students.view', id=row.student.id) }}" class="block truncate rounded text-label-lg text-foreground hover:text-link focus-visible:shadow-focus focus-visible:outline-none">{{ row.student.name }}</a>
               <p class="font-mono text-body-sm text-muted-foreground">{{ row.student.roll_no }}</p></td>
           <td>
             <ul class="grid gap-1.5">

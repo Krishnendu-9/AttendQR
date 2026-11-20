@@ -83,7 +83,7 @@
             {%- if o.group %} <span class="text-muted-foreground">· {{ o.group.name }}</span>{% endif %}
             {%- if not semester %}<span class="block text-body-sm text-muted-foreground">{{ o.semester.department.display_name }} {{ o.semester.name }}</span>{% endif %}</td>
           <td class="text-body-md text-muted-foreground">{{ o.teachers|map(attribute='name')|join(', ') }}</td>
-          <td>{{ badge(o.status_label, o.status_tone) }}{% if o.session %} <a class="text-body-sm text-primary hover:underline" href="{{ url_for('attendance.generate_qr', session_id=o.session.id) }}">Session</a>{% endif %}
+          <td>{{ badge(o.status_label, o.status_tone) }}{% if o.session %} <a class="text-body-sm text-link hover:underline" href="{{ url_for('attendance.generate_qr', session_id=o.session.id) }}">Session</a>{% endif %}
             {%- if o.change and o.change.reason %}<span class="block text-body-sm text-muted-foreground">{{ o.change.reason }}</span>{% endif %}</td>
         </tr>
         {% endfor %}{% endfor %}

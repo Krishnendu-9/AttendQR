@@ -307,7 +307,7 @@
             <div class="flex items-center gap-3">
               <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-ink">{{ icon('qr-code') }}</span>
               <div class="min-w-0">
-                <a href="{{ url_for('attendance.generate_qr', session_id=cs.id) }}" class="block truncate rounded text-label-lg text-foreground hover:text-primary focus-visible:shadow-focus focus-visible:outline-none">{{ session_display_name(cs) }}</a>
+                <a href="{{ url_for('attendance.generate_qr', session_id=cs.id) }}" class="block truncate rounded text-label-lg text-foreground hover:text-link focus-visible:shadow-focus focus-visible:outline-none">{{ session_display_name(cs) }}</a>
                 <p class="flex items-center gap-1.5 text-body-sm text-muted-foreground">{{ cs.subject.department.display_name }} &middot; {{ cs.subject.semester.name }}{% if cs.special_title %} {{ badge('Special', 'info') }}{% endif %}{% if cs.id in unscheduled %} {{ badge('Unscheduled', 'neutral', 'Held outside the class routine') }}{% endif %}</p>
               </div>
             </div>

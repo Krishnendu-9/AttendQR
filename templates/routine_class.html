@@ -75,7 +75,7 @@
     <input class="input" type="file" name="file" accept=".xlsx,.csv" required aria-label="Spreadsheet to import">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <button type="submit" class="{{ btn('outline') }}">{{ icon('upload') }}<span>Import</span></button>
-      <a class="text-body-sm text-primary hover:underline" href="{{ url_for('routine.import_template', semester_id=semester.id) }}">Download the template</a>
+      <a class="text-body-sm text-link hover:underline" href="{{ url_for('routine.import_template', semester_id=semester.id) }}">Download the template</a>
     </div>
   </form>
   {% endcall %}
@@ -122,7 +122,7 @@
     {% for v in versions %}
     <li class="flex items-center justify-between gap-3 px-6 py-3">
       <span class="text-body-md">{{ version_text(v) }} · {{ v.entries|length }} classes</span>
-      {% if timetable and v.id == timetable.id %}{{ badge('Shown', 'info') }}{% else %}<a class="text-body-sm text-primary hover:underline" href="{{ url_for('routine.view', semester_id=semester.id, version=v.id) }}">Show</a>{% endif %}
+      {% if timetable and v.id == timetable.id %}{{ badge('Shown', 'info') }}{% else %}<a class="text-body-sm text-link hover:underline" href="{{ url_for('routine.view', semester_id=semester.id, version=v.id) }}">Show</a>{% endif %}
     </li>
     {% endfor %}
   </ul>

@@ -17,7 +17,7 @@
         {% set s = row.semester %}
         <tr data-href="{{ url_for('routine.view', semester_id=s.id) }}">
           <td class="py-3">
-            <a href="{{ url_for('routine.view', semester_id=s.id) }}" class="text-label-lg text-foreground hover:text-primary">{{ s.department.display_name }} - {{ s.name }}</a>
+            <a href="{{ url_for('routine.view', semester_id=s.id) }}" class="text-label-lg text-foreground hover:text-link">{{ s.department.display_name }} - {{ s.name }}</a>
           </td>
           <td class="text-body-md text-muted-foreground">
             {% if row.current %}In force since {{ row.current.effective_from.strftime('%d %b %Y') }} · {{ row.current.entries|length }} classes{% else %}{{ badge('No routine', 'neutral') }}{% endif %}
