@@ -25,6 +25,12 @@ PASSWORD = 'Passw0rd!'
 TEST_DATABASE_URL = os.environ.get('TEST_DATABASE_URL', '').strip()
 
 
+try:  # The browser tests need Playwright (requirements-dev.txt); without it, leave them out quietly.
+    import playwright  # noqa: F401
+except ImportError:
+    collect_ignore = ['browser']
+
+
 def pytest_configure(config):
     config.addinivalue_line('markers', 'sqlite_only: needs SQLite; skipped when TEST_DATABASE_URL is set')
 

@@ -32,7 +32,11 @@ include = ["attendqr*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", "tests"]
-addopts = "-ra"
+# Browser tests (tests/browser) need Playwright and Chromium; run them with `-m browser`.
+addopts = "-ra -m 'not browser'"
+markers = [
+    "browser: drives a real browser (Playwright); run with `python -m pytest -m browser tests/browser`",
+]
 filterwarnings = [
     "error::sqlalchemy.exc.LegacyAPIWarning",
 ]
