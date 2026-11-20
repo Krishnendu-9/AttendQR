@@ -43,3 +43,5 @@ Thumbs.db
 submission/*
 # Tailwind CLI binary downloaded by scripts/tailwind.py
 tools/
+# Screenshots and traces of failed browser tests (pytest-playwright --output)
+test-results/
