@@ -12,7 +12,6 @@ import io
 import itertools
 from datetime import date, datetime, time
 
-import openpyxl
 from flask import current_app
 from werkzeug.datastructures import MultiDict
 
@@ -22,6 +21,7 @@ from ..models import ClassGroup, Subject, Teacher, TimetableEntry
 from ..utils import normalize_header
 from .routine import RoutineError, apply_entry, clashes, clock, parse_entry_form, week_periods
 from .settings import WEEKDAYS
+from .spreadsheet import xlsx_rows
 
 HEADERS = ['day', 'start', 'end', 'period', 'length', 'paper_code', 'title', 'group', 'teachers', 'room', 'repeats',
            'valid_from', 'valid_to', 'note']
@@ -61,18 +61,11 @@ def read_rows(file_storage):
         reader = csv.DictReader(io.StringIO(content))
         rows = ({normalize_header(k): v for k, v in row.items() if k is not None} for row in reader)
     elif filename.endswith('.xlsx'):
-        workbook = openpyxl.load_workbook(file_storage.stream, read_only=True, data_only=True)
-        try:
-            sheet = workbook.active or workbook.worksheets[0]
-            values = sheet.iter_rows(values_only=True)
-            header = next(values, None)
-            if header is None:
-                return []
-            names = [normalize_header(value) for value in header]
-            rows = [{names[i]: value for i, value in enumerate(row) if i < len(names)} for row in
-                    itertools.islice(values, limit + 1)]
-        finally:
-            workbook.close()
+        header, values = xlsx_rows(file_storage.stream, limit)
+        if header is None:
+            return []
+        names = [normalize_header(value) for value in header]
+        rows = [{names[i]: value for i, value in enumerate(row) if i < len(names)} for row in values]
     else:
         raise ValueError("Upload a .xlsx or .csv file.")
     result = [row for row in itertools.islice(rows, limit + 1)

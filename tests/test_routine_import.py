@@ -96,6 +96,17 @@ def test_a_csv_works_too(data, client_for):
     assert TimetableEntry.query.one().weekday == 4
 
 
+def test_a_broken_spreadsheet_is_explained_not_an_error_page(data, client_for):
+    """A .xlsx that is not one (here, not even a zip) used to end in a server error."""
+    hod = client_for(data.hod)
+    draft = open_draft(hod, data)
+    response = upload(hod, draft, io.BytesIO(b'not a zip'))
+    assert response.status_code == 302
+    body = page(hod.get(response.headers['Location']))
+    assert 'The file could not be read' in body and 'BadZipFile' not in body
+    assert TimetableEntry.query.count() == 0
+
+
 def test_only_managers_import_and_only_spreadsheets(data, client_for):
     hod = client_for(data.hod)
     draft = open_draft(hod, data)
