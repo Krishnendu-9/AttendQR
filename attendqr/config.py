@@ -87,7 +87,8 @@ class Config:
 
     # Days to keep the IP address of each QR scan; 0 records none and clears existing ones.
     # See "Scan IP addresses" in README.md.
-    SCAN_IP_RETENTION_DAYS = os.environ.get('SCAN_IP_RETENTION_DAYS', '30')
+    # A whole number like the other settings; services/retention.py also refuses a negative one.
+    SCAN_IP_RETENTION_DAYS = env_int('SCAN_IP_RETENTION_DAYS', 30)
 
     # A QR token is accepted for this many seconds after it is shown on screen.
     QR_TOKEN_MAX_AGE = env_int('QR_TOKEN_MAX_AGE', 30)
