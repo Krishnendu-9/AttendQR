@@ -30,3 +30,6 @@ CI runs `pip-audit` against `requirements.lock` on every push, on every pull req
 - **Fix by upgrading.** Bump the version in `requirements.lock`, run the tests, and commit. If an advisory looks unreachable but a fix exists, still upgrade rather than ignore it.
 - **Ignore only when there is no usable fix.** Add `--ignore-vuln <ID>` to the audit step, with a comment saying why the code path is not reachable here and a date to check again. Remove it once a fix is released.
 - The audit is a separate job, so a newly published advisory shows up as "Dependency audit" failing, not as failed tests.
+- **Updates.** Dependabot (`.github/dependabot.yml`) opens weekly pull requests for newer versions of the Python
+  packages, the pinned GitHub Actions and the Docker base image (pinned to a digest). After merging a Python one,
+  regenerate `requirements.lock` as its header describes.
