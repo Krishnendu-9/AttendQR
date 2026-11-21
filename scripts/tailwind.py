@@ -2,6 +2,7 @@
 
     python scripts/tailwind.py           # build static/css/app.css once (minified)
     python scripts/tailwind.py --watch   # rebuild on every template or source change
+    python scripts/tailwind.py --check   # only check app.css matches a fresh build (CI)
 
 The first run downloads the pinned Tailwind binary for this computer into tools/
 (ignored by git) and checks it against the SHA-256 published with that release.
@@ -14,6 +15,7 @@ import os
 import platform
 import subprocess
 import sys
+import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -78,10 +80,34 @@ def ensure_binary():
     return binary
 
 
+def check():
+    """Build into a temporary file and compare it with the committed stylesheet (for CI).
+
+    A template that uses a new class without a rebuild would otherwise ship a page whose
+    class has no CSS, which no other test notices.
+    """
+    with tempfile.TemporaryDirectory() as folder:
+        built = Path(folder) / 'app.css'
+        command = [str(ensure_binary()), '--input', str(SOURCE), '--output', str(built), '--cwd', str(ROOT), '--minify']
+        status = subprocess.call(command)  # noqa: S603 - our own verified binary and fixed arguments
+        if status:
+            return status
+        if built.read_bytes() == OUTPUT.read_bytes():
+            print(f"{OUTPUT.relative_to(ROOT)} is up to date.")
+            return 0
+    print(f"{OUTPUT.relative_to(ROOT)} is out of date: run `python scripts/tailwind.py` and commit the result.")
+    return 1
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--watch', action='store_true', help='rebuild whenever a source file changes')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--watch', action='store_true', help='rebuild whenever a source file changes')
+    mode.add_argument('--check', action='store_true',
+                      help='only check that the committed stylesheet matches a fresh build (exit 1 if not)')
     args = parser.parse_args()
+    if args.check:
+        sys.exit(check())
 
     command = [str(ensure_binary()), '--input', str(SOURCE), '--output', str(OUTPUT), '--cwd', str(ROOT)]
     command.append('--watch' if args.watch else '--minify')
