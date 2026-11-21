@@ -5,7 +5,7 @@
 
 College attendance by QR code, built so that marking attendance for an absent friend is hard. The teacher's screen shows a code that changes every 10 seconds. A student scans it with their own phone, on the campus network, and confirms with their own account. Departments, roles, leave, reports, shortage lists and analytics are built around it, and every record can be audited: random spot checks in class, an integrity report that flags proxy patterns, and a tamper-evident activity log.
 
-Flask · SQLAlchemy · PostgreSQL or SQLite · server-rendered pages with htmx and Alpine.js · Docker · 530+ tests (92% coverage) in CI on two databases
+Flask · SQLAlchemy · PostgreSQL or SQLite · server-rendered pages with htmx and Alpine.js · Docker · 550+ tests (92% coverage) in CI on two databases, plus browser tests
 
 ![A class session: the HOD, who also teaches, starts today's RDBMS class from the routine, the QR code changes, a student signs in and confirms on their phone, the name appears on the teacher's screen, a forwarded code has expired, and a spot check removes a student who was not in the room](docs/media/attendance-flow.gif)
 
@@ -101,7 +101,7 @@ Each rule has tests. What is *not* covered, such as registering a friend's phone
 
 ## Engineering
 
-- **Tests.** pytest, with each test on its own database built by the real migrations. CI runs them on Python 3.11 to 3.13 and on PostgreSQL. It also runs a migration-versus-model check on both databases, pyright, ruff (including bandit's security rules), a coverage floor, `pip-audit` on the pinned dependencies, and a Docker smoke test that walks the attendance flow against the built image.
+- **Tests.** pytest, with each test on its own database built by the real migrations. CI runs them on Python 3.11 to 3.14 and on PostgreSQL, and runs browser tests (Playwright) of the QR class flow with an axe-core accessibility check in both themes. It also runs a migration-versus-model check on both databases, pyright, ruff (including bandit's security rules), a coverage floor, `pip-audit` on the pinned dependencies, and a Docker smoke test that walks the attendance flow against the built image.
 - **Migrations.** Alembic, with tests that upgrade and downgrade with data in place, and an automatic upgrade path for databases created before migrations existed.
 - **Time.** Stored in UTC and shown in the college's time zone (set on the Settings page, starting from `TIMEZONE`).
 - **Security.** Two-step sign-in (TOTP, each code usable once, secrets encrypted at rest), CSRF on every form, a CSP with no inline scripts or styles, signed QR tokens, network allowlisting that fails closed, an HMAC-chained activity log, and a 30-day retention for scan IP addresses. See the [threat model](docs/THREAT_MODEL.md).
@@ -140,6 +140,8 @@ More: [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md).
 .\venv\Scripts\python.exe -m ruff check .
 .\venv\Scripts\pyright.exe
 $env:TEST_DATABASE_URL = "postgresql+psycopg://postgres:test@localhost:5432/attendqr_test"   # optional: the suite on PostgreSQL
+.\venv\Scripts\python.exe -m playwright install chromium     # once, for the browser tests
+.\venv\Scripts\python.exe -m pytest -m browser tests/browser  # the QR flow and accessibility in Chromium
 ```
 
 ## Known limits and next steps
