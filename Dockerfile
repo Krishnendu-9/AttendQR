@@ -1,5 +1,7 @@
 # AttendQR served by waitress (run.py), with production dependencies only.
-FROM python:3.13-slim
+# The base image is pinned to a digest (a tag can be moved to other contents); Dependabot
+# (.github/dependabot.yml) proposes the new digest when the image is rebuilt upstream.
+FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
