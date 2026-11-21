@@ -12,6 +12,17 @@ updates:
       actions:
         patterns: ["*"]
 
+  # The Dockerfile's base image is pinned to a digest; this proposes the newer digest (security
+  # fixes in the image) and newer Python patch releases. A new minor version of Python (3.15)
+  # is a deliberate change: add it to the CI test matrix first.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+
   # Dependabot reads the ranges in requirements.txt, not requirements.lock (a pip freeze
   # under a name it does not know). After merging one of these, regenerate the lock file:
   # install requirements.txt into a clean venv and run pip freeze (see its header).
