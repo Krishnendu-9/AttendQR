@@ -30,6 +30,7 @@ AttendQR/
       locks.py          Locked semesters
       two_factor.py     Two-step sign-in (TOTP) and recovery codes
       roster.py         Student login accounts and bulk import
+      spreadsheet.py    Reading an uploaded .xlsx safely (defusedxml), for the student and routine imports
       enrollment.py     Class membership over time: late joiners, and moved students in their old class's reports
       groups.py         Groups within a class (lab batches): membership history, splitting by roll number, who a group's session counts for
       routine.py        The class routine: bell schedules, holidays, versions, entries, clash checks, the week grid
@@ -54,7 +55,7 @@ AttendQR/
       accounts.py       Staff account management (/accounts)
       settings.py       The Principal's Settings page (/settings)
       api.py            JSON endpoints used by the pages (/api/...)
-  migrations/           Alembic environment and versions (Flask-Migrate), 0001_baseline to 0025_subject_color
+  migrations/           Alembic environment and versions (Flask-Migrate), 0001_baseline to 0026_activity_log_text
   templates/            Jinja2 templates (see "Frontend" below)
     layouts/            app.html (sidebar, header, content) and auth.html (sign in, errors)
     components/         Shared macros (ui.html, forms.html), navigation (nav.html), shell parts, Lucide icons
@@ -71,6 +72,8 @@ AttendQR/
     favicon.svg, favicon.ico, apple-touch-icon.png   The logo as browser and home-screen icons
   tests/                pytest suite (conftest.py builds a fresh migrated database per test; TEST_DATABASE_URL
                         runs it on PostgreSQL)
+    browser/            Playwright tests in Chromium against a live server: the QR class flow and an
+                        axe-core accessibility check (`pytest -m browser tests/browser`)
   run.py                Local/LAN server (waitress; debug server on localhost with FLASK_DEBUG=1)
   wsgi.py               WSGI entry point; also used by the `flask` CLI
   Dockerfile            Production image: lock-file dependencies, non-root, waitress via run.py
@@ -78,7 +81,9 @@ AttendQR/
   scripts/docker_smoke.py  End-to-end QR attendance check that CI runs against the image
   scripts/load_test.py  A whole class through the attendance flow against the real server, with latency percentiles
   docs/                 DEPLOYMENT.md, GUIDE.md, THREAT_MODEL.md, RBAC.md, media/ (the README GIFs)
-  scripts/tailwind.py   Builds static/css/app.css with the pinned Tailwind standalone CLI (no Node.js)
+  scripts/tailwind.py   Builds static/css/app.css with the pinned Tailwind standalone CLI (no Node.js);
+                        `--check` only compares it with a fresh build (CI)
+  CHANGELOG.md          Notable changes, newest first
   scripts/lucide_icons.py  Copies the Lucide icons the templates use into templates/components/icons/
                         (attendqr-mark.svg, the logo, is drawn by hand and not written by it)
 ```
@@ -93,7 +98,11 @@ The interface is server-rendered Jinja templates. There is no separate frontend 
   errors only, never for buttons or links.
 - **Rebuilding the CSS:** after changing classes in templates or `static/js`, or `assets/tailwind.css`, run
   `python scripts/tailwind.py` (or `--watch` while working). The first run downloads the pinned Tailwind
-  binary into `tools/` (ignored by git) and checks its SHA-256. Commit the rebuilt `static/css/app.css`.
+  binary into `tools/` (ignored by git) and checks its SHA-256. Commit the rebuilt `static/css/app.css`;
+  CI fails if it does not match a fresh build.
+- **Contrast:** text meets 4.5:1 in both themes, and the browser tests check it with axe-core. Grey text
+  on a muted or tinted surface uses `text-muted-strong`; blue text (links) uses `text-link`, because the
+  button blue (`primary`) is too dark for text in the dark theme.
 - **Behaviour:** Alpine.js, the CSP build, because the Content Security Policy forbids `eval`. Components are
   registered in `static/js/ui.js` with `Alpine.data()` and templates name them (`x-data="dropdown"`).
   Inside component methods use `this.$root`, not `this.$el` (that is the element that called the method).
