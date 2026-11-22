@@ -19,7 +19,7 @@ The rules the app enforces, for staff and students. Installing and running it is
 
 Student accounts are created automatically when a student is added on the Students page or by bulk upload. The temporary password is shown once to the staff member, on a page of its own (with CSV download and print): right after adding or resetting one student, and as a list after a bulk import. It is never stored, and never put in a message, which would carry it in the session cookie, so hand it over then or reset it later. Resetting a staff account's password works the same way. It is random rather than the roll number because roll numbers and student emails are easy to guess.
 
-The HOD or the Principal can delete a student, which erases their login and every record: attendance, leave, spot checks and condonations. A student with attendance is deleted from their own page, with a reason that goes into the activity log with the number of records erased.
+The HOD or the Principal can delete a student, which erases their login and every record: attendance, leave, spot checks and condonations. A student with attendance is deleted from their own page, with a reason that goes into the activity log with the number of records erased. A student of a locked semester, now or before a move, cannot be deleted at all.
 
 ```text
 username: student email
@@ -147,7 +147,7 @@ Buddy pairs need scan addresses, which are kept for `SCAN_IP_RETENTION_DAYS`; th
 
 ## Locking a semester
 
-When a semester's attendance is final (usually after exams), the HOD or the Principal locks it from **Semesters**. From then on nothing in it can change: no new sessions, no scans, no manual entries or removals, no spot checks, no session deletions, no leave decisions (or reopened decisions) for its students, and no change to whether a subject counts towards attendance. A student who scanned just before the lock is told at once, before they confirm. Only the Principal can unlock it, and must give a reason. Locking and unlocking are in the activity log. The lock also keeps the exam eligibility percentages in force at that moment, so a later change in **Settings** does not change a final semester's eligibility; unlocking lets it follow the current settings again. Condonations (below) can still be granted.
+When a semester's attendance is final (usually after exams), the HOD or the Principal locks it from **Semesters**. From then on nothing in it can change: no new sessions, no scans, no manual entries or removals, no spot checks, no session deletions, no leave decisions (or reopened decisions) for its students, no deleting its students, current or former, and no change to whether a subject counts towards attendance. A student who scanned just before the lock is told at once, before they confirm. Only the Principal can unlock it, and must give a reason. Locking and unlocking are in the activity log. The lock also keeps the exam eligibility percentages in force at that moment, so a later change in **Settings** does not change a final semester's eligibility; unlocking lets it follow the current settings again. Condonations (below) can still be granted.
 
 ## Exam eligibility
 

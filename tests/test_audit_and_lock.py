@@ -2,7 +2,7 @@
 import html
 
 from attendqr.extensions import db
-from attendqr.models import ActivityLog, AuditChain, LeaveRequest, Semester, SpotCheck, User
+from attendqr.models import ActivityLog, AuditChain, LeaveRequest, Semester, SpotCheck, Student, User
 from attendqr.services.audit import verify_chain
 from attendqr.services.qr import make_qr_token
 from attendqr.utils import local_now
@@ -173,3 +173,38 @@ def test_the_session_view_shows_the_lock_instead_of_corrections(data, client_for
     lock(hod, data)
     text = page(hod.get(f'/generate_qr?session_id={class_session.id}'))
     assert 'Attendance locked' in text and 'Mark a student present' not in text
+
+
+# ── Students and leave across a lock ─────────────────────────
+
+def move_to_sem2(data, student_id, name='Priya Sen', roll_no='MCA002', email='priya@example.com'):
+    """Move a student to Semester 2 as the Principal does from the edit page (keeps the class history)."""
+    post(data.principal_client, f'/students/edit/{student_id}', {
+        'name': name, 'roll_no': roll_no, 'email': email, 'department_id': data.mca_id, 'semester_id': data.sem2_id,
+    })
+
+
+def test_a_student_of_a_locked_semester_cannot_be_deleted(data, client_for):
+    hod = client_for(data.hod)
+    lock(hod, data)
+    text = page(post(hod, f'/students/delete/{data.student2_id}', follow_redirects=True))
+    assert 'cannot be deleted' in text and 'is locked' in text
+    assert db.session.get(Student, data.student2_id) is not None
+    # The student's page says why, and offers no Delete.
+    view = page(hod.get(f'/students/{data.student2_id}'))
+    assert 'This student cannot be deleted' in view and '/students/delete/' not in view
+
+
+def test_a_student_moved_out_of_a_locked_semester_cannot_be_deleted(data, client_for):
+    data.principal_client = client_for(data.principal)
+    move_to_sem2(data, data.student2_id)
+    lock(client_for(data.hod), data)  # Semester 1, which the student has left
+
+    text = page(post(client_for(data.hod), f'/students/delete/{data.student2_id}', follow_redirects=True))
+    assert 'cannot be deleted' in text
+    assert db.session.get(Student, data.student2_id) is not None
+    # Once Semester 1 is unlocked again, the student can be deleted.
+    post(data.principal_client, f'/semesters/{data.sem1_id}/unlock', {'note': 'Correction'})
+    post(client_for(data.hod), f'/students/delete/{data.student2_id}')
+    db.session.expire_all()
+    assert db.session.get(Student, data.student2_id) is None

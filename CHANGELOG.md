@@ -23,6 +23,8 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   entry for their import, after saying that none were added. Both are now saved together.
 - Deleting a student erased all their attendance without asking why. A student with attendance is now
   deleted from their own page, with a reason that is logged with the number of records erased.
+- A student of a locked semester could be deleted, erasing part of its final records. A student of a
+  locked semester, now or before a move, can no longer be deleted.
 
 ### Security
 

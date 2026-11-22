@@ -67,7 +67,7 @@ operator detail.
 | Attack | What stops it | Residual risk |
 | --- | --- | --- |
 | A teacher adds or removes attendance quietly | Manual changes need a reason, are labelled `P*` in reports and exports, and are written to the activity log with who and why. | A teacher can still do it, visibly. |
-| Deleting a student to erase their record | Only the HOD or Principal can delete a student. One with attendance needs a reason, logged with the number of records erased. | An HOD can still do it, visibly. |
+| Deleting a student to erase their record | Only the HOD or Principal can delete a student. One with attendance needs a reason, logged with the number of records erased, and a student of a locked semester (now or before a move) cannot be deleted. | Before the lock, an HOD can still do it, visibly. |
 | Deleting a session to erase absences | Once a session has attendance, only the HOD or Principal can delete it, with a reason that is logged. | |
 | Approving leave to fix a percentage | Only the student's HOD or the Principal can decide. Every request and decision is logged with the decider, and a rejection needs a note. | Certificates are checked outside the app. |
 | Cancelling classes, or leaving them unrecorded, to avoid teaching them | Every one-date change needs a reason and is in the activity log; Planned and held shows every class not recorded, and dashboards warn about them each week. A teacher can change a class only until it ends, so a missed class cannot be cancelled afterwards to hide it, and a published routine cannot be replaced from a past date. | A class never recorded counts for no student, so it cannot be used to mark students absent either. |

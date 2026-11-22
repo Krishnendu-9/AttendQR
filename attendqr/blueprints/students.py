@@ -34,6 +34,7 @@ from ..security import (
 )
 from ..services.enrollment import record_class_change
 from ..services.groups import student_groups
+from ..services.locks import student_lock_error
 from ..services.reports import build_student_attendance_summary
 from ..services.roster import (
     ensure_student_account,
@@ -290,6 +291,7 @@ def view(id):
         summary=build_student_attendance_summary(student),
         groups=student_groups(student),
         attendance_records=Attendance.query.filter_by(student_id=student.id).count(),
+        delete_lock_error=student_lock_error(student),
         max_delete_reason=MAX_DELETE_REASON_LENGTH,
     )
 
@@ -403,11 +405,16 @@ def edit(id):
 @login_required
 @role_required('principal', 'hod')
 def delete(id):
-    """Delete a student with their login and every record; one with attendance only with a reason,
-    like a session."""
+    """Delete a student with their login and every record. A student in a locked semester (now or
+    before a move) cannot be deleted; one with attendance only with a reason, like a session."""
     student = db.get_or_404(Student, id)
     if not can_access_student(student):
         abort(403)
+    lock_error = student_lock_error(student)
+    if lock_error:
+        flash(f"{student.name} cannot be deleted: deleting them would change locked records. {lock_error}", 'warning')
+        return back_to_list()
+
     present = Attendance.query.filter_by(student_id=student.id).count()
     description = f"Deleted student profile '{student.name}' ({student.roll_no})"
     if present:

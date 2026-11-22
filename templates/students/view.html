@@ -1,5 +1,5 @@
 {% extends 'layouts/app.html' %}
-{% from 'components/ui.html' import icon, btn, badge, attendance_badge, percent_badge, account_badge, page_header, card, detail_list, detail_item, empty_state, action_form, relative_time, record_opener, record_dialog with context %}
+{% from 'components/ui.html' import icon, btn, badge, attendance_badge, percent_badge, account_badge, page_header, card, detail_list, detail_item, empty_state, action_form, relative_time, callout, record_opener, record_dialog with context %}
 {% from 'components/forms.html' import text_input with context %}
 {% set page_title = student.name %}
 {% set breadcrumbs = [('Students', url_for('students.index')), (student.name, None)] %}
@@ -18,7 +18,9 @@
                  confirm_title='Reset password for ' ~ student.name ~ '?', hidden={'return_to': this_page}) }}
   {% endif %}
   {% if can_manage %}
-  {% if attendance_records %}
+  {#- No Delete while a semester of theirs is locked: it would change final records (the callout below says why). -#}
+  {% if delete_lock_error %}
+  {% elif attendance_records %}
   {{ record_opener('Delete', 'delete-student-dialog', url_for('students.delete', id=student.id), 'Delete ' ~ student.name ~ '?',
                    'Delete student', {}, icon_name='trash-2', as_button=True, variant='destructive-outline') }}
   {% else %}
@@ -29,6 +31,14 @@
   <a href="{{ url_for('students.edit_form', id=student.id) }}" class="{{ btn('primary') }}">{{ icon('pencil') }}<span>Edit</span></a>
   {% endif %}
 {% endcall %}
+
+{% if can_manage and delete_lock_error %}
+<div class="mb-6">
+  {% call callout('This student cannot be deleted', 'info', 'lock') %}
+    Deleting them would change the final records of a locked {{ term('semester')|lower }}. {{ delete_lock_error }}
+  {% endcall %}
+</div>
+{% endif %}
 
 <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
   <aside class="space-y-6 lg:col-start-3 lg:row-start-1">
@@ -133,7 +143,7 @@
   </div>
 </div>
 
-{% if can_manage and attendance_records %}
+{% if can_manage and attendance_records and not delete_lock_error %}
 {% call record_dialog('delete-student-dialog', 'Delete ' ~ student.name ~ '?', 'Delete student', 'Deleting...') %}
   <input type="hidden" name="return_to" value="{{ url_for('students.index') }}">
   <p class="text-body-md text-muted-foreground sm:col-span-2">
