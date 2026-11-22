@@ -1,6 +1,6 @@
 """The full-page student view, add and edit screens (GET pages over the existing POST routes)."""
 from attendqr.extensions import db
-from attendqr.models import Student
+from attendqr.models import ActivityLog, Student
 from conftest import add_session, post
 
 
@@ -84,6 +84,22 @@ def test_edit_and_delete_confirm_with_the_name(data, client_for):
     assert 'Updated Rahul Kumar Das.' in response.get_data(as_text=True)
     response = post(client, f'/students/delete/{data.student2_id}', follow_redirects=True)
     assert 'Deleted Priya Sen.' in response.get_data(as_text=True)
+
+
+def test_deleting_a_student_with_attendance_needs_a_reason(data, client_for):
+    add_session(data, present=[data.student2_id])
+    client = client_for(data.principal)
+    response = post(client, f'/students/delete/{data.student2_id}')
+    assert response.headers['Location'] == f'/students/{data.student2_id}'
+    assert db.session.get(Student, data.student2_id) is not None
+    view = client.get(response.headers['Location']).get_data(as_text=True)
+    assert 'give a reason' in view and 'id="delete-student-dialog"' in view
+
+    post(client, f'/students/delete/{data.student2_id}', {'note': 'Added twice by mistake'})
+    db.session.expire_all()
+    assert db.session.get(Student, data.student2_id) is None
+    entry = ActivityLog.query.filter_by(action='student_deleted').one()
+    assert 'with 1 attendance record(s). Reason: Added twice by mistake' in entry.description
 
 
 def test_list_rows_link_to_the_view_page(data, client_for):

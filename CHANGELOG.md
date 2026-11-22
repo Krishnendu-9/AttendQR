@@ -21,6 +21,8 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   - blue links and today's day in the routine, in the dark theme
 - A failure while saving a student import could leave the students saved without the activity log
   entry for their import, after saying that none were added. Both are now saved together.
+- Deleting a student erased all their attendance without asking why. A student with attendance is now
+  deleted from their own page, with a reason that is logged with the number of records erased.
 
 ### Security
 

@@ -23,7 +23,7 @@
   {% if can_manage %}
   {{ menu_separator() }}
   {{ menu_form('Delete', url_for('students.delete', id=s.id), 'trash-2', danger=True,
-               confirm='Their login and attendance records are deleted too. This cannot be undone.',
+               confirm='Their login is deleted too. This cannot be undone. A student with attendance records is deleted from their own page, with a reason.',
                confirm_title='Delete ' ~ s.name ~ '?', confirm_label='Delete', hidden={'return_to': list_url}) }}
   {% endif %}
 {% endcall %}

@@ -25,7 +25,7 @@ from ..access import (
     visible_students_query,
 )
 from ..extensions import db
-from ..models import Semester, Student, User
+from ..models import Attendance, Semester, Student, User
 from ..security import (
     clear_login_failures,
     generate_temporary_password,
@@ -44,6 +44,10 @@ from ..services.roster import (
 from ..utils import normalize_email, normalize_roll_no, normalize_text, parse_int_value, sort_semesters, utc_now
 
 bp = Blueprint('students', __name__)
+
+# The reason asked for when deleting a student who has attendance (it erases those records).
+MAX_DELETE_REASON_LENGTH = 200
+
 
 
 def student_filters():
@@ -285,6 +289,8 @@ def view(id):
         account=User.query.filter_by(student_id=student.id).first(),
         summary=build_student_attendance_summary(student),
         groups=student_groups(student),
+        attendance_records=Attendance.query.filter_by(student_id=student.id).count(),
+        max_delete_reason=MAX_DELETE_REASON_LENGTH,
     )
 
 
@@ -397,10 +403,21 @@ def edit(id):
 @login_required
 @role_required('principal', 'hod')
 def delete(id):
+    """Delete a student with their login and every record; one with attendance only with a reason,
+    like a session."""
     student = db.get_or_404(Student, id)
     if not can_access_student(student):
         abort(403)
-    log_activity('student_deleted', f"Deleted student profile '{student.name}' ({student.roll_no}).", 'student', student.id, student.department_id)
+    present = Attendance.query.filter_by(student_id=student.id).count()
+    description = f"Deleted student profile '{student.name}' ({student.roll_no})"
+    if present:
+        note = normalize_text(request.form.get('note'))
+        if not note or len(note) > MAX_DELETE_REASON_LENGTH:
+            flash(f"{student.name} has {present} attendance record(s), which are erased with them. To delete them, "
+                  f"use Delete here and give a reason (at most {MAX_DELETE_REASON_LENGTH} characters).", 'warning')
+            return redirect(url_for('students.view', id=student.id))
+        description += f" with {present} attendance record(s). Reason: {note}"
+    log_activity('student_deleted', description + ('' if present else '.'), 'student', student.id, student.department_id)
     User.query.filter_by(student_id=student.id).delete()
     name = student.name
     db.session.delete(student)

@@ -19,6 +19,8 @@ The rules the app enforces, for staff and students. Installing and running it is
 
 Student accounts are created automatically when a student is added on the Students page or by bulk upload. The temporary password is shown once to the staff member, on a page of its own (with CSV download and print): right after adding or resetting one student, and as a list after a bulk import. It is never stored, and never put in a message, which would carry it in the session cookie, so hand it over then or reset it later. Resetting a staff account's password works the same way. It is random rather than the roll number because roll numbers and student emails are easy to guess.
 
+The HOD or the Principal can delete a student, which erases their login and every record: attendance, leave, spot checks and condonations. A student with attendance is deleted from their own page, with a reason that goes into the activity log with the number of records erased.
+
 ```text
 username: student email
 initial password: a random temporary password such as K7RM-2XQD-9HFA (must be changed at first login)

@@ -1,5 +1,6 @@
 {% extends 'layouts/app.html' %}
-{% from 'components/ui.html' import icon, btn, badge, attendance_badge, percent_badge, account_badge, page_header, card, detail_list, detail_item, empty_state, action_form, relative_time with context %}
+{% from 'components/ui.html' import icon, btn, badge, attendance_badge, percent_badge, account_badge, page_header, card, detail_list, detail_item, empty_state, action_form, relative_time, record_opener, record_dialog with context %}
+{% from 'components/forms.html' import text_input with context %}
 {% set page_title = student.name %}
 {% set breadcrumbs = [('Students', url_for('students.index')), (student.name, None)] %}
 {% set can_manage = current_user.role in ['principal', 'hod'] %}
@@ -17,9 +18,14 @@
                  confirm_title='Reset password for ' ~ student.name ~ '?', hidden={'return_to': this_page}) }}
   {% endif %}
   {% if can_manage %}
+  {% if attendance_records %}
+  {{ record_opener('Delete', 'delete-student-dialog', url_for('students.delete', id=student.id), 'Delete ' ~ student.name ~ '?',
+                   'Delete student', {}, icon_name='trash-2', as_button=True, variant='destructive-outline') }}
+  {% else %}
   {{ action_form('Delete', url_for('students.delete', id=student.id), variant='destructive-outline', icon_name='trash-2', danger=True,
-                 confirm='Their login and attendance records are deleted too. This cannot be undone.',
+                 confirm='Their login is deleted too. They have no attendance records. This cannot be undone.',
                  confirm_title='Delete ' ~ student.name ~ '?', hidden={'return_to': url_for('students.index')}) }}
+  {% endif %}
   <a href="{{ url_for('students.edit_form', id=student.id) }}" class="{{ btn('primary') }}">{{ icon('pencil') }}<span>Edit</span></a>
   {% endif %}
 {% endcall %}
@@ -126,4 +132,18 @@
     {% endcall %}
   </div>
 </div>
+
+{% if can_manage and attendance_records %}
+{% call record_dialog('delete-student-dialog', 'Delete ' ~ student.name ~ '?', 'Delete student', 'Deleting...') %}
+  <input type="hidden" name="return_to" value="{{ url_for('students.index') }}">
+  <p class="text-body-md text-muted-foreground sm:col-span-2">
+    Their login and <span class="text-label-lg text-foreground">{{ attendance_records }}</span> attendance record(s) are erased
+    and cannot be recovered. A student who has left keeps their records if you leave them in place.
+  </p>
+  <div class="sm:col-span-2">
+    {{ text_input('note', 'Reason', id='delete_student_note', required=True, placeholder='e.g. Added twice by mistake',
+                  hint='Recorded in the activity log.', attrs={'maxlength': max_delete_reason, 'autocomplete': 'off'}) }}
+  </div>
+{% endcall %}
+{% endif %}
 {% endblock %}
