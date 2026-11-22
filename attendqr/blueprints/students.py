@@ -70,12 +70,20 @@ def back_to_list():
     return redirect(safe_return_to(request.form.get('return_to')) or url_for('students.index'))
 
 
-def _one_time_password_notice(temporary_password):
-    if not temporary_password:
-        return "No new login was created because that email already has an account."
-    return (
-        f"Temporary password: {temporary_password} (shown only now; give it to the student, "
-        "who must change it at first login)."
+def _one_time_password_page(student, temporary_password, heading, intro):
+    """Show a student's new one-time password in this response only.
+
+    Never flashed: flashed messages travel in the session cookie, which is signed but not
+    encrypted, so the password would sit readable in the browser and on the network.
+    """
+    return render_template(
+        'import_result.html',
+        heading=heading,
+        intro=intro,
+        done_url=safe_return_to(request.form.get('return_to')) or url_for('students.index'),
+        download_name='student_login.csv',
+        credentials=[{'roll_no': student.roll_no, 'name': student.name, 'email': student.email,
+                      'password': temporary_password}],
     )
 
 
@@ -216,8 +224,12 @@ def index():
             'student', student.id, student.department_id,
         )
         db.session.commit()
-        flash(f"Added {student.name}. {_one_time_password_notice(temporary_password)}", "success")
-        return back_to_list()
+        if not temporary_password:
+            flash(f"Added {student.name}. No new login was created because that email already has an account.",
+                  "success")
+            return back_to_list()
+        return _one_time_password_page(student, temporary_password, 'Student added',
+                                       f"Added {student.name}. Their login has a temporary password.")
 
     filters = student_filters()
     query = visible_students_query().options(joinedload(Student.department), joinedload(Student.semester))
@@ -374,7 +386,8 @@ def edit(id):
     log_activity('student_updated', f"Updated student profile '{student.name}' ({student.roll_no}).", 'student', student.id, student.department_id)
     db.session.commit()
     if temporary_password:
-        flash(f"Created a login for {student.name}. {_one_time_password_notice(temporary_password)}", "success")
+        return _one_time_password_page(student, temporary_password, 'Login created',
+                                       f"Updated {student.name} and created a login with a temporary password.")
     else:
         flash(f"Updated {student.name}.", "success")
     return back_to_list()
@@ -423,8 +436,8 @@ def reset_password(id):
         'student', student.id, student.department_id,
     )
     db.session.commit()
-    flash(f"Password for {student.name} was reset. {_one_time_password_notice(temporary_password)}", 'success')
-    return back_to_list()
+    return _one_time_password_page(student, temporary_password, 'Password reset',
+                                   f"The password for {student.name} was reset, and every device they used is signed out.")
 
 
 @bp.route('/students/reset-device/<int:id>', methods=['POST'])

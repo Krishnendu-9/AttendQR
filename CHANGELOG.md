@@ -24,6 +24,9 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 
 - Uploaded spreadsheets are parsed with `defusedxml`, so XML entity tricks (such as a "billion laughs"
   file) are refused instead of expanded.
+- One-time passwords from adding a student or resetting a password are shown on a page of their own,
+  as the bulk import already did, instead of in a flashed message: those travel in the session cookie,
+  which is signed but readable.
 
 ### Changed
 

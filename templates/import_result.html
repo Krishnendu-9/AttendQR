@@ -1,29 +1,37 @@
 {% extends 'layouts/app.html' %}
 {% from 'components/ui.html' import icon, btn, page_header, callout, monogram with context %}
-{% set page_title = 'Imported students' %}
-{% set breadcrumbs = [('Students', url_for('students.index')), ('Imported students', None)] %}
+{#- One-time passwords, shown in this response only: never flashed, since the session cookie that
+    carries flashed messages is signed, not encrypted. Used by the bulk import (the defaults below)
+    and by single resets, which pass heading, intro, parent (label, url) and done_url. -#}
+{% set heading = heading|default('Imported students') %}
+{% set parent = parent|default(('Students', url_for('students.index'))) %}
+{% set done_url = done_url|default(url_for('students.index')) %}
+{% set intro = intro|default('Imported ' ~ credentials|length ~ ' student profile' ~ ('s' if credentials|length != 1 else '') ~ '. Each new login has a temporary password.') %}
+{% set show_roll_no = credentials|selectattr('roll_no')|list|length > 0 %}
+{% set page_title = heading %}
+{% set breadcrumbs = [parent, (heading, None)] %}
 
 {% block content %}
-{% call page_header('Imported students', 'Imported ' ~ credentials|length ~ ' student profile' ~ ('s' if credentials|length != 1 else '') ~ '. Each new login has a temporary password.') %}
+{% call page_header(heading, intro) %}
   <button type="button" class="{{ btn('outline') }} no-print" id="printCredentials">{{ icon('printer') }}<span>Print</span></button>
   <button type="button" class="{{ btn('outline') }} no-print" id="downloadCredentials">{{ icon('download') }}<span>Download CSV</span></button>
-  <a href="{{ url_for('students.index') }}" class="{{ btn('primary') }} no-print">{{ icon('check') }}<span>Done</span></a>
+  <a href="{{ done_url }}" class="{{ btn('primary') }} no-print">{{ icon('check') }}<span>Done</span></a>
 {% endcall %}
 
 <div class="mb-6">
-  {% call callout('Save these passwords now', 'warning') %}
-    These passwords are shown <strong>only on this page</strong> and are not stored. Download or print them, and give each student their own.
-    Students must change the password at first sign-in.
+  {% call callout('Save ' ~ ('these passwords' if credentials|length != 1 else 'this password') ~ ' now', 'warning') %}
+    {{ 'These passwords are' if credentials|length != 1 else 'This password is' }} shown <strong>only on this page</strong> and not stored. Download or print {{ 'them, and give each person their own' if credentials|length != 1 else 'it, and give it to its owner only' }}.
+    The password must be changed at the next sign-in.
   {% endcall %}
 </div>
 
-<section class="card overflow-hidden" aria-label="New student logins">
+<section class="card overflow-hidden" aria-label="Temporary passwords">
   <div class="overflow-x-auto">
     <table class="data-table">
       <thead>
         <tr>
-          <th scope="col">Student</th>
-          <th scope="col">Roll no</th>
+          <th scope="col">Name</th>
+          {% if show_roll_no %}<th scope="col">Roll no</th>{% endif %}
           <th scope="col">Email (login)</th>
           <th scope="col">Temporary password</th>
         </tr>
@@ -34,7 +42,7 @@
           <td>
             <div class="flex items-center gap-3">{{ monogram(row.name) }}<span class="text-label-lg text-foreground">{{ row.name }}</span></div>
           </td>
-          <td class="whitespace-nowrap font-mono">{{ row.roll_no }}</td>
+          {% if show_roll_no %}<td class="whitespace-nowrap font-mono">{{ row.roll_no }}</td>{% endif %}
           <td class="text-muted-foreground">{{ row.email }}</td>
           <td class="whitespace-nowrap">
             {% if row.password %}<span class="rounded-md bg-muted px-2 py-1 font-mono text-label-lg text-foreground">{{ row.password }}</span>
@@ -64,12 +72,12 @@
 
     document.getElementById('downloadCredentials').addEventListener('click', function () {
       const lines = [['roll_no', 'name', 'email', 'temporary_password']].concat(
-        rows.map(function (r) { return [r.roll_no, r.name, r.email, r.password]; })
+        rows.map(function (r) { return [r.roll_no || '', r.name, r.email, r.password]; })
       );
       const csv = lines.map(function (line) { return line.map(csvCell).join(','); }).join('\r\n');
       const link = document.createElement('a');
       link.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-      link.download = 'student_logins.csv';
+      link.download = {{ (download_name|default('student_logins.csv'))|tojson }};
       document.body.appendChild(link);
       link.click();
       link.remove();

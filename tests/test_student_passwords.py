@@ -137,3 +137,22 @@ def test_a_password_reset_does_not_reactivate_a_deactivated_student(data, client
     post(client_for(data.hod), f'/students/reset-password/{data.student_id}')
     db.session.expire_all()
     assert db.session.get(User, account.id).is_active is False
+
+
+def test_one_time_passwords_never_travel_in_the_session_cookie(data, client_for):
+    """Flashed messages live in the session cookie, which is signed but readable, so passwords are only rendered."""
+    hod, principal = client_for(data.hod), client_for(data.principal)
+    teacher_account = User.query.filter_by(username=data.teacher).one()
+    responses = {
+        'added': (hod, post(hod, '/students', {'name': 'New Student', 'roll_no': 'MCA050',
+                                               'email': 'new.student@example.com', 'department_id': data.mca_id,
+                                               'semester_id': data.sem1_id})),
+        'student reset': (hod, post(hod, f'/students/reset-password/{data.student_id}')),
+        'staff reset': (principal, post(principal, f'/reset_admin_password/{teacher_account.id}')),
+    }
+    for what, (client, response) in responses.items():
+        assert response.status_code == 200, what
+        password = ONE_TIME.search(response.get_data(as_text=True)).group(1)
+        assert response.headers['Cache-Control'] == 'no-store', what
+        with client.session_transaction() as session:
+            assert password not in str(dict(session)), what

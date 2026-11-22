@@ -5,6 +5,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from ..access import (
     ROLE_LABELS,
     SPECIAL_CLASS_SUBJECT_NAME,
+    build_account_profile,
     can_access_department,
     can_access_teacher,
     can_edit_account,
@@ -382,8 +383,18 @@ def reset_password(id):
                  'user', account.id, account.department_id)
     db.session.commit()
     current_app.logger.info("Password reset for account %s", account.id)
-    flash(f"Temporary password for {account.username}: {temporary_password}", 'success')
-    return redirect(url_for('accounts.index'))
+    # Shown in this response only: a flashed message would carry the password in the session
+    # cookie, which is signed but not encrypted.
+    return render_template(
+        'import_result.html',
+        heading='Password reset',
+        intro=f"The password for {account.username} was reset, and every device they used is signed out.",
+        parent=('Accounts', url_for('accounts.index')),
+        done_url=url_for('accounts.index'),
+        download_name='staff_login.csv',
+        credentials=[{'roll_no': '', 'name': build_account_profile(account)['display_name'],
+                      'email': account.username, 'password': temporary_password}],
+    )
 
 
 @bp.route('/accounts/<int:id>/reset-two-step', methods=['POST'])

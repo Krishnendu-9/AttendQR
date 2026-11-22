@@ -28,7 +28,8 @@ PRINCIPAL_EMAIL = os.environ.get('DEFAULT_PRINCIPAL_EMAIL', 'principal@example.c
 PRINCIPAL_PASSWORD = os.environ.get('PRINCIPAL_PASSWORD', '')
 STUDENT = {'name': 'Smoke Student', 'roll_no': 'SMK001', 'email': 'smoke.student@example.com'}
 CSRF_PATTERN = re.compile(r'name="(?:_csrf_token|csrf-token)"\s+(?:value|content)="([^"]+)"')
-TEMPORARY_PASSWORD_PATTERN = re.compile(r'Temporary password: ([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})')
+# The one-time password is rendered in the response to the POST (never flashed), on the credentials page.
+TEMPORARY_PASSWORD_PATTERN = re.compile(r'>([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})<')
 TWO_STEP_KEY_PATTERN = re.compile(r'data-two-step-key>([A-Z2-7 ]+)<')
 
 
@@ -138,8 +139,8 @@ def main(base_url):
     check(len(semesters) == 1, "semester created")
     semester_id = semesters[0]['id']
 
-    principal.post('/students', department_id=department_id, semester_id=semester_id, **STUDENT)
-    match = TEMPORARY_PASSWORD_PATTERN.search(principal.get('/students')[2])
+    _, _, page = principal.post('/students', department_id=department_id, semester_id=semester_id, **STUDENT)
+    match = TEMPORARY_PASSWORD_PATTERN.search(page)
     check(match is not None, "student added and their one-time password shown once")
     student_first_password = match.group(1)
     location = expect_redirect(
