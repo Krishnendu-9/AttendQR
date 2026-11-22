@@ -29,12 +29,12 @@ from cryptography.fernet import Fernet, InvalidToken
 from flask import current_app
 from pyotp.totp import TOTP
 
+from ..models import STAFF_ROLES
 from ..security import TEMPORARY_PASSWORD_ALPHABET
 from ..utils import utc_now
 
 STEP_SECONDS = 30
 RECOVERY_CODE_COUNT = 10
-STAFF_ROLES = ('principal', 'hod', 'teacher')
 # Kept in step with migrations/versions/0016_encrypt_totp_secrets.py, which encrypts existing secrets.
 SECRET_KEY_PURPOSE = b'attendqr-totp-secrets'
 

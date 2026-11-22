@@ -26,7 +26,7 @@ from ..access import (
     visible_activity_logs_query,
 )
 from ..extensions import db
-from ..models import ActivityLog, ClassSession, Subject, Teacher, User
+from ..models import STAFF_ROLES, ActivityLog, ClassSession, Subject, Teacher, User
 from ..security import (
     clear_login_failures,
     client_ip,
@@ -49,7 +49,7 @@ class AccountError(ValueError):
 
 
 def allowed_roles():
-    keys = ('principal', 'hod', 'teacher') if is_principal() else ('teacher',)
+    keys = STAFF_ROLES if is_principal() else ('teacher',)
     return {key: ROLE_LABELS[key] for key in keys}
 
 

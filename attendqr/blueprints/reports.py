@@ -14,7 +14,7 @@ from ..access import (
     visible_subjects_query,
 )
 from ..extensions import db
-from ..models import ClassSession, Condonation, Department, Semester, Student, Subject, Teacher
+from ..models import STAFF_ROLES, ClassSession, Condonation, Department, Semester, Student, Subject, Teacher
 from ..services.analytics import PERIODS, build_class_trends, parse_weeks
 from ..services.eligibility import LABELS, NEEDS_CONDONATION, build_eligibility, export_rows
 from ..services.integrity import (
@@ -55,7 +55,7 @@ from ..utils import local_now, natural_key, normalize_paper_code, normalize_text
 
 bp = Blueprint('reports', __name__)
 
-STAFF = ('principal', 'hod', 'teacher')
+STAFF = STAFF_ROLES
 
 
 def _load_class(department_id, semester_id):

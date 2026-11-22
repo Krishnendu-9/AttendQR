@@ -14,14 +14,14 @@ from ..access import (
     visible_subjects_query,
 )
 from ..extensions import db
-from ..models import Attendance, ClassSession, Semester, Subject, Teacher
+from ..models import STAFF_ROLES, Attendance, ClassSession, Semester, Subject, Teacher
 from ..services.groups import summaries as group_summaries
 from ..services.qr import build_scan_url, make_qr_token, qr_data_uri
 from ..utils import format_12h, sort_semesters
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
-STAFF = ('principal', 'hod', 'teacher')
+STAFF = STAFF_ROLES
 
 
 def _subject_json(subject, include_semester=False):

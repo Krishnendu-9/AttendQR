@@ -7,16 +7,22 @@ from flask_login import current_user
 from sqlalchemy import and_, false, or_, select
 
 from .extensions import db, login_manager
-from .models import ActivityLog, ClassSession, Department, Semester, Student, Subject, SubjectTeacher, Teacher, User
+from .models import (
+    ROLES,
+    STAFF_ROLES,
+    ActivityLog,
+    ClassSession,
+    Department,
+    Semester,
+    Student,
+    Subject,
+    SubjectTeacher,
+    Teacher,
+    User,
+)
 from .utils import infer_department_branch, normalize_email, normalize_paper_code, utc_now
 
-ROLE_LABELS = {
-    'principal': 'Principal',
-    'hod': 'HOD',
-    'teacher': 'Teacher',
-    'student': 'Student',
-}
-STAFF_ROLES = ('principal', 'hod', 'teacher')
+ROLE_LABELS = dict(zip(ROLES, ('Principal', 'HOD', 'Teacher', 'Student'), strict=True))
 SPECIAL_CLASS_SUBJECT_NAME = '__SPECIAL_CLASS__'
 
 

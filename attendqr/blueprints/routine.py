@@ -23,6 +23,7 @@ from ..access import (
 )
 from ..extensions import db
 from ..models import (
+    STAFF_ROLES,
     BellSchedule,
     ClassSession,
     Holiday,
@@ -82,7 +83,7 @@ from .attendance import get_or_create_special_subject
 bp = Blueprint('routine', __name__)
 
 MANAGERS = ('principal', 'hod')
-STAFF = ('principal', 'hod', 'teacher')
+STAFF = STAFF_ROLES
 
 
 # ── Access ───────────────────────────────────────────────────

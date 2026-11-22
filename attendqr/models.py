@@ -13,6 +13,11 @@ def new_session_token():
     return secrets.token_hex(16)
 
 
+# Every role, and those that are staff. The one list: access.py labels these.
+STAFF_ROLES = ('principal', 'hod', 'teacher')
+ROLES = (*STAFF_ROLES, 'student')
+
+
 class User(UserMixin, db.Model):
     """Every login: Principal, HOD, Teacher and Student accounts (see `role`)."""
     # Not "user": that is a reserved word in PostgreSQL.
