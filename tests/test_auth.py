@@ -571,3 +571,33 @@ def test_signing_out_clears_the_whole_session(app, data, client_for):
     with client.session_transaction() as sess:
         assert sess['_csrf_token'] != before
     assert client_for(data.teacher).get('/').status_code == 200
+
+
+def test_every_login_attempt_checks_a_password_at_both_costs(app, data, monkeypatch):
+    """Temporary passwords use a cheaper hash. If only the real hash were checked, a failed sign-in would
+    come back faster for an account still on its one-time password than for an unknown email."""
+    from werkzeug.security import generate_password_hash
+
+    from attendqr.blueprints import auth
+    from attendqr.security import TEMPORARY_PASSWORD_HASH_METHOD, hash_temporary_password
+
+    default_method = generate_password_hash('x').split('$', 1)[0]
+    on_first_password = User.query.filter_by(username=data.student).one()
+    on_first_password.password = hash_temporary_password('K7RM-2XQD-9HFA')
+    chosen = User.query.filter_by(username=data.student2).one()
+    chosen.password = generate_password_hash('Chosen-pass-9')
+    db.session.commit()
+
+    checked = []
+    real_check = auth.check_password_hash
+    monkeypatch.setattr(auth, 'check_password_hash',
+                        lambda stored, password: checked.append(stored.split('$', 1)[0]) or real_check(stored, password))
+    for username in ('nobody@example.com', data.student, data.student2):
+        checked.clear()
+        login(app.test_client(), username, 'wrong-pass1', expect_success=False)
+        assert sorted(checked) == sorted([default_method, TEMPORARY_PASSWORD_HASH_METHOD]), username
+
+    # The extra check never changes the answer.
+    assert auth.check_login_password(on_first_password, 'K7RM-2XQD-9HFA')
+    assert auth.check_login_password(chosen, 'Chosen-pass-9')
+    assert not auth.check_login_password(None, 'K7RM-2XQD-9HFA')

@@ -20,8 +20,10 @@ from ..models import ActivityLog, User
 from ..observability import count_login
 from ..schema import discard_used_initial_password
 from ..security import (
+    TEMPORARY_PASSWORD_HASH_METHOD,
     clear_login_failures,
     client_ip,
+    hash_temporary_password,
     is_login_locked,
     is_safe_redirect_target,
     mark_session_active,
@@ -41,6 +43,30 @@ LOCKED_LOGIN_MESSAGE = "Too many failed attempts from this device. Please wait a
 @lru_cache(maxsize=1)
 def _dummy_password_hash():
     return generate_password_hash('attendqr-timing-equaliser')
+
+
+@lru_cache(maxsize=1)
+def _dummy_temporary_password_hash():
+    return hash_temporary_password('attendqr-timing-equaliser')
+
+
+def is_temporary_password_hash(stored):
+    return (stored or '').startswith(TEMPORARY_PASSWORD_HASH_METHOD + '$')
+
+
+def check_login_password(user, password):
+    """Whether `password` opens `user` (None for an unknown email), in the same time for every case.
+
+    Temporary passwords are hashed about ten times faster than chosen ones, so a single check
+    would tell an unknown email (a dummy check at the full cost), an account still on its
+    one-time password (fast) and one with a chosen password (slow) apart by the response time.
+    Every attempt therefore makes one check at each cost: the real one and a dummy at the other.
+    """
+    stored = user.password if user else None
+    correct = check_password_hash(stored or _dummy_password_hash(), password)
+    check_password_hash(_dummy_password_hash() if is_temporary_password_hash(stored)
+                        else _dummy_temporary_password_hash(), password)
+    return user is not None and correct
 
 
 def _log_failed_login(user, locked, reason='wrong password'):
@@ -85,7 +111,7 @@ def login():
             error = LOCKED_LOGIN_MESSAGE
         else:
             user = User.query.filter(db.func.lower(User.username) == username).first()
-            password_ok = check_password_hash(user.password if user else _dummy_password_hash(), password)
+            password_ok = check_login_password(user, password)  # always runs, so timing reveals nothing
             if user and password_ok:
                 if not user.is_active:
                     # Only revealed once the password is proven correct.

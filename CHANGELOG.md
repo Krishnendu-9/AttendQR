@@ -27,6 +27,9 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - One-time passwords from adding a student or resetting a password are shown on a page of their own,
   as the bulk import already did, instead of in a flashed message: those travel in the session cookie,
   which is signed but readable.
+- A failed sign-in took about 100 ms less for an account still on its one-time password than for an
+  unknown email, which showed which accounts exist and have never signed in. Every attempt now checks
+  one hash at each cost, so the time is the same.
 
 ### Changed
 
