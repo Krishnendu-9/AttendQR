@@ -172,7 +172,8 @@ def resolve_import_semester(row, department_id):
 
 
 def import_students_from_rows(rows):
-    """Add valid rows. Returns (created, errors): created is a list of (student, one-time password or None)."""
+    """Add valid rows to the session, uncommitted. Returns (created, errors): created is a list of
+    (student, one-time password or None)."""
     created = []
     errors = []
     seen_rolls = set()
@@ -233,5 +234,6 @@ def import_students_from_rows(rows):
         seen_rolls.add(roll_key)
         seen_emails.add(email)
 
-    db.session.commit()
+    # Not committed here: the caller commits once, with its activity log entry, so the students
+    # and the record of their import are saved together or not at all.
     return created, errors

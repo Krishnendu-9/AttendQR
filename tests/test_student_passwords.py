@@ -156,3 +156,22 @@ def test_one_time_passwords_never_travel_in_the_session_cookie(data, client_for)
         assert response.headers['Cache-Control'] == 'no-store', what
         with client.session_transaction() as session:
             assert password not in str(dict(session)), what
+
+
+def test_an_import_that_fails_part_way_adds_nobody(data, client_for, monkeypatch):
+    """The students and the activity log entry for their import are saved together, or not at all."""
+    from attendqr.blueprints import students
+    from attendqr.models import Student
+
+    def broken_log(*args, **kwargs):
+        raise RuntimeError('the log could not be written')
+
+    monkeypatch.setattr(students, 'log_activity', broken_log)
+    csv_data = "name,roll_no,email,semester\nFirst Import,MCA901,first.import@example.com,Semester 1\n"
+    response = post(client_for(data.hod), '/students/import', {
+        'student_file': (io.BytesIO(csv_data.encode()), 'students.csv'),
+    }, content_type='multipart/form-data', follow_redirects=True)
+    assert 'No students were added' in response.get_data(as_text=True)
+    db.session.expire_all()
+    assert Student.query.filter_by(roll_no='MCA901').count() == 0
+    assert User.query.filter_by(username='first.import@example.com').count() == 0

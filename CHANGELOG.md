@@ -19,6 +19,8 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   - the search box text in the top bar
   - grey text inside routine blocks (the darker shade meant for it never applied)
   - blue links and today's day in the routine, in the dark theme
+- A failure while saving a student import could leave the students saved without the activity log
+  entry for their import, after saying that none were added. Both are now saved together.
 
 ### Security
 
