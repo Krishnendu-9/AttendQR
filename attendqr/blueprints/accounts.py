@@ -81,7 +81,7 @@ def _teacher_profile(username, teacher_name, department_id, current=None):
     or a new one. Renamed, moved and given the account's email. Raises AccountError."""
     if len(teacher_name) > 100:
         raise AccountError("Teacher name must be at most 100 characters")
-    existing = Teacher.query.filter(db.func.lower(Teacher.email) == username).first()
+    existing = Teacher.query.filter(Teacher.email == username).first()
     if current is not None and existing is not None and existing.id != current.id:
         raise AccountError(f"Teacher email '{username}' already belongs to another teacher profile.")
     teacher = current or existing
@@ -117,7 +117,7 @@ def _create_account(roles):
         raise AccountError(policy_error)
     if password != confirm_password:
         raise AccountError("Passwords do not match")
-    if User.query.filter(db.func.lower(User.username) == username).first():
+    if User.query.filter(User.username == username).first():
         raise AccountError(f"Account email '{username}' already exists")
 
     department_id = teacher_id = None
@@ -139,7 +139,7 @@ def _create_account(roles):
         if not department_id or not can_access_department(department_id):
             raise AccountError("Valid department is required for teacher accounts")
 
-        teacher = Teacher.query.filter(db.func.lower(Teacher.email) == username).first()
+        teacher = Teacher.query.filter(Teacher.email == username).first()
         if teacher:
             if not can_access_teacher(teacher):
                 raise AccountError("You can create teacher accounts only for your department")
@@ -220,7 +220,7 @@ def edit(id):
             raise AccountError("Account email is required.")
         if not is_allowed_staff_email(username):
             raise AccountError(staff_email_rule_message())
-        if User.query.filter(User.id != account.id, db.func.lower(User.username) == username).first():
+        if User.query.filter(User.id != account.id, User.username == username).first():
             raise AccountError(f"Account email '{username}' already exists.")
 
         if account.role == 'principal':
@@ -258,7 +258,7 @@ def edit(id):
             if not can_access_department(department_id):
                 abort(403)
             if Teacher.query.filter(
-                db.func.lower(Teacher.email) == username,
+                Teacher.email == username,
                 Teacher.id != (account.teacher_id or 0),
             ).first():
                 raise AccountError(f"Teacher email '{username}' already belongs to another teacher profile.")

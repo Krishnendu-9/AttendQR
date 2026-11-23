@@ -544,3 +544,51 @@ def test_activity_log_text_migration_round_trip(app, data, caplog):
     with pytest.raises(SystemExit):
         downgrade(revision='0025_subject_color')
     assert 'longer than 255 characters' in caplog.text
+
+
+def test_data_constraints_migration_round_trip(app, data, caplog):
+    """0027 stores logins and emails lower case (unless that would clash), adds CHECK constraints and the
+    group-name index, and refuses to upgrade over rows that break them. Down drops the constraints."""
+    from flask_migrate import downgrade, upgrade
+    from sqlalchemy.exc import IntegrityError
+
+    from attendqr.extensions import db
+
+    db.session.remove()
+    downgrade(revision='0026_activity_log_text')
+    with db.engine.begin() as connection:
+        connection.execute(sa.text("UPDATE user_account SET username = 'Rahul@Example.com' WHERE username = :name"),
+                           {'name': data.student})
+        connection.execute(sa.text("UPDATE student SET roll_no = 'mca002' WHERE id = :id"), {'id': data.student2_id})
+        # Two logins that differ only in case are left alone rather than merged.
+        connection.exec_driver_sql("UPDATE user_account SET username = 'HOD@college.example' WHERE username = 'asha@college.example'")
+        connection.exec_driver_sql("UPDATE user_account SET username = 'hod@College.example' WHERE username = 'hod@college.example'")
+        connection.exec_driver_sql("UPDATE user_account SET role = 'janitor' WHERE username = 'ravi@college.example'")
+
+    with pytest.raises(SystemExit):
+        upgrade()
+    assert 'break ck_user_account_role' in caplog.text
+
+    with db.engine.begin() as connection:
+        connection.exec_driver_sql("UPDATE user_account SET role = 'teacher' WHERE username = 'ravi@college.example'")
+    upgrade()
+    with db.engine.begin() as connection:
+        names = {row[0] for row in connection.exec_driver_sql('SELECT username FROM user_account')}
+        assert data.student in names and 'Rahul@Example.com' not in names
+        assert {'HOD@college.example', 'hod@College.example'} <= names
+        roll_no = connection.execute(sa.text('SELECT roll_no FROM student WHERE id = :id'), {'id': data.student2_id})
+        assert roll_no.scalar() == 'MCA002'
+    with pytest.raises(IntegrityError), db.engine.begin() as connection:
+        connection.exec_driver_sql("INSERT INTO user_account (username, password, role, is_active, must_change_password, "
+                                   "session_token) VALUES ('x@example.com', 'x', 'janitor', TRUE, FALSE, 't')")
+    with pytest.raises(IntegrityError), db.engine.begin() as connection:
+        connection.execute(sa.text("INSERT INTO class_group (department_id, semester_id, name, created_at) VALUES "
+                                   "(:department, :semester, 'Gr-1', '2026-01-01'), "
+                                   "(:department, :semester, 'GR-1', '2026-01-01')"),
+                           {'department': data.mca_id, 'semester': data.sem1_id})
+
+    downgrade(revision='0026_activity_log_text')
+    with db.engine.begin() as connection:  # the constraints are gone again
+        connection.exec_driver_sql("UPDATE user_account SET role = 'janitor' WHERE username = 'ravi@college.example'")
+        connection.exec_driver_sql("UPDATE user_account SET role = 'teacher' WHERE username = 'ravi@college.example'")
+    upgrade()

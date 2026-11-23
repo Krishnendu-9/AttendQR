@@ -41,10 +41,19 @@ def test_page_access_by_role(data, client_for, who, pages):
 
 
 def test_unknown_role_fails_closed(data, client_for):
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm.attributes import set_committed_value
+
     client = client_for(data.hod)
     account = User.query.filter_by(username=data.hod).one()
+    # The database refuses a role the app does not know (ck_user_account_role)...
     account.role = 'superuser'
-    db.session.commit()
+    with pytest.raises(IntegrityError):
+        db.session.commit()
+    db.session.rollback()
+    # ...and should one be loaded anyway, the code still grants it nothing.
+    account = User.query.filter_by(username=data.hod).one()
+    set_committed_value(account, 'role', 'superuser')
     assert client.get('/accounts').status_code == 403
     assert client.get('/students').status_code == 403
 

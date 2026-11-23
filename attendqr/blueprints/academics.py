@@ -518,11 +518,11 @@ def edit_teacher(id):
     if not is_allowed_staff_email(email):
         flash(staff_email_rule_message(), "danger")
         return redirect(url_for('academics.teachers'))
-    if Teacher.query.filter(Teacher.id != teacher.id, db.func.lower(Teacher.email) == email).first():
+    if Teacher.query.filter(Teacher.id != teacher.id, Teacher.email == email).first():
         flash(f"Teacher email '{email}' already exists.", "warning")
         return redirect(url_for('academics.teachers'))
     if User.query.filter(
-        db.func.lower(User.username) == email,
+        User.username == email,
         or_(User.teacher_id.is_(None), User.teacher_id != teacher.id),
     ).first():
         flash(f"Account email '{email}' already exists.", "warning")

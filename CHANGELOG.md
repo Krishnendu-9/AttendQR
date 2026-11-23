@@ -42,6 +42,12 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - A failed sign-in took about 100 ms less for an account still on its one-time password than for an
   unknown email, which showed which accounts exist and have never signed in. Every attempt now checks
   one hash at each cost, so the time is the same.
+- The database enforces what the app already checks: CHECK constraints for roles, attendance sources,
+  statuses, routine kinds and week patterns, weekdays, and dates and times that end after they start,
+  and group names unique within a semester ignoring case. Login names and emails from older versions
+  are stored lower case (roll numbers upper case), unless that would clash, so sign-in compares them
+  directly. Migration `0027_data_constraints`, which stops with a list of rows to correct if any break
+  a constraint.
 
 ### Changed
 

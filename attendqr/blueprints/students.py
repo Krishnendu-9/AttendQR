@@ -190,12 +190,12 @@ def _not_found():
 
 def _duplicate_error(values, student=None):
     roll_match = Student.query.filter(
-        db.func.upper(Student.roll_no) == values['roll_no'],
+        Student.roll_no == values['roll_no'],
         Student.department_id == values['department_id'],
         Student.semester_id == values['semester_id'],
     )
-    email_match = Student.query.filter(db.func.lower(Student.email) == values['email'])
-    login_match = User.query.filter(db.func.lower(User.username) == values['email'])
+    email_match = Student.query.filter(Student.email == values['email'])
+    login_match = User.query.filter(User.username == values['email'])
     if student is not None:
         roll_match = roll_match.filter(Student.id != student.id)
         email_match = email_match.filter(Student.id != student.id)

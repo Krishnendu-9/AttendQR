@@ -212,16 +212,16 @@ def import_students_from_rows(rows):
             errors.append(f"Row {index}: duplicate email {email} in uploaded file")
             continue
         if Student.query.filter(
-            db.func.upper(Student.roll_no) == roll_no,
+            Student.roll_no == roll_no,
             Student.department_id == department.id,
             Student.semester_id == semester.id,
         ).first():
             errors.append(f"Row {index}: roll number {roll_no} already exists")
             continue
-        if Student.query.filter(db.func.lower(Student.email) == email).first():
+        if Student.query.filter(Student.email == email).first():
             errors.append(f"Row {index}: email {email} already exists")
             continue
-        if User.query.filter(db.func.lower(User.username) == email).first():
+        if User.query.filter(User.username == email).first():
             errors.append(f"Row {index}: login account email {email} already exists")
             continue
 

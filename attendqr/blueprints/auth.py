@@ -110,7 +110,7 @@ def login():
             count_login('locked')
             error = LOCKED_LOGIN_MESSAGE
         else:
-            user = User.query.filter(db.func.lower(User.username) == username).first()
+            user = User.query.filter(User.username == username).first()
             password_ok = check_login_password(user, password)  # always runs, so timing reveals nothing
             if user and password_ok:
                 if not user.is_active:

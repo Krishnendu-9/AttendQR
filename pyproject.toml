@@ -39,6 +39,10 @@ markers = [
 ]
 filterwarnings = [
     "error::sqlalchemy.exc.LegacyAPIWarning",
+    # SQLite cannot reflect the expression index on group names (lower(name)). Batch migrations
+    # that rebuild a table referencing class_group reflect it and say so; class_group itself is
+    # not rebuilt, so the index stays (test_data_constraints_migration_round_trip checks it).
+    "ignore:Skipped unsupported reflection of expression-based index:sqlalchemy.exc.SAWarning",
 ]
 
 [tool.ruff]

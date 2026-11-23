@@ -13,7 +13,13 @@ def new_session_token():
     return secrets.token_hex(16)
 
 
-# Every role, and those that are staff. The one list: access.py labels these.
+def one_of(column, values, name):
+    """A CHECK constraint that `column` holds one of `values`. The app validates first; this guards the data."""
+    allowed = ', '.join(f"'{value}'" for value in values)
+    return db.CheckConstraint(f"{column} IN ({allowed})", name=name)
+
+
+# Every role, and those that are staff. The one list: access.py labels these, and the database checks them.
 STAFF_ROLES = ('principal', 'hod', 'teacher')
 ROLES = (*STAFF_ROLES, 'student')
 
@@ -22,11 +28,15 @@ class User(UserMixin, db.Model):
     """Every login: Principal, HOD, Teacher and Student accounts (see `role`)."""
     # Not "user": that is a reserved word in PostgreSQL.
     __tablename__ = 'user_account'
+    __table_args__ = (
+        one_of('role', ROLES, 'ck_user_account_role'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
+    # Always stored lower case (normalize_email), so lookups compare it directly and use the unique index.
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
-    role = db.Column(db.String(20), nullable=False)  # 'principal', 'hod', 'teacher' or 'student'
+    role = db.Column(db.String(20), nullable=False)  # one of ROLES
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='SET NULL'), nullable=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id', ondelete='SET NULL'), nullable=True)
     student_id = db.Column(db.Integer, db.ForeignKey('student.id', ondelete='SET NULL'), nullable=True)
@@ -115,12 +125,12 @@ class Semester(db.Model):
     locked_eligibility_percent = db.Column(db.Integer, nullable=True)
     locked_condonation_percent = db.Column(db.Integer, nullable=True)
     locked_by = db.relationship('User', foreign_keys=[attendance_locked_by_user_id])
+    subjects = db.relationship('Subject', backref='semester', lazy=True)
+    students = db.relationship('Student', backref='semester', lazy=True, foreign_keys='Student.semester_id')
 
     @property
     def attendance_locked(self):
         return self.attendance_locked_at is not None
-    subjects = db.relationship('Subject', backref='semester', lazy=True)
-    students = db.relationship('Student', backref='semester', lazy=True, foreign_keys='Student.semester_id')
 
 
 class Subject(db.Model):
@@ -163,7 +173,7 @@ class SubjectTeacher(db.Model):
 class Teacher(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)  # lower case, like User.username
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
     # Initials shown in the routine grid ("SC", "MG"); access.teacher_short_name() fills a missing one.
     short_name = db.Column(db.String(10), nullable=True)
@@ -179,8 +189,8 @@ class Student(db.Model):
     )
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    roll_no = db.Column(db.String(20), nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
+    roll_no = db.Column(db.String(20), nullable=False)  # upper case (normalize_roll_no)
+    email = db.Column(db.String(120), unique=True, nullable=False)  # lower case (normalize_email)
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
     semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
     device_id = db.Column(db.String(100), nullable=True)
@@ -221,11 +231,15 @@ class ClassGroup(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     department_id = db.Column(db.Integer, db.ForeignKey('department.id', ondelete='CASCADE'), nullable=False)
     semester_id = db.Column(db.Integer, db.ForeignKey('semester.id', ondelete='CASCADE'), nullable=False)
-    name = db.Column(db.String(60), nullable=False)  # unique within the semester, ignoring case (checked in code)
+    name = db.Column(db.String(60), nullable=False)  # unique within the semester, ignoring case (see below)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
 
     department = db.relationship('Department')
     semester = db.relationship('Semester')
+
+
+# A group name is unique within its semester, ignoring case ("Gr-1" and "GR-1" are one group).
+db.Index('uq_class_group_semester_name', ClassGroup.semester_id, sa.func.lower(ClassGroup.name), unique=True)
 
 
 class ClassGroupMember(db.Model):
@@ -286,6 +300,7 @@ class Attendance(db.Model):
     SOURCE_MANUAL = 'manual'
 
     __table_args__ = (
+        one_of('source', (SOURCE_SCAN, SOURCE_MANUAL), 'ck_attendance_source'),
         db.Index('uq_attendance_student_session', 'student_id', 'session_id', unique=True),
         # One QR scan grant produces at most one attendance (NULLs allowed many times).
         db.Index('uq_attendance_scan_grant', 'scan_grant', unique=True),
@@ -367,6 +382,8 @@ class LeaveRequest(db.Model):
     KINDS: ClassVar[dict[str, str]] = {'medical': 'Medical', 'personal': 'Personal', 'duty': 'College duty'}
 
     __table_args__ = (
+        one_of('status', (PENDING, APPROVED, REJECTED), 'ck_leave_request_status'),
+        db.CheckConstraint('end_date >= start_date', name='ck_leave_request_dates'),
         db.Index('ix_leave_request_student_status', 'student_id', 'status'),
     )
     id = db.Column(db.Integer, primary_key=True)
@@ -405,6 +422,7 @@ class SpotCheck(db.Model):
     ABSENT = 'absent'
 
     __table_args__ = (
+        one_of('result', (PENDING, PRESENT, ABSENT), 'ck_spot_check_result'),
         db.Index('uq_spot_check_session_student', 'session_id', 'student_id', unique=True),
         db.Index('ix_spot_check_student_id', 'student_id'),
     )
@@ -441,6 +459,7 @@ class BellSchedule(db.Model):
 
 class BellPeriod(db.Model):
     __table_args__ = (
+        db.CheckConstraint('end_time > start_time', name='ck_bell_period_times'),
         db.Index('ix_bell_period_schedule_id', 'schedule_id'),
     )
     id = db.Column(db.Integer, primary_key=True)
@@ -455,6 +474,7 @@ class BellPeriod(db.Model):
 class BellScheduleDay(db.Model):
     """A weekday (0 = Monday ... 6 = Sunday) that uses the schedule. One per weekday within a scope (checked in code)."""
     __table_args__ = (
+        db.CheckConstraint('weekday BETWEEN 0 AND 6', name='ck_bell_schedule_day_weekday'),
         db.Index('ix_bell_schedule_day_schedule_id', 'schedule_id'),
     )
     id = db.Column(db.Integer, primary_key=True)
@@ -464,6 +484,9 @@ class BellScheduleDay(db.Model):
 
 class Holiday(db.Model):
     """Days without classes. department_id NULL: for everyone; set: that department only."""
+    __table_args__ = (
+        db.CheckConstraint('end_date >= start_date', name='ck_holiday_dates'),
+    )
     id = db.Column(db.Integer, primary_key=True)
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
@@ -484,6 +507,7 @@ class Timetable(db.Model):
     PUBLISHED = 'published'
 
     __table_args__ = (
+        one_of('status', (DRAFT, PUBLISHED), 'ck_timetable_status'),
         db.Index('ix_timetable_semester_id', 'semester_id'),
     )
     id = db.Column(db.Integer, primary_key=True)
@@ -523,6 +547,9 @@ class TimetableEntry(db.Model):
     EVEN = 'even'
 
     __table_args__ = (
+        db.CheckConstraint('weekday BETWEEN 0 AND 6', name='ck_timetable_entry_weekday'),
+        db.CheckConstraint('end_time > start_time', name='ck_timetable_entry_times'),
+        one_of('week_pattern', (EVERY, ODD, EVEN), 'ck_timetable_entry_week_pattern'),
         db.Index('ix_timetable_entry_timetable_id', 'timetable_id'),
         db.Index('ix_timetable_entry_subject_id', 'subject_id'),
         db.Index('ix_timetable_entry_group_id', 'group_id'),
@@ -573,6 +600,7 @@ class RoutineChange(db.Model):
     KINDS: ClassVar[dict[str, str]] = {CANCEL: 'Cancelled', MOVE: 'Moved', SUBSTITUTE: 'Substitute', EXTRA: 'Extra class'}
 
     __table_args__ = (
+        one_of('kind', (CANCEL, MOVE, SUBSTITUTE, EXTRA), 'ck_routine_change_kind'),
         db.Index('ix_routine_change_entry_date', 'timetable_entry_id', 'date'),
         db.Index('ix_routine_change_semester_date', 'semester_id', 'date'),
     )
