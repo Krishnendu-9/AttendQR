@@ -121,3 +121,20 @@ def test_students_cannot_be_added_to_a_locked_semester(data, locked, client_for)
     }, follow_redirects=True)
     assert 'cannot be added to a locked semester' in html.unescape(response.get_data(as_text=True))
     assert Student.query.filter_by(semester_id=data.sem1_id).count() == 2
+
+
+def test_a_student_who_left_cannot_come_back_to_a_locked_class(data, locked):
+    from attendqr.services.enrollment import restore
+
+    student = db.session.get(Student, data.student_id)
+    semester = db.session.get(Semester, data.sem1_id)
+    semester.attendance_locked_at = None
+    student.left_at, student.left_reason = utc_now(), 'Completed the course'
+    db.session.commit()
+    semester.attendance_locked_at = utc_now()
+    db.session.commit()
+    with pytest.raises(SemesterLocked, match='is locked'):  # restore() queries, so its flush is refused at once
+        restore(student)
+        db.session.commit()
+    db.session.rollback()
+    assert db.session.get(Student, data.student_id).left_at is not None

@@ -81,6 +81,10 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - CI: the tests also run on Python 3.14; a job checks that `static/css/app.css` matches a fresh
   Tailwind build (`python scripts/tailwind.py --check`); a job runs the browser tests. The coverage
   floor is now 90% (it was 85%).
+- **Mark as left** on a student's page, with a reason, for a student who leaves the college. Their
+  records stay, their time in the class ends that day, and they leave the Students list, the shortage
+  list and exam eligibility; their login is turned off. **Restore** brings them back from that
+  moment. Migration `0029_student_left`.
 
 ## [1.0.0] - 2026-11-18
 

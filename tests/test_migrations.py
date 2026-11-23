@@ -611,3 +611,22 @@ def test_session_create_token_migration_round_trip(app, data):
     with db.engine.connect() as connection:
         indexes = {index['name']: index for index in sa.inspect(connection).get_indexes('class_session')}
         assert indexes['uq_class_session_create_token']['unique']
+
+
+def test_student_left_migration_round_trip(app, data):
+    """0029 adds student.left_at and left_reason (NULL: still a student); down drops them and keeps the students."""
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import Student
+
+    db.session.get(Student, data.student_id).left_at = db.func.current_timestamp()
+    db.session.commit()
+    db.session.remove()
+    downgrade(revision='0028_session_create_token')
+    with db.engine.connect() as connection:
+        assert 'left_at' not in {c['name'] for c in sa.inspect(connection).get_columns('student')}
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM student').scalar() == 3
+    upgrade()
+    with db.engine.connect() as connection:
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM student WHERE left_at IS NOT NULL').scalar() == 0

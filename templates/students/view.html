@@ -8,8 +8,9 @@
 {% set target = summary.target %}
 
 {% block content %}
-{% call page_header(student.name, 'Roll no ' ~ student.roll_no ~ ' · ' ~ student.semester.name ~ ' · ' ~ student.department.display_name, account_badge(account)) %}
-  {% if can_reset_student_access(student) %}
+{% call page_header(student.name, 'Roll no ' ~ student.roll_no ~ ' · ' ~ student.semester.name ~ ' · ' ~ student.department.display_name,
+                    badge('Left the college', 'neutral') if student.left_at else account_badge(account)) %}
+  {% if can_reset_student_access(student) and not student.left_at %}
   {{ action_form('Reset device', url_for('students.reset_device', id=student.id), icon_name='smartphone',
                  confirm='The registered phone is released. The next phone the student marks attendance from becomes their device.',
                  confirm_title='Reset device for ' ~ student.name ~ '?', hidden={'return_to': this_page}) }}
@@ -18,6 +19,14 @@
                  confirm_title='Reset password for ' ~ student.name ~ '?', hidden={'return_to': this_page}) }}
   {% endif %}
   {% if can_manage %}
+  {% if student.left_at %}
+  {{ action_form('Restore', url_for('students.restore', id=student.id), icon_name='rotate-cw',
+                 confirm='They become a student of ' ~ student.semester.name ~ ' again, from now on, and can sign in. Classes held while they were away are not theirs.',
+                 confirm_title='Restore ' ~ student.name ~ '?') }}
+  {% else %}
+  {{ record_opener('Mark as left', 'left-student-dialog', url_for('students.mark_left', id=student.id), student.name ~ ' left the college',
+                   'Mark as left', {}, icon_name='log-out', as_button=True, variant='outline') }}
+  {% endif %}
   {#- No Delete while a semester of theirs is locked: it would change final records (the callout below says why). -#}
   {% if delete_lock_error %}
   {% elif attendance_records %}
@@ -31,6 +40,15 @@
   <a href="{{ url_for('students.edit_form', id=student.id) }}" class="{{ btn('primary') }}">{{ icon('pencil') }}<span>Edit</span></a>
   {% endif %}
 {% endcall %}
+
+{% if student.left_at %}
+<div class="mb-6">
+  {% call callout('Left the college on ' ~ (student.left_at|local).strftime('%d %b %Y'), 'info', 'log-out') %}
+    <p>Reason: {{ student.left_reason }}</p>
+    <p class="mt-1">Their records stay in every report for the classes held while they were here. They are not in current lists, and their login is off.</p>
+  {% endcall %}
+</div>
+{% endif %}
 
 {% if can_manage and delete_lock_error %}
 <div class="mb-6">
@@ -143,12 +161,25 @@
   </div>
 </div>
 
+{% if can_manage and not student.left_at %}
+{% call record_dialog('left-student-dialog', student.name ~ ' left the college', 'Mark as left', 'Saving...') %}
+  <p class="text-body-md text-muted-foreground sm:col-span-2">
+    Their records stay in every report, for the classes held while they were here. They leave current lists and the
+    shortage list, their login is turned off, and their phone is released. You can restore them later.
+  </p>
+  <div class="sm:col-span-2">
+    {{ text_input('note', 'Reason', id='left_student_note', required=True, placeholder='e.g. Completed the course',
+                  hint='Shown on their page and recorded in the activity log.', attrs={'maxlength': max_delete_reason, 'autocomplete': 'off'}) }}
+  </div>
+{% endcall %}
+{% endif %}
+
 {% if can_manage and attendance_records and not delete_lock_error %}
 {% call record_dialog('delete-student-dialog', 'Delete ' ~ student.name ~ '?', 'Delete student', 'Deleting...') %}
   <input type="hidden" name="return_to" value="{{ url_for('students.index') }}">
   <p class="text-body-md text-muted-foreground sm:col-span-2">
     Their login and <span class="text-label-lg text-foreground">{{ attendance_records }}</span> attendance record(s) are erased
-    and cannot be recovered. A student who has left keeps their records if you leave them in place.
+    and cannot be recovered. Delete only a student added by mistake: for one who has left, use <span class="text-label-lg text-foreground">Mark as left</span>, which keeps their records.
   </p>
   <div class="sm:col-span-2">
     {{ text_input('note', 'Reason', id='delete_student_note', required=True, placeholder='e.g. Added twice by mistake',

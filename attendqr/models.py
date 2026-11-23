@@ -198,6 +198,11 @@ class Student(db.Model):
     # then are not theirs unless they have an attendance entry for one (services/counting.py).
     # NULL: in the class from the start (every student from before migration 0024).
     class_joined_at = db.Column(db.DateTime, nullable=True)
+    # When the student left the college (graduated, dropped out, transferred), with why. Their time in
+    # their class ends then, as if they had moved out (services/enrollment.py); their records stay.
+    # NULL: still a student here.
+    left_at = db.Column(db.DateTime, nullable=True)
+    left_reason = db.Column(db.String(200), nullable=True)
 
 
 class StudentClassHistory(db.Model):

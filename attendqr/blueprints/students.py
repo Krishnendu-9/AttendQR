@@ -32,6 +32,7 @@ from ..security import (
     hash_temporary_password,
     is_safe_redirect_target,
 )
+from ..services import enrollment
 from ..services.enrollment import record_class_change
 from ..services.groups import student_groups
 from ..services.locks import semester_lock_error, student_lock_error
@@ -189,11 +190,14 @@ def _not_found():
 
 
 def _joining_lock_error(values, student=None):
-    """Why the student cannot join the chosen class because it is locked, or None. Staying in a
-    locked class (editing a name, say) is fine; joining one would add a row to its final reports."""
+    """Why the student cannot join the chosen class, or None. Staying in a locked class (editing a
+    name, say) is fine; joining one would add a row to its final reports. A student who left the
+    college comes back (Restore) before moving to another class."""
     if student is not None and (student.department_id, student.semester_id) == (values['department_id'],
                                                                                   values['semester_id']):
         return None
+    if student is not None and student.left_at is not None:
+        return f"{student.name} has left the college. Restore them before moving them to another class."
     error = semester_lock_error(db.session.get(Semester, values['semester_id']))
     return f"Students cannot be added to a locked semester. {error}" if error else None
 
@@ -252,6 +256,7 @@ def index():
         query = query.filter(Student.department_id == filters['department_id'])
     if filters['semester_id']:
         query = query.filter(Student.semester_id == filters['semester_id'])
+    query = query.filter(Student.left_at.is_(None))
     if filters['q']:
         like = f"%{filters['q'].lower()}%"
         query = query.filter(or_(
@@ -274,7 +279,7 @@ def index():
         page=page,
         filters=filters,
         filter_args={key: value for key, value in filters.items() if value},
-        total_students=visible_students_query().count(),
+        total_students=visible_students_query().filter(Student.left_at.is_(None)).count(),
         departments=ordered_departments_query().all(),
         filter_semesters=sort_semesters(semesters.all()),
     )
@@ -501,3 +506,52 @@ def reset_device(id):
     db.session.commit()
     flash(f"Device lock reset successfully for {student.name}.", "success")
     return back_to_list()
+
+
+# ── Leaving the college ──────────────────────────────────────
+
+@bp.route('/students/<int:id>/left', methods=['POST'])
+@login_required
+@role_required('principal', 'hod')
+def mark_left(id):
+    """The student left the college (graduated, dropped out, transferred). Unlike deleting, every record stays."""
+    student = db.get_or_404(Student, id)
+    if not can_access_student(student):
+        abort(403)
+    if student.left_at is not None:
+        flash(f"{student.name} is already marked as left.", 'warning')
+        return redirect(url_for('students.view', id=student.id))
+    reason = normalize_text(request.form.get('note'))
+    if not reason or len(reason) > MAX_DELETE_REASON_LENGTH:
+        flash(f"Say why {student.name} left, in at most {MAX_DELETE_REASON_LENGTH} characters "
+              "(for example \"Completed the course\").", 'danger')
+        return redirect(url_for('students.view', id=student.id))
+    enrollment.mark_left(student, reason)
+    log_activity('student_left', f"Marked {student.name} ({student.roll_no}) as having left the college. "
+                 f"Reason: {reason}", 'student', student.id, student.department_id)
+    db.session.commit()
+    flash(f"{student.name} is marked as left. Their records stay, and their login is turned off.", 'success')
+    return redirect(url_for('students.view', id=student.id))
+
+
+@bp.route('/students/<int:id>/restore', methods=['POST'])
+@login_required
+@role_required('principal', 'hod')
+def restore(id):
+    """A student who left comes back to their class, from now on."""
+    student = db.get_or_404(Student, id)
+    if not can_access_student(student):
+        abort(403)
+    if student.left_at is None:
+        flash(f"{student.name} has not left.", 'warning')
+        return redirect(url_for('students.view', id=student.id))
+    lock_error = semester_lock_error(student.semester)
+    if lock_error:
+        flash(f"{student.name} cannot come back to a locked semester. {lock_error}", 'warning')
+        return redirect(url_for('students.view', id=student.id))
+    enrollment.restore(student)
+    log_activity('student_restored', f"{student.name} ({student.roll_no}) is a student again, from now on.",
+                 'student', student.id, student.department_id)
+    db.session.commit()
+    flash(f"{student.name} is a student again. Classes held while they were away are not theirs.", 'success')
+    return redirect(url_for('students.view', id=student.id))

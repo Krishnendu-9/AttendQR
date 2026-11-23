@@ -11,12 +11,12 @@ from sqlalchemy.orm import joinedload
 
 from ..access import SPECIAL_CLASS_SUBJECT_NAME, teacher_session_clause, user_role
 from ..extensions import db
-from ..models import Attendance, ClassSession, Subject
+from ..models import Attendance, ClassSession, Semester, Subject
 from ..utils import local_day_start_utc, local_now, normalize_paper_code, parse_date_range, to_local
 
 # The marks are defined with the counting rule; importing them from here keeps working.
 from .counting import NOT_IN_CLASS, NOT_IN_GROUP, SessionMarks, is_counted
-from .enrollment import class_roster, current_class_member
+from .enrollment import class_roster, current_class_member, judged_elsewhere
 from .leave import ON_LEAVE, ON_LEAVE_MARK
 from .settings import get_setting
 
@@ -324,10 +324,11 @@ def attendance_mark(source):
 
 
 def export_name(row):
-    """The student's name, marked when they have since moved to another class or joined it late."""
+    """The student's name, marked when they have since left the college, moved to another class or joined it late."""
     left_at = row.get('left_at')
     if left_at is not None:
-        return f"{row['student'].name} (moved out {to_local(left_at):%d-%m-%Y})"
+        how = 'left' if row['student'].left_at == left_at else 'moved out'
+        return f"{row['student'].name} ({how} {to_local(left_at):%d-%m-%Y})"
     joined_late = row.get('joined_late')
     if joined_late is not None:
         return f"{row['student'].name} (joined {to_local(joined_late):%d-%m-%Y})"
@@ -532,6 +533,7 @@ def build_shortage_report(filters, threshold):
     }
 
     members = class_roster(filters.department_id, filters.semester_id)
+    semester = db.session.get(Semester, filters.semester_id)
     session_rows = db.session.query(
         ClassSession.id, ClassSession.subject_id, ClassSession.created_at, ClassSession.group_id,
     ).filter(ClassSession.id.in_(session_ids)).all()
@@ -597,6 +599,9 @@ def build_shortage_report(filters, threshold):
             continue
         overall_percentage = round(overall_attended / overall_total * 100, 2)
         short_subjects = [cell for cell in cells if cell['short']]
+        if (student.left_at is not None and member.left_at == student.left_at
+                and judged_elsewhere(member.left_at, semester)):
+            continue  # left the college: nobody to chase (a locked semester keeps who was in it)
         if overall_percentage < threshold or short_subjects:
             rows.append({
                 'student': student,

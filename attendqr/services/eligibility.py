@@ -71,7 +71,7 @@ def build_eligibility(department_id, semester_id):
     condonations = {c.student_id: c for c in Condonation.query.filter_by(semester_id=semester_id)}
     for row in rows:
         if judged_elsewhere(row['left_at'], semester):
-            continue  # moved to another class while it was open; judged there
+            continue  # moved to another class (judged there) or left the college before the lock
         student = row['student']
         held, attended = row['counted'], row['total']
         percentage = round(attended / held * 100, 2) if held else 0

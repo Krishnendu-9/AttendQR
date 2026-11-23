@@ -17,6 +17,7 @@ The system supports four roles:
 - Can activate, deactivate, reset, or delete non-student accounts from the Accounts page.
 - Creates or bulk-imports student profiles from the Students page; student login accounts are auto-created.
 - Deletes students; one with attendance only with a reason, and none of a locked semester.
+- Marks students as having left the college (with a reason), and restores them.
 - Views all reports, exports and analytics.
 - Approves or rejects leave requests from any department, and can reopen a decision made by mistake (with a reason).
 - Sees the integrity report and exam eligibility for every class, and condones students in the condonation band.
@@ -35,6 +36,7 @@ The system supports four roles:
 - Creates or bulk-imports student profiles from the Students page; student login accounts are auto-created.
 - Can reset student passwords and device locks in the assigned department.
 - Deletes the department's students; one with attendance only with a reason, and none of a locked semester.
+- Marks the department's students as having left the college (with a reason), and restores them.
 - Can correct attendance on any session in the assigned department and view the department shortage list.
 - Can delete a session that has attendance in the assigned department, with a reason (this erases its records).
 - Approves or rejects leave requests from the department's students (a rejection needs a note), and can reopen a decision made by mistake (with a reason).

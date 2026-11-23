@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from ..extensions import db
-from ..models import Student, StudentClassHistory
+from ..models import Student, StudentClassHistory, User
 from ..utils import utc_now
 from .groups import end_memberships_in_class
 
@@ -72,6 +72,40 @@ def record_class_change(student, old_department_id, old_semester_id):
     end_memberships_in_class(student.id, old_department_id, old_semester_id, now)
 
 
+def _current_span(student):
+    """The student's time in their current class: from joining it until they left the college, if they have."""
+    return (student.class_joined_at, student.left_at)
+
+
+def mark_left(student, reason, when=None):
+    """The student left the college: their time in the class ends now, like moving out of it.
+
+    Their records stay. Their login is turned off (and every session of it ended), their phone is
+    released for someone else, and their groups end.
+    """
+    when = when or utc_now()
+    student.left_at, student.left_reason = when, reason
+    student.device_id = None
+    account = User.query.filter_by(student_id=student.id).first()
+    if account is not None:
+        account.is_active = False
+        account.rotate_session_token()
+    end_memberships_in_class(student.id, student.department_id, student.semester_id, when)
+
+
+def restore(student, when=None):
+    """A student who left comes back to the same class. The time away is not theirs: it is kept as
+    a past span in the class history, and they rejoin now, like a student moved in."""
+    when = when or utc_now()
+    db.session.add(StudentClassHistory(student_id=student.id, department_id=student.department_id,
+                                       semester_id=student.semester_id, joined_at=student.class_joined_at,
+                                       left_at=student.left_at))
+    student.class_joined_at, student.left_at, student.left_reason = when, None, None
+    account = User.query.filter_by(student_id=student.id).first()
+    if account is not None:
+        account.is_active = True
+
+
 def _history_spans(department_id, semester_id, student_ids=None):
     query = db.session.query(
         StudentClassHistory.student_id, StudentClassHistory.joined_at, StudentClassHistory.left_at,
@@ -91,8 +125,7 @@ def class_roster(department_id, semester_id):
     current_ids = {student.id for student in current}
     former_ids = [student_id for student_id in history if student_id not in current_ids]
     former = Student.query.filter(Student.id.in_(former_ids)).all() if former_ids else []
-    members = [ClassMember(student, [(student.class_joined_at, None), *history.get(student.id, [])])
-               for student in current]
+    members = [ClassMember(student, [_current_span(student), *history.get(student.id, [])]) for student in current]
     members += [ClassMember(student, history[student.id]) for student in former]
     members.sort(key=lambda member: (member.student.roll_no, member.student.id))
     return members
@@ -101,15 +134,15 @@ def class_roster(department_id, semester_id):
 def current_class_member(student):
     """The student as a member of their current class."""
     history = _history_spans(student.department_id, student.semester_id, [student.id])
-    return ClassMember(student, [(student.class_joined_at, None), *history.get(student.id, [])])
+    return ClassMember(student, [_current_span(student), *history.get(student.id, [])])
 
 
 def judged_elsewhere(left_at, semester):
     """Whether a member who left the class at `left_at` (None: still in it) drops out of its eligibility
-    and analytics: they moved to another class while it was open.
+    and analytics: they moved to another class, or left the college, while it was open.
 
     A locked semester is final, so it keeps everyone who was in it when it was locked: promoting a
-    class after its exams does not empty its eligibility report.
+    class after its exams, or marking a graduate as left, does not empty its eligibility report.
     """
     if left_at is None:
         return False
@@ -121,7 +154,7 @@ def was_in_class(student, department_id, semester_id, when):
     """Whether staff may mark `student` present in a session of this class held at `when`: a current
     member (a late joiner too, for a class they attended before their account existed), or moved out after it."""
     if (student.department_id, student.semester_id) == (department_id, semester_id):
-        return True
+        return student.left_at is None or when is None or when < student.left_at
     return db.session.query(
         StudentClassHistory.query.filter(
             StudentClassHistory.student_id == student.id,

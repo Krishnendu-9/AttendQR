@@ -32,7 +32,8 @@ AttendQR/
       two_factor.py     Two-step sign-in (TOTP) and recovery codes
       roster.py         Student login accounts and bulk import
       spreadsheet.py    Reading an uploaded .xlsx safely (defusedxml), for the student and routine imports
-      enrollment.py     Class membership over time: late joiners, and moved students in their old class's reports
+      enrollment.py     Class membership over time: late joiners, moved students in their old class's reports,
+                        students who left the college (and coming back)
       groups.py         Groups within a class (lab batches): membership history, splitting by roll number, who a group's session counts for
       routine.py        The class routine: bell schedules, holidays, versions, entries, clash checks, the week grid
       occurrences.py    Dated classes from the routine (with one-date changes) and the sessions that hold them
@@ -49,14 +50,14 @@ AttendQR/
       academics.py      Departments, semesters, subjects, teachers
       groups.py         A class's groups and their members (/semesters/<id>/groups)
       routine.py        Calendar (bell schedules, holidays), class routines and their editor, My routine, one-date changes
-      students.py       Student records, import, password and device resets
+      students.py       Student records, import, password and device resets, leaving the college
       attendance.py     QR sessions (/generate_qr) and the student scan flow (/scan, /attend, /mark_attendance)
       reports.py        Reports, detailed view, exports, analytics, integrity, exam eligibility
       leave.py          Leave requests: students apply, the HOD or Principal decides (/leave)
       accounts.py       Staff account management (/accounts)
       settings.py       The Principal's Settings page (/settings)
       api.py            JSON endpoints used by the pages (/api/...)
-  migrations/           Alembic environment and versions (Flask-Migrate), 0001_baseline to 0028_session_create_token
+  migrations/           Alembic environment and versions (Flask-Migrate), 0001_baseline to 0029_student_left
   templates/            Jinja2 templates (see "Frontend" below)
     layouts/            app.html (sidebar, header, content) and auth.html (sign in, errors)
     components/         Shared macros (ui.html, forms.html), navigation (nav.html), shell parts, Lucide icons

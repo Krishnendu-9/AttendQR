@@ -142,9 +142,11 @@ def _leave_error(leave, new, deleted):
 def _student_error(student, new, deleted):
     if deleted:
         return student_lock_error(student)
-    # Joining a locked class would add a row to its final reports. Leaving one is fine: the class
-    # history keeps the student in it for the sessions held while they were there.
-    if new or _changed(student) & {'department_id', 'semester_id'}:
+    # Joining a locked class, or coming back to it after leaving the college, would add a row to its
+    # final reports. Leaving one is fine: the class keeps the student for the sessions held while
+    # they were there, and a locked semester keeps everyone who was in it when it was locked.
+    changed = _changed(student)
+    if new or changed & {'department_id', 'semester_id'} or ('left_at' in changed and student.left_at is None):
         return _semester_error(student.semester_id)
     return None
 

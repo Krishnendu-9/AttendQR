@@ -43,8 +43,8 @@ btn btn-{{ variant }}{% if size %} btn-{{ size }}{% endif %}{% if icon_only %} b
 {#- The one place an attendance status becomes a badge, so every screen agrees.
     present: QR scan; present_staff: marked by staff (P*); absent; not_marked: no class for them
     (held before they joined or after they moved); other_group: another group's session, such as the
-    other lab batch (not counted); moved_out: left this class; joined_late: joined after some of its
-    sessions; on_leave: approved leave (not counted). -#}
+    other lab batch (not counted); moved_out: left this class; left_college: left the college;
+    joined_late: joined after some of its sessions; on_leave: approved leave (not counted). -#}
 {% macro attendance_badge(status, short=False) -%}
 {% set styles = {
   'present': ('P', 'Present', 'success', None),
@@ -52,6 +52,7 @@ btn btn-{{ variant }}{% if size %} btn-{{ size }}{% endif %}{% if icon_only %} b
   'absent': ('A', 'Absent', 'danger', None),
   'not_marked': ('–', 'Not marked', 'neutral', 'Held while the student was not in this class (before they joined, or after they moved out); not counted'),
   'moved_out': ('Moved out', 'Moved out', 'neutral', None),
+  'left_college': ('Left', 'Left the college', 'neutral', None),
   'joined_late': ('Joined late', 'Joined late', 'neutral', None),
   'on_leave': ('L', 'On leave', 'info', 'On approved leave; not counted'),
   'other_group': ('–', 'Other group', 'neutral', 'Held for a group the student was not in; not counted'),

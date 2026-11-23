@@ -12,7 +12,7 @@
 {% call dropdown('Actions for ' ~ s.name) %}
   {{ menu_link('View details', url_for('students.view', id=s.id), 'user-round') }}
   {% if can_manage %}{{ menu_link('Edit', url_for('students.edit_form', id=s.id, return_to=list_url), 'pencil') }}{% endif %}
-  {% if can_reset_student_access(s) %}
+  {% if can_reset_student_access(s) and not s.left_at %}
   {{ menu_form('Reset password', url_for('students.reset_password', id=s.id), 'key-round',
                confirm='A new temporary password is created and shown once. The student must change it at next sign-in.',
                confirm_title='Reset password for ' ~ s.name ~ '?', confirm_label='Reset password', hidden={'return_to': list_url}) }}
@@ -34,8 +34,9 @@
 <span id="filters-summary" class="contents{{ ' filters-on' if filter_count }}">{% if filter_count %}<span class="rounded-full bg-secondary px-1.5 text-label-md tabular-nums text-ink">{{ filter_count }}</span>{% endif %}</span>
 {%- endmacro %}
 
+{#- A student who left the college has no phone registered; say they left instead. -#}
 {% macro device_badge(s) -%}
-{{ badge('Registered', 'success') if s.device_id else badge('None', 'neutral') }}
+{% if s.left_at %}{{ badge('Left the college', 'neutral') }}{% else %}{{ badge('Registered', 'success') if s.device_id else badge('None', 'neutral') }}{% endif %}
 {%- endmacro %}
 
 {% block content %}

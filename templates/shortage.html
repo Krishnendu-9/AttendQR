@@ -61,7 +61,7 @@
               {{ monogram(row.student.name) }}
               <div class="min-w-0">
                 <p class="flex flex-wrap items-center gap-1.5 text-label-lg text-foreground">{{ row.student.name }}
-                  {% if row.left_at %}<span title="Moved to another class on {{ format_12h(row.left_at) }}; only sessions before that count">{{ attendance_badge('moved_out') }}</span>{% endif %}
+                  {% if row.left_at and row.student.left_at == row.left_at %}<span title="Left the college on {{ format_12h(row.left_at) }}; only sessions before that count">{{ attendance_badge('left_college') }}</span>{% elif row.left_at %}<span title="Moved to another class on {{ format_12h(row.left_at) }}; only sessions before that count">{{ attendance_badge('moved_out') }}</span>{% endif %}
                   {% if row.joined_late %}<span title="Joined this class on {{ format_12h(row.joined_late) }}; only sessions from then count">{{ attendance_badge('joined_late') }}</span>{% endif %}</p>
                 <p class="whitespace-nowrap text-body-sm text-muted-foreground"><span class="font-mono">{{ row.student.roll_no }}</span> &middot; {{ row.student.email }}</p>
               </div>

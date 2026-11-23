@@ -20,7 +20,7 @@ from ..access import (
     visible_teachers_query,
 )
 from ..extensions import db
-from ..models import ActivityLog, ClassSession, Subject, User
+from ..models import ActivityLog, ClassSession, Student, Subject, User
 from ..services.changes import allowed_kinds, can_undo, may_run
 from ..services.occurrences import NOT_RECORDED, occurrences
 from ..services.reports import attendance_counts, build_student_attendance_summary, total_attendance
@@ -120,7 +120,7 @@ def dashboard():
         semesters=visible_semesters_query().count(),
         subjects=visible_subjects_query().count(),
         teachers=visible_teachers_query().count(),
-        students=visible_students_query().count(),
+        students=visible_students_query().filter(Student.left_at.is_(None)).count(),
         sessions=visible_sessions_query().count(),
         attendance=total_attendance(visible_sessions_query()),
         recent_sessions=recent_rows,
