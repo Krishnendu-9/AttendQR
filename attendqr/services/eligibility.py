@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from ..extensions import db
 from ..models import Condonation, Semester
+from .enrollment import judged_elsewhere
 from .reports import ReportFilters, build_attendance_matrix
 from .settings import get_setting
 
@@ -61,15 +62,16 @@ def eligibility_limits(semester):
 
 
 def build_eligibility(department_id, semester_id):
-    eligible_at, condonable_at, from_lock = eligibility_limits(db.session.get(Semester, semester_id))
+    semester = db.session.get(Semester, semester_id)
+    eligible_at, condonable_at, from_lock = eligibility_limits(semester)
     report = EligibilityReport(eligible_at=eligible_at, condonable_at=condonable_at, limits_from_lock=from_lock)
     filters = ReportFilters(department_id=department_id, semester_id=semester_id, subject_id=None, parsed_from=None,
                             parsed_to=None, date_from='', date_to='', error=None)
     _, rows = build_attendance_matrix(filters)
     condonations = {c.student_id: c for c in Condonation.query.filter_by(semester_id=semester_id)}
     for row in rows:
-        if row['left_at'] is not None:
-            continue  # moved to another class; judged there
+        if judged_elsewhere(row['left_at'], semester):
+            continue  # moved to another class while it was open; judged there
         student = row['student']
         held, attended = row['counted'], row['total']
         percentage = round(attended / held * 100, 2) if held else 0

@@ -31,6 +31,9 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - Changing a student's email moved their login without telling anyone. The page now says the student
   signs in with the new address, the activity log records the change, and failed sign-ins counted
   under the old address are cleared.
+- Promoting a class after its semester was locked (the usual order: exams, lock, promotion) removed
+  every promoted student from the locked semester's exam eligibility and analytics. A locked semester
+  now keeps everyone who was in it when it was locked.
 
 ### Security
 

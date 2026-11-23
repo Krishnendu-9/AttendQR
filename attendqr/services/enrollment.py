@@ -104,6 +104,19 @@ def current_class_member(student):
     return ClassMember(student, [(student.class_joined_at, None), *history.get(student.id, [])])
 
 
+def judged_elsewhere(left_at, semester):
+    """Whether a member who left the class at `left_at` (None: still in it) drops out of its eligibility
+    and analytics: they moved to another class while it was open.
+
+    A locked semester is final, so it keeps everyone who was in it when it was locked: promoting a
+    class after its exams does not empty its eligibility report.
+    """
+    if left_at is None:
+        return False
+    locked_at = semester.attendance_locked_at if semester is not None else None
+    return locked_at is None or left_at <= locked_at
+
+
 def was_in_class(student, department_id, semester_id, when):
     """Whether staff may mark `student` present in a session of this class held at `when`: a current
     member (a late joiner too, for a class they attended before their account existed), or moved out after it."""

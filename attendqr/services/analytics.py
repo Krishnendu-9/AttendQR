@@ -8,9 +8,11 @@ same way, and special classes are left out, as in every percentage.
 from dataclasses import dataclass, field
 from datetime import timedelta
 
+from ..extensions import db
+from ..models import Semester
 from ..utils import local_now, to_local
 from .counting import NOT_COUNTED_MARKS
-from .enrollment import class_roster
+from .enrollment import class_roster, judged_elsewhere
 from .reports import ReportFilters, build_attendance_matrix, session_counts
 from .settings import get_setting
 
@@ -61,6 +63,7 @@ def week_start(day):
 
 def build_class_trends(department_id, semester_id, weeks=DEFAULT_WEEKS):
     target = get_setting('attendance_target')
+    semester = db.session.get(Semester, semester_id)
     today = local_now().date()
     first_week = week_start(today) - timedelta(weeks=weeks - 1)
     filters = ReportFilters(department_id=department_id, semester_id=semester_id, subject_id=None,
@@ -113,7 +116,7 @@ def build_class_trends(department_id, semester_id, weeks=DEFAULT_WEEKS):
 
     for row in rows:
         whole, recent = per_student[row['student'].id]
-        if row['left_at'] is not None or whole.rate is None:
+        if judged_elsewhere(row['left_at'], semester) or whole.rate is None:
             continue
         if whole.rate < target:
             trends.below_target += 1

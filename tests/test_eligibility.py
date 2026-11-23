@@ -6,7 +6,7 @@ import openpyxl
 import pytest
 
 from attendqr.extensions import db
-from attendqr.models import ActivityLog, Condonation, Department, Semester
+from attendqr.models import ActivityLog, Condonation, Department, Semester, Student
 from attendqr.services.eligibility import build_eligibility, status_for
 from conftest import add_session, make_student, post
 
@@ -116,3 +116,25 @@ def test_a_locked_semester_keeps_the_percentages_it_was_locked_under(app, data, 
     db.session.refresh(semester)
     assert semester.locked_eligibility_percent is None
     assert statuses(app, data)['MCA003'] == (70.0, 'detained')  # now judged by 90/80
+
+
+def test_promoting_a_class_after_the_lock_keeps_it_in_the_final_eligibility(app, data, held, client_for):
+    """Exams, lock, then promotion: the usual order. The locked semester's eligibility must not empty out."""
+    before = statuses(app, data)
+    post(client_for(data.hod), f'/semesters/{data.sem1_id}/lock')
+    for student_id, name, roll_no, email in ((data.student_id, 'Rahul Das', 'MCA001', data.student),
+                                             (data.student2_id, 'Priya Sen', 'MCA002', data.student2)):
+        post(client_for(data.principal), f'/students/edit/{student_id}', {
+            'name': name, 'roll_no': roll_no, 'email': email, 'department_id': data.mca_id,
+            'semester_id': data.sem2_id})
+    db.session.expire_all()
+    assert db.session.get(Student, data.student_id).semester_id == data.sem2_id
+    assert statuses(app, data) == before
+
+
+def test_a_student_moved_out_before_the_lock_is_judged_in_their_new_class(app, data, held, client_for):
+    post(client_for(data.principal), f'/students/edit/{data.student_id}', {
+        'name': 'Rahul Das', 'roll_no': 'MCA001', 'email': data.student, 'department_id': data.mca_id,
+        'semester_id': data.sem2_id})
+    post(client_for(data.hod), f'/semesters/{data.sem1_id}/lock')
+    assert 'MCA001' not in statuses(app, data) and 'MCA002' in statuses(app, data)
