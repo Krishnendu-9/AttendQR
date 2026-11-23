@@ -50,7 +50,10 @@ AttendQR/
       main.py           Dashboards; /healthz for container health checks
       academics.py      Departments, semesters, subjects, teachers
       groups.py         A class's groups and their members (/semesters/<id>/groups)
-      routine.py        Calendar (bell schedules, holidays), class routines and their editor, My routine, one-date changes
+      routine/          The class routine, one blueprint in four modules: schedules.py (Calendar: bell schedules,
+                        holidays), drafts.py (class routines, the editor, publishing, printing, import),
+                        views.py (My routine, a class's week), changes.py (starting a class, one-date changes,
+                        extra classes); common.py holds who may see or edit what
       students.py       Student records, import, password and device resets, leaving the college
       attendance/       QR attendance, one blueprint: sessions.py (/generate_qr, corrections, spot checks) and
                         scan.py (the student's /scan, /attend, /mark_attendance)

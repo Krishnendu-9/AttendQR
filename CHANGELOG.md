@@ -78,6 +78,8 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   (`services/sessions.py`).
 - The attendance routes are split into the teacher's (`sessions.py`) and the student's (`scan.py`);
   URLs and endpoint names are unchanged.
+- The routine routes are split by area (schedules, drafts, views, changes); URLs and endpoint names
+  are unchanged.
 
 ### Added
 
