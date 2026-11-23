@@ -28,6 +28,9 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - Leave decisions checked only the lock of the student's current semester, so approving or reopening
   leave for the last weeks of a semester they had just been promoted out of changed its locked
   records. Every semester the leave days fall in is now checked.
+- Changing a student's email moved their login without telling anyone. The page now says the student
+  signs in with the new address, the activity log records the change, and failed sign-ins counted
+  under the old address are cleared.
 
 ### Security
 

@@ -118,3 +118,24 @@ def test_component_gallery_only_in_debug_mode(app, data, client_for):
         app.debug = False
     assert response.status_code == 200
     assert 'Present (marked by staff)' in response.get_data(as_text=True)
+
+
+def test_changing_a_students_email_moves_their_login_and_says_so(app, data, client_for):
+    from attendqr.models import LoginThrottle, User
+    from conftest import login
+
+    for _ in range(2):
+        login(app.test_client(), data.student, 'wrong-pass1', expect_success=False)
+    assert LoginThrottle.query.filter_by(username=data.student).count()
+
+    response = post(client_for(data.principal), f'/students/edit/{data.student_id}', {
+        'name': 'Rahul Das', 'roll_no': 'MCA001', 'email': 'rahul.das@example.com',
+        'department_id': data.mca_id, 'semester_id': data.sem1_id,
+    }, follow_redirects=True)
+    assert 'They now sign in with rahul.das@example.com' in response.get_data(as_text=True)
+    db.session.expire_all()
+    assert User.query.filter_by(student_id=data.student_id).one().username == 'rahul.das@example.com'
+    assert LoginThrottle.query.filter_by(username=data.student).count() == 0
+    entry = ActivityLog.query.filter_by(action='student_updated').one()
+    assert f'login changed from {data.student} to rahul.das@example.com' in entry.description
+    login(app.test_client(), 'rahul.das@example.com')

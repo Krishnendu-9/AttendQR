@@ -386,16 +386,26 @@ def edit(id):
     if error or values is None:
         return _save_failed(error, student)
     old_class = (student.department_id, student.semester_id)
+    account = User.query.filter_by(student_id=student.id).first()
+    old_login = account.username if account else None
     for key, value in values.items():
         setattr(student, key, value)
     # Keeps the student in the old class's reports for the sessions held before the move.
     record_class_change(student, *old_class)
     temporary_password = ensure_student_account(student)
-    log_activity('student_updated', f"Updated student profile '{student.name}' ({student.roll_no}).", 'student', student.id, student.department_id)
+    login_moved = old_login is not None and old_login != student.email
+    description = f"Updated student profile '{student.name}' ({student.roll_no})."
+    if login_moved:
+        # The login follows the email. Failed sign-ins counted under the old address no longer apply.
+        clear_login_failures(old_login)
+        description += f" Their login changed from {old_login} to {student.email}."
+    log_activity('student_updated', description, 'student', student.id, student.department_id)
     db.session.commit()
     if temporary_password:
         return _one_time_password_page(student, temporary_password, 'Login created',
                                        f"Updated {student.name} and created a login with a temporary password.")
+    if login_moved:
+        flash(f"Updated {student.name}. They now sign in with {student.email} (same password); tell them.", "success")
     else:
         flash(f"Updated {student.name}.", "success")
     return back_to_list()
