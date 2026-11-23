@@ -27,7 +27,8 @@ AttendQR/
       integrity.py      The integrity report: failed checks, buddy pairs, new phones, manual entries
       eligibility.py    Exam eligibility and condonation
       audit.py          The hash-chained activity log: sealing and `flask verify-audit`
-      locks.py          Locked semesters
+      locks.py          Locked semesters: the checks routes make, and the guard on every database flush that
+                        refuses any change to a locked semester's records
       two_factor.py     Two-step sign-in (TOTP) and recovery codes
       roster.py         Student login accounts and bulk import
       spreadsheet.py    Reading an uploaded .xlsx safely (defusedxml), for the student and routine imports

@@ -99,9 +99,10 @@ def create_app(overrides=None):
         app.register_blueprint(blueprint)
 
     from . import observability
-    from .services import audit
+    from .services import audit, locks
     observability.init_app(app)
     audit.init_app(app)
+    locks.init_app(app)
     _register_request_hooks(app)
     _register_error_pages(app)
     register_scan_ip_purge(app)

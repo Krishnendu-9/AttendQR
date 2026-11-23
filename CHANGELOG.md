@@ -58,6 +58,9 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   psycopg 3.3.9.
 - `SCAN_IP_RETENTION_DAYS` is read like the other whole-number settings: a value such as `off` stops
   the app from starting with a clear message.
+- A guard on every database write refuses any change to a locked semester's attendance, sessions,
+  spot checks, leave, students or counted subjects, so a page that forgot its own check cannot change
+  them.
 
 ### Added
 

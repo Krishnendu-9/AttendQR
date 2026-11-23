@@ -73,7 +73,7 @@ Each rule has tests. What is *not* covered, such as registering a friend's phone
 - **Analytics.** The weekly class rate against the target, each subject's rate, and the students slipping in the last two weeks. Server-rendered SVG charts with tooltips and a table view.
 - **Integrity.** Spot checks during class, and a report that explains each flag: failed spot checks, buddy pairs, repeated new phones, frequent manual entries.
 - **Exam eligibility.** Eligible, needs condonation or detained against configurable limits (75% and 65% by default), condonation with a reason, and an Excel export.
-- **Final records.** A semester's attendance can be locked after exams, and the activity log is tamper-evident.
+- **Final records.** A semester's attendance can be locked after exams, and the database itself refuses any change to a locked semester's records. The activity log is tamper-evident.
 - **Students who change classes.** A student moved out stays in their old class's reports for the sessions they were part of, and a student added or moved in late is not marked absent for the classes held before they joined. One counting rule serves the dashboard, every report and the shortage list.
 - **Settings in the app.** The Principal sets the institution's name, the attendance target, the eligibility percentages, the time zone, the working days, the first day of the week, and the words the app uses ("Course", "Batch", "Director"). The server's values are the defaults, and security settings never move to the page.
 - **Accounts.** Two-step sign-in with any authenticator app (required for Principal and HOD), random one-time passwords, forced password changes, brute-force throttling per device, and every session signed out on a password change.
