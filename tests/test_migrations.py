@@ -630,3 +630,33 @@ def test_student_left_migration_round_trip(app, data):
     upgrade()
     with db.engine.connect() as connection:
         assert connection.exec_driver_sql('SELECT COUNT(*) FROM student WHERE left_at IS NOT NULL').scalar() == 0
+
+
+def test_leave_window_migration_fills_approved_leave(app, data):
+    """0030 adds the stored window and fills it for approved leave from the zone set now; down drops it."""
+    from datetime import date, datetime
+
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from attendqr.models import LeaveRequest
+
+    for status in (LeaveRequest.APPROVED, LeaveRequest.PENDING):
+        db.session.add(LeaveRequest(student_id=data.student_id if status == 'approved' else data.student2_id,
+                                    start_date=date(2026, 3, 2), end_date=date(2026, 3, 3), kind='medical',
+                                    reason='Fever', status=status))
+    db.session.commit()
+    db.session.remove()
+    downgrade(revision='0029_student_left')
+    with db.engine.connect() as connection:
+        assert 'starts_at' not in {c['name'] for c in sa.inspect(connection).get_columns('leave_request')}
+    upgrade()
+    with db.engine.connect() as connection:
+        rows = dict(connection.execute(sa.text(
+            "SELECT status, starts_at FROM leave_request")).all())
+        ends = connection.execute(sa.text("SELECT ends_at FROM leave_request WHERE status = 'approved'")).scalar()
+    def as_datetime(value):
+        return value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    assert as_datetime(rows['approved']) == datetime(2026, 3, 1, 18, 30)  # 2 March in Asia/Kolkata
+    assert as_datetime(ends) == datetime(2026, 3, 3, 18, 30)
+    assert rows['pending'] is None

@@ -159,8 +159,9 @@ SETTINGS = {spec.key: spec for spec in (
                 'reason. Below it a student is detained.',
                 'percent', 'CONDONATION_PERCENT', _percent(1, 100)),
     SettingSpec('timezone', 'Time zone', 'calendar',
-                ('Times are stored in UTC and shown in this zone. "Today", report dates and leave days follow it. '
-                 'Set it before classes start: changing it later moves past leave days and report dates too.'),
+                ('Times are stored in UTC and shown in this zone. "Today", report dates and the days of new leave '
+                 'follow it. Changing it later moves report date filters, but approved leave keeps the classes '
+                 'it excused, so past percentages do not change.'),
                 'timezone', 'TIMEZONE', _timezone),
     SettingSpec('working_days', 'Working days', 'calendar',
                 'The days classes can be held. The class routine will use them.',

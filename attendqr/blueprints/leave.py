@@ -6,6 +6,7 @@ from sqlalchemy.orm import joinedload
 from ..access import can_access_student, department_filter, is_principal, log_activity, role_required, user_role
 from ..extensions import db
 from ..models import LeaveRequest, Student
+from ..services import leave as leave_rules
 from ..services.leave import (
     MAX_NOTE_LENGTH,
     describe_range,
@@ -126,7 +127,10 @@ def decide(id):
         flash(f"Keep the note under {MAX_NOTE_LENGTH} characters.", 'danger')
         return redirect(url_for('leave.index'))
 
-    leave.status = LeaveRequest.APPROVED if decision == 'approve' else LeaveRequest.REJECTED
+    if decision == 'approve':
+        leave_rules.approve(leave)
+    else:
+        leave.status = LeaveRequest.REJECTED
     leave.decided_by_user_id = current_user.id
     leave.decided_at = utc_now()
     leave.decision_note = note or None
@@ -170,8 +174,7 @@ def reopen(id):
         return redirect(url_for('leave.index'))
 
     previous = leave.status
-    leave.status = LeaveRequest.PENDING
-    leave.decided_by_user_id = leave.decided_at = leave.decision_note = None
+    leave_rules.reopen(leave)
     log_activity('leave_reopened',
                  f"Reopened {leave.kind_label.lower()} leave for {student.name} ({student.roll_no}): "
                  f"{describe_range(leave)}, which was {previous}. Reason: {note}",

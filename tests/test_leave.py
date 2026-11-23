@@ -301,3 +301,44 @@ def test_a_student_can_send_only_a_few_requests_a_week_withdrawn_ones_included(d
     response = request_leave(student, today() + timedelta(days=40))
     assert 'the most allowed' in page(response)
     assert LeaveRequest.query.count() == 0
+
+
+def test_approved_leave_keeps_its_classes_when_the_time_zone_changes(data, client_for):
+    """Approval fixes the leave's window, so a later time zone change cannot move it onto other classes."""
+    from datetime import datetime
+
+    from attendqr.models import InstitutionSetting
+    from attendqr.services.leave import LeaveWindows
+    from attendqr.services.settings import forget_cached
+
+    day = today() - timedelta(days=2)
+    leave = LeaveRequest(student_id=data.student_id, start_date=day, end_date=day, kind='medical', reason='Fever')
+    db.session.add(leave)
+    db.session.commit()
+    post(client_for(data.hod), f'/leave/{leave.id}/decide', {'decision': 'approve'})
+    db.session.expire_all()
+    # Asia/Kolkata is UTC+5:30: the day runs from 18:30 UTC the evening before.
+    start = datetime.combine(day - timedelta(days=1), datetime.min.time()) + timedelta(hours=18, minutes=30)
+    assert (leave.starts_at, leave.ends_at) == (start, start + timedelta(days=1))
+
+    late_evening = start + timedelta(days=1, minutes=30)  # 19:00 UTC: past midnight in Kolkata, the next day
+    db.session.add(InstitutionSetting(key='timezone', value='"UTC"'))
+    db.session.commit()
+    forget_cached()
+    assert not LeaveWindows([data.student_id]).excused(data.student_id, late_evening)
+    # Leave approved before windows were stored follows the zone set now, as it always did.
+    leave.starts_at = leave.ends_at = None
+    db.session.commit()
+    assert LeaveWindows([data.student_id]).excused(data.student_id, late_evening)
+
+
+def test_reopening_clears_the_window_until_it_is_approved_again(data, client_for):
+    leave = LeaveRequest(student_id=data.student_id, start_date=today(), end_date=today(), kind='medical',
+                         reason='Fever')
+    db.session.add(leave)
+    db.session.commit()
+    hod = client_for(data.hod)
+    post(hod, f'/leave/{leave.id}/decide', {'decision': 'approve'})
+    post(hod, f'/leave/{leave.id}/reopen', {'note': 'Approved by mistake'})
+    db.session.expire_all()
+    assert leave.status == LeaveRequest.PENDING and leave.starts_at is None and leave.ends_at is None

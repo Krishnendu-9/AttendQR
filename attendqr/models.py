@@ -411,6 +411,11 @@ class LeaveRequest(db.Model):
     )
     decided_at = db.Column(db.DateTime, nullable=True)
     decision_note = db.Column(db.String(200), nullable=True)
+    # The leave as stored (UTC) times, [starts_at, ends_at): fixed from the dates when it is approved,
+    # in the college's time zone then, so a later time zone change does not move the classes it
+    # excuses. NULL unless approved (services/leave.py).
+    starts_at = db.Column(db.DateTime, nullable=True)
+    ends_at = db.Column(db.DateTime, nullable=True)
 
     student = db.relationship('Student', backref=db.backref('leave_requests', cascade='all, delete-orphan'))
     decided_by = db.relationship('User', foreign_keys=[decided_by_user_id])

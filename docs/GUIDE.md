@@ -176,7 +176,7 @@ The Principal changes institution-wide options on **Settings**. A college that c
 - **Institution name**: shown in the sidebar, page titles, the sign-in page and exported reports (in Excel, on printed pages and as the first note; in PDF, above the title). Empty shows only "AttendQR".
 - **Attendance target** (80%): the percentage students are warned against on their dashboard, the shortage list's starting threshold, and the line in analytics.
 - **Exam eligibility** (75%) and **condonation limit** (65%): the bands of the eligibility report. The condonation limit cannot be above the eligibility percentage.
-- **Time zone** (Asia/Kolkata): times are shown in it, and "today", report dates and leave days follow it. Set it before classes start: changing it later moves past leave days and report dates as well.
+- **Time zone** (Asia/Kolkata): times are shown in it, and "today", report dates and the days of new leave follow it. Changing it later moves report date filters, but approved leave keeps the classes it excused (its window is fixed when it is approved), so past percentages do not change.
 - **Working days** (Monday to Saturday; Sunday can be added): the days classes can be held, for the class routine.
 - **First day of the week** (Monday): where weeks begin in analytics, the integrity report, and odd and even weeks in the routine. Changing it during a term can swap which weeks are odd and even in published routines, past weeks included.
 

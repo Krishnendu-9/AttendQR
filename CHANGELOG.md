@@ -39,6 +39,9 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   session, and a second submission opens it. Migration `0028_session_create_token`.
 - Starting an extra class from the routine twice at the same moment created two sessions, and the
   second took the class from the first. It now gives one session.
+- Changing the time zone in Settings moved approved leave by hours, which could change past
+  percentages. Approval now fixes the leave's window, and leave approved earlier gets the window it has
+  now. Migration `0030_leave_window`.
 
 ### Security
 

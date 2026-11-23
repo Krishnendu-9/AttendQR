@@ -28,6 +28,24 @@ MAX_REQUESTS_PER_PERIOD = 5
 REQUEST_LIMIT_DAYS = 7
 
 
+def window_for(start_date, end_date):
+    """Leave days as stored (UTC) times [start, end), in the college's time zone now."""
+    return local_day_start_utc(start_date), local_day_start_utc(end_date + timedelta(days=1))
+
+
+def approve(leave):
+    """Mark the leave approved, fixing its window now (see LeaveRequest.starts_at)."""
+    leave.status = LeaveRequest.APPROVED
+    leave.starts_at, leave.ends_at = window_for(leave.start_date, leave.end_date)
+
+
+def reopen(leave):
+    """The leave waits for a decision again; an approval decided again fixes its window again."""
+    leave.status = LeaveRequest.PENDING
+    leave.starts_at = leave.ends_at = None
+    leave.decided_by_user_id = leave.decided_at = leave.decision_note = None
+
+
 class LeaveWindows:
     """Approved leave of some students, as UTC [start, end) windows matching stored timestamps."""
 
@@ -36,12 +54,14 @@ class LeaveWindows:
         ids = list(student_ids)
         if not ids:
             return
-        rows = db.session.query(LeaveRequest.student_id, LeaveRequest.start_date, LeaveRequest.end_date).filter(
-            LeaveRequest.student_id.in_(ids), LeaveRequest.status == LeaveRequest.APPROVED,
-        )
-        for student_id, start, end in rows:
+        rows = db.session.query(
+            LeaveRequest.student_id, LeaveRequest.start_date, LeaveRequest.end_date,
+            LeaveRequest.starts_at, LeaveRequest.ends_at,
+        ).filter(LeaveRequest.student_id.in_(ids), LeaveRequest.status == LeaveRequest.APPROVED)
+        for student_id, start, end, starts_at, ends_at in rows:
+            # The window fixed at approval; one approved before it was stored follows the zone now.
             self._windows[student_id].append(
-                (local_day_start_utc(start), local_day_start_utc(end + timedelta(days=1)))
+                (starts_at, ends_at) if starts_at and ends_at else window_for(start, end)
             )
 
     def __bool__(self):

@@ -46,6 +46,7 @@ from ..models import (
 from ..schema import discard_used_initial_password
 from ..utils import local_now, local_to_utc, normalize_email, utc_now
 from .audit import seal_pending
+from .leave import approve as approve_leave
 from .settings import forget_cached
 
 DEFAULT_DEMO_PASSWORD = 'AttendQR@demo1'  # noqa: S105 - published on purpose; demo accounts only
@@ -390,7 +391,7 @@ def _add_leave_requests(students, hod, today):
     requests = [
         LeaveRequest(student_id=weakest.id, kind='medical', start_date=ten_days_ago,
                      end_date=ten_days_ago + timedelta(days=2), reason="Viral fever; doctor's certificate emailed",
-                     status=LeaveRequest.APPROVED, decided_by_user_id=hod.id,
+                     decided_by_user_id=hod.id,
                      decided_at=utc_now() - timedelta(days=8), decision_note='Certificate received'),
         LeaveRequest(student_id=waiting.id, kind='duty', start_date=today + timedelta(days=2),
                      end_date=today + timedelta(days=3), reason='Representing the college at the inter-college hackathon'),
@@ -399,6 +400,7 @@ def _add_leave_requests(students, hod, today):
                      status=LeaveRequest.REJECTED, decided_by_user_id=hod.id,
                      decided_at=utc_now() - timedelta(days=21), decision_note='Not covered by the leave policy'),
     ]
+    approve_leave(requests[0])
     for leave in requests:
         leave.created_at = utc_now() - timedelta(days=22)
     db.session.add_all(requests)
