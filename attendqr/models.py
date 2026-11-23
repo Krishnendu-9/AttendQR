@@ -268,6 +268,8 @@ class ClassSession(db.Model):
         db.Index('ix_class_session_group_id', 'group_id'),
         # One session per class occurrence in the routine (NULLs allowed many times).
         db.Index('uq_class_session_occurrence', 'timetable_entry_id', 'occurrence_date', unique=True),
+        # One session per submitted Generate form, so a double click or a resent form opens the first.
+        db.Index('uq_class_session_create_token', 'create_token', unique=True),
     )
     id = db.Column(db.Integer, primary_key=True)
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id', ondelete='CASCADE'), nullable=False)
@@ -286,6 +288,8 @@ class ClassSession(db.Model):
         nullable=True,
     )
     occurrence_date = db.Column(db.Date, nullable=True)
+    # The one-time token of the Generate form that created it (attendance._create_session); NULL otherwise.
+    create_token = db.Column(db.String(32), nullable=True)
     subject = db.relationship('Subject', backref=db.backref('sessions', lazy=True))
     teacher = db.relationship('Teacher', backref=db.backref('sessions', lazy=True))
     group = db.relationship('ClassGroup')

@@ -592,3 +592,22 @@ def test_data_constraints_migration_round_trip(app, data, caplog):
         connection.exec_driver_sql("UPDATE user_account SET role = 'janitor' WHERE username = 'ravi@college.example'")
         connection.exec_driver_sql("UPDATE user_account SET role = 'teacher' WHERE username = 'ravi@college.example'")
     upgrade()
+
+
+def test_session_create_token_migration_round_trip(app, data):
+    """0028 adds class_session.create_token with a unique index; down drops it and keeps the sessions."""
+    from flask_migrate import downgrade, upgrade
+
+    from attendqr.extensions import db
+    from conftest import add_session
+
+    add_session(data)
+    db.session.remove()
+    downgrade(revision='0027_data_constraints')
+    with db.engine.connect() as connection:
+        assert 'create_token' not in {c['name'] for c in sa.inspect(connection).get_columns('class_session')}
+        assert connection.exec_driver_sql('SELECT COUNT(*) FROM class_session').scalar() == 1
+    upgrade()
+    with db.engine.connect() as connection:
+        indexes = {index['name']: index for index in sa.inspect(connection).get_indexes('class_session')}
+        assert indexes['uq_class_session_create_token']['unique']

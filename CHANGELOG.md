@@ -34,6 +34,9 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - Promoting a class after its semester was locked (the usual order: exams, lock, promotion) removed
   every promoted student from the locked semester's exam eligibility and analytics. A locked semester
   now keeps everyone who was in it when it was locked.
+- A double click on Generate, or the browser sending the form again, started a second session for
+  the same class, and everyone who scanned only one was absent in the other. Each form now starts one
+  session, and a second submission opens it. Migration `0028_session_create_token`.
 
 ### Security
 

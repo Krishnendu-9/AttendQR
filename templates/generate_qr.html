@@ -250,6 +250,8 @@
 {% call card('New session', 'Students scan the code with their own phone to mark attendance.', icon_name='qr-code') %}
 <form method="POST" action="{{ url_for('attendance.generate_qr') }}">
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  {#- One per form shown: a double click or a resent form opens the session the first submission made. -#}
+  <input type="hidden" name="create_token" value="{{ create_token }}">
   <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
     {{ select_input('class_mode', 'Class type', [('regular', 'Regular class'), ('special', 'Special class')], id='class_mode',
                     hint='Special classes (workshops, aptitude) need no subject.') }}

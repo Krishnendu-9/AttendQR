@@ -248,3 +248,44 @@ def test_special_class_without_teacher(data, client_for):
                                    special_title='Aptitude <Workshop> & Q&A', subject_id='')
     assert class_session.special_title == 'Aptitude <Workshop> & Q&A'
     assert class_session.teacher_id is None
+
+
+def test_a_generate_form_sent_twice_opens_the_first_session(data, client_for):
+    """A double click, or the browser sending the form again, must not hold the class twice."""
+    import re
+
+    teacher = client_for(data.teacher)
+    token = re.search(r'name="create_token" value="([0-9a-f]{32})"',
+                      teacher.get('/generate_qr').get_data(as_text=True)).group(1)
+    form = {'class_mode': 'regular', 'department_id': data.mca_id, 'semester_id': data.sem1_id,
+            'subject_id': data.subject_id, 'duration': 30, 'create_token': token}
+    first = post(teacher, '/generate_qr', form)
+    second = post(teacher, '/generate_qr', form)
+    assert ClassSession.query.count() == 1
+    assert first.headers['Location'] == second.headers['Location']
+
+    # Another form (a new token), or one without a token, is another class.
+    post(teacher, '/generate_qr', {**form, 'create_token': uuid.uuid4().hex})
+    post(teacher, '/generate_qr', {key: value for key, value in form.items() if key != 'create_token'})
+    assert ClassSession.query.count() == 3
+
+
+def test_someone_elses_token_opens_nothing_of_theirs(data, client_for):
+    """The HOD of another department sends a token they saw: they get their own session, not a way in."""
+    from attendqr.models import Subject
+
+    first = ClassSession(subject_id=data.subject_id, expires_at=utc_now() + timedelta(minutes=30),
+                         create_token='a' * 32)
+    db.session.add(first)
+    db.session.commit()
+    other_subject = Subject(name='Maths', department_id=data.other_id, semester_id=data.other_sem_id,
+                            teacher_id=Teacher.query.filter_by(email='ravi@college.example').one().id)
+    db.session.add(other_subject)
+    db.session.commit()
+    ravi = client_for(data.other_teacher)
+    response = post(ravi, '/generate_qr', {
+        'class_mode': 'regular', 'department_id': data.other_id, 'semester_id': data.other_sem_id,
+        'subject_id': other_subject.id, 'duration': 30, 'create_token': 'a' * 32})
+    created = ClassSession.query.filter_by(subject_id=other_subject.id).one()
+    assert response.headers['Location'].endswith(f'session_id={created.id}')
+    assert created.create_token is None

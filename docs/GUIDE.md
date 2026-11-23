@@ -50,7 +50,7 @@ Deleting a whole session erases its attendance records. A session nobody marked 
 
 ### Special Classes
 
-The Generate QR page also supports special classes (aptitude, workshops). Teacher selection is optional, and a custom title can be entered.
+The Generate QR page also supports special classes (aptitude, workshops). Teacher selection is optional, and a custom title can be entered. Each Generate form starts one session: a double click, or the browser sending the form again, opens the session it already started instead of holding the class twice.
 
 ## Subject options
 

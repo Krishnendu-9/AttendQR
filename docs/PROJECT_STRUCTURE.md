@@ -56,7 +56,7 @@ AttendQR/
       accounts.py       Staff account management (/accounts)
       settings.py       The Principal's Settings page (/settings)
       api.py            JSON endpoints used by the pages (/api/...)
-  migrations/           Alembic environment and versions (Flask-Migrate), 0001_baseline to 0027_data_constraints
+  migrations/           Alembic environment and versions (Flask-Migrate), 0001_baseline to 0028_session_create_token
   templates/            Jinja2 templates (see "Frontend" below)
     layouts/            app.html (sidebar, header, content) and auth.html (sign in, errors)
     components/         Shared macros (ui.html, forms.html), navigation (nav.html), shell parts, Lucide icons

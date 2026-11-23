@@ -1,3 +1,5 @@
+import re
+import secrets
 from datetime import timedelta
 
 from flask import (
@@ -135,6 +137,7 @@ def generate_qr():
         session_counts=attendance_counts([s.id for s in recent_sessions]),
         unscheduled=unscheduled_ids(recent_sessions),
         current_teacher=current_user.teacher if user_role() == 'teacher' else None,
+        create_token=secrets.token_hex(16),
     )
 
 
@@ -201,8 +204,29 @@ def _absent_students(class_session):
     ]
 
 
+_CREATE_TOKEN = re.compile(r'^[0-9a-f]{32}$')
+
+
+def _form_create_token():
+    """The Generate form's one-time token, or None (an older form, or a request made by hand)."""
+    token = request.form.get('create_token', '')
+    return token if _CREATE_TOKEN.fullmatch(token) else None
+
+
+def _session_created_with(token):
+    """The session an earlier submission of this form created, or None."""
+    return ClassSession.query.filter_by(create_token=token).first() if token else None
+
+
 def _create_session():
     cfg = current_app.config
+    # A double click, or the browser sending the form again, opens the session the first one made.
+    token = _form_create_token()
+    existing = _session_created_with(token)
+    if existing is not None:
+        if can_access_session(existing):
+            return redirect(url_for('attendance.generate_qr', session_id=existing.id))
+        token = None  # someone else's token, sent again by hand: it opens nothing of theirs
     class_mode = request.form.get('class_mode', 'regular')
     department_id = parse_int_value(request.form.get('department_id'))
     semester_id = parse_int_value(request.form.get('semester_id'))
@@ -271,6 +295,7 @@ def _create_session():
             created_at=now,
             expires_at=now + timedelta(minutes=duration),
             group_id=group.id if group else None,
+            create_token=token,
         )
         db.session.add(class_session)
         db.session.flush()
@@ -286,8 +311,12 @@ def _create_session():
         try:
             db.session.commit()
         except IntegrityError:
-            # Someone linked a session to that routine class at the same moment: keep this one unlinked.
             db.session.rollback()
+            # The same form sent twice at once: open the session the other request made.
+            existing = _session_created_with(token)
+            if existing is not None and can_access_session(existing):
+                return redirect(url_for('attendance.generate_qr', session_id=existing.id))
+            # Someone linked a session to that routine class at the same moment: keep this one unlinked.
             continue
         return redirect(url_for('attendance.generate_qr', session_id=class_session.id))
     abort(500)
