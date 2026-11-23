@@ -29,6 +29,7 @@ AttendQR/
       audit.py          The hash-chained activity log: sealing and `flask verify-audit`
       locks.py          Locked semesters: the checks routes make, and the guard on every database flush that
                         refuses any change to a locked semester's records
+      sessions.py       Starting a QR session (from the Generate form or the routine) and who is absent from one
       two_factor.py     Two-step sign-in (TOTP) and recovery codes
       roster.py         Student login accounts and bulk import
       spreadsheet.py    Reading an uploaded .xlsx safely (defusedxml), for the student and routine imports

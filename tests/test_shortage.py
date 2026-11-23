@@ -5,8 +5,8 @@ import io
 import openpyxl
 import pytest
 
-from attendqr.blueprints.attendance import get_or_create_special_subject
 from attendqr.services.reports import parse_threshold
+from attendqr.services.sessions import get_or_create_special_subject
 from conftest import add_session
 
 

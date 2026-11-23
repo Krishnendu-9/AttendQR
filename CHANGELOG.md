@@ -74,6 +74,8 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   them.
 - Students can no longer be added to, or moved into, a locked semester. The Students page and the
   import say why.
+- Starting a session from the Generate form and from the routine share one service
+  (`services/sessions.py`).
 
 ### Added
 

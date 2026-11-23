@@ -1,21 +1,17 @@
 """The class routine: the Calendar page (bell schedules, holidays) and each class's routine and its editor."""
 from datetime import timedelta
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
-from sqlalchemy.exc import IntegrityError
 
 from ..access import (
     SPECIAL_CLASS_SUBJECT_NAME,
     can_access_department,
     current_department_id,
-    current_teacher_id,
     is_principal,
     log_activity,
     ordered_departments_query,
-    own_teacher_profile,
     role_required,
-    session_display_name,
     subject_display_name,
     taught_classes,
     user_role,
@@ -25,7 +21,6 @@ from ..extensions import db
 from ..models import (
     STAFF_ROLES,
     BellSchedule,
-    ClassSession,
     Holiday,
     RoutineChange,
     Semester,
@@ -46,7 +41,7 @@ from ..services.changes import (
 )
 from ..services.groups import class_groups
 from ..services.locks import semester_lock_error
-from ..services.occurrences import find, link_session, occurrences
+from ..services.occurrences import find, occurrences
 from ..services.reports import render_excel
 from ..services.routine import (
     PATTERNS,
@@ -76,9 +71,9 @@ from ..services.routine import (
 )
 from ..services.routine import week_start as routine_week_start
 from ..services.routine_import import import_rows, read_rows, template_rows
+from ..services.sessions import SessionError, start_routine_session
 from ..services.settings import WEEKDAYS, get_setting, institution_name
 from ..utils import local_now, natural_key, normalize_text, utc_now
-from .attendance import get_or_create_special_subject
 
 bp = Blueprint('routine', __name__)
 
@@ -601,50 +596,11 @@ def start_occurrence():
     if not occurrence.can_start(now):
         flash("A session can be started from 15 minutes before the class until it ends.", 'warning')
         return _back(url_for('main.dashboard'))
-    cfg = current_app.config
-    minutes_left = int((occurrence.ends_at - now).total_seconds() // 60) + 1
-    duration = min(max(minutes_left, cfg['MIN_QR_DURATION']), cfg['MAX_QR_DURATION'])
-    if occurrence.subject is not None:
-        subject, special_title = occurrence.subject, None
-    else:
-        subject = get_or_create_special_subject(occurrence.semester.department_id, occurrence.semester.id)
-        special_title = occurrence.title
-    # The session's teacher: whoever starts it, if they teach this class (a teacher, or an HOD who
-    # also teaches); for an HOD starting someone else's class, its first teacher.
-    own = own_teacher_profile()
-    if own is not None and any(t.id == own.id for t in occurrence.teachers):
-        teacher_id = own.id
-    elif user_role() == 'teacher':
-        teacher_id = current_teacher_id()
-    else:
-        teacher_id = occurrence.teachers[0].id if occurrence.teachers else None
-    started = utc_now()
-    class_session = ClassSession(subject_id=subject.id, special_title=special_title, teacher_id=teacher_id,
-                                 group_id=occurrence.group.id if occurrence.group else None,
-                                 created_at=started, expires_at=started + timedelta(minutes=duration))
-    db.session.add(class_session)
-    db.session.flush()
-    if not link_session(class_session, occurrence):
-        # An extra class someone started at the same moment: open theirs instead.
-        db.session.rollback()
-        occurrence = find(request.form.get('key', ''))
-        if occurrence is None or occurrence.session is None:
-            flash("This class was started from another screen at the same moment. Open it from Today's classes.",
-                  'warning')
-            return _back(url_for('main.dashboard'))
-        return redirect(url_for('attendance.generate_qr', session_id=occurrence.session.id))
-    log_activity('qr_session_created', f"Generated QR session for '{session_display_name(class_session)}' from the "
-                 f"routine ({occurrence.day:%d %b} {clock(occurrence.start_time)}).",
-                 'class_session', class_session.id, occurrence.semester.department_id)
     try:
-        db.session.commit()
-    except IntegrityError:
-        # A co-teacher started it at the same moment: open theirs.
-        db.session.rollback()
-        occurrence = find(request.form.get('key', ''))
-        if occurrence is None or occurrence.session is None:
-            raise
-        return redirect(url_for('attendance.generate_qr', session_id=occurrence.session.id))
+        class_session = start_routine_session(occurrence)
+    except SessionError as exc:
+        flash(str(exc), 'warning')
+        return _back(url_for('main.dashboard'))
     return redirect(url_for('attendance.generate_qr', session_id=class_session.id))
 
 

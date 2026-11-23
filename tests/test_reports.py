@@ -200,7 +200,7 @@ def test_pdf_with_few_sessions_is_one_page():
 
 def test_detailed_report_percentage_matches_the_dashboard_with_special_classes(app, data, client_for):
     """Special classes appear in the matrix but, as on the dashboard, do not change the percentage."""
-    from attendqr.blueprints.attendance import get_or_create_special_subject
+    from attendqr.services.sessions import get_or_create_special_subject
 
     special = get_or_create_special_subject(data.mca_id, data.sem1_id)
     db.session.commit()

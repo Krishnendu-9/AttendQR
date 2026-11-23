@@ -1,6 +1,4 @@
-import re
 import secrets
-from datetime import timedelta
 
 from flask import (
     Blueprint,
@@ -20,29 +18,23 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from ..access import (
-    SPECIAL_CLASS_SUBJECT_NAME,
-    can_access_department,
     can_access_session,
-    can_access_subject,
-    can_access_teacher,
-    current_teacher_id,
     log_activity,
     ordered_departments_query,
     role_required,
     session_display_name,
-    subject_display_name,
     user_role,
     visible_sessions_query,
 )
 from ..extensions import db
-from ..models import Attendance, ClassGroup, ClassSession, Semester, SpotCheck, Student, Subject, Teacher
+from ..models import Attendance, ClassSession, SpotCheck, Student, Subject
 from ..observability import count_scan
 from ..security import is_safe_redirect_target
-from ..services.enrollment import class_roster, was_in_class
-from ..services.groups import GroupRosters, current_members, describe_group, may_attend
-from ..services.locks import semester_lock_error, session_lock_error
+from ..services.enrollment import was_in_class
+from ..services.groups import describe_group, may_attend
+from ..services.locks import session_lock_error
 from ..services.network import client_ip, scan_network_error
-from ..services.occurrences import link_session, matching_occurrence, unscheduled_ids
+from ..services.occurrences import unscheduled_ids
 from ..services.qr import (
     DEVICE_TAKEN_MESSAGE,
     build_scan_url,
@@ -61,6 +53,7 @@ from ..services.qr import (
 )
 from ..services.reports import attendance_counts
 from ..services.retention import scan_ip_recording_enabled
+from ..services.sessions import SessionError, SessionForbidden, SessionRequest, absent_students, start_session
 from ..services.spot_checks import (
     FAILED_CHECK_NOTE,
     SPOT_CHECK_SIZE,
@@ -76,21 +69,6 @@ bp = Blueprint('attendance', __name__)
 
 # Deleting a session that has attendance erases those records, so it is kept from teachers.
 SESSION_DELETE_WITH_ATTENDANCE_ROLES = ('principal', 'hod')
-
-
-def get_or_create_special_subject(department_id, semester_id):
-    subject = Subject.query.filter_by(
-        department_id=department_id,
-        semester_id=semester_id,
-        name=SPECIAL_CLASS_SUBJECT_NAME,
-    ).first()
-    if subject:
-        return subject
-    subject = Subject(name=SPECIAL_CLASS_SUBJECT_NAME, paper_code=None,
-                      department_id=department_id, semester_id=semester_id)
-    db.session.add(subject)
-    db.session.flush()
-    return subject
 
 
 def _redirect_after_session_action():
@@ -166,7 +144,7 @@ def _render_session(class_session_id):
         scan_url=scan_url,
         duration=int((class_session.expires_at - class_session.created_at).total_seconds() // 60),
         attendance_records=attendance_records,
-        absent_students=_absent_students(class_session),
+        absent_students=absent_students(class_session),
         refresh_seconds=current_app.config['QR_REFRESH_SECONDS'],
         spot_checks=checks_for(class_session),
         spot_check_open=spot_check_open(class_session),
@@ -177,150 +155,14 @@ def _render_session(class_session_id):
     )
 
 
-def _absent_students(class_session):
-    """Students who were in the session's class (and group) when it was held and have no attendance entry for it.
-
-    Includes students moved to another class since, so an old session can still be corrected,
-    students added to the session's group since, and current students who joined the class after
-    it (staff may mark them present for a class they attended before their account existed).
-    """
-    subject = class_session.subject
-    marked = {
-        student_id for (student_id,) in
-        db.session.query(Attendance.student_id).filter(Attendance.session_id == class_session.id)
-    }
-    group_id = class_session.group_id
-    rosters = GroupRosters([group_id])
-    members_now = {student.id for student in current_members(group_id)} if group_id is not None else set()
-
-    def in_group(student):
-        return (group_id is None or student.id in members_now
-                or rosters.is_member(student.id, group_id, class_session.created_at))
-
-    return [
-        member.student for member in class_roster(subject.department_id, subject.semester_id)
-        if member.student.id not in marked and (member.is_current or member.in_class(class_session.created_at))
-        and in_group(member.student)
-    ]
-
-
-_CREATE_TOKEN = re.compile(r'^[0-9a-f]{32}$')
-
-
-def _form_create_token():
-    """The Generate form's one-time token, or None (an older form, or a request made by hand)."""
-    token = request.form.get('create_token', '')
-    return token if _CREATE_TOKEN.fullmatch(token) else None
-
-
-def _session_created_with(token):
-    """The session an earlier submission of this form created, or None."""
-    return ClassSession.query.filter_by(create_token=token).first() if token else None
-
-
 def _create_session():
-    cfg = current_app.config
-    # A double click, or the browser sending the form again, opens the session the first one made.
-    token = _form_create_token()
-    existing = _session_created_with(token)
-    if existing is not None:
-        if can_access_session(existing):
-            return redirect(url_for('attendance.generate_qr', session_id=existing.id))
-        token = None  # someone else's token, sent again by hand: it opens nothing of theirs
-    class_mode = request.form.get('class_mode', 'regular')
-    department_id = parse_int_value(request.form.get('department_id'))
-    semester_id = parse_int_value(request.form.get('semester_id'))
-    subject_id = parse_int_value(request.form.get('subject_id'))
-    teacher_id = parse_int_value(request.form.get('teacher_id'))
-    special_title = normalize_text(request.form.get('special_title'))
-    duration = parse_int_value(request.form.get('duration'))
-    group_id = parse_int_value(request.form.get('group_id'))
-
-    if duration is None or not cfg['MIN_QR_DURATION'] <= duration <= cfg['MAX_QR_DURATION']:
-        return _form_error(f"Duration must be between {cfg['MIN_QR_DURATION']} and {cfg['MAX_QR_DURATION']} minutes.")
-    if not department_id or not semester_id:
-        return _form_error("Department and semester are required.")
-    if not can_access_department(department_id):
+    try:
+        class_session = start_session(SessionRequest.from_form(request.form))
+    except SessionForbidden:
         abort(403)
-    semester = db.session.get(Semester, semester_id)
-    if not semester or semester.department_id != department_id:
-        return _form_error("The selected semester does not belong to the selected department.")
-    if semester_lock_error(semester):
-        return _form_error(semester_lock_error(semester))
-    group = None
-    if group_id:
-        group = db.session.get(ClassGroup, group_id)
-        if not group or group.semester_id != semester.id:
-            return _form_error("The selected group does not belong to the selected semester.")
-
-    if class_mode == 'special':
-        if not special_title:
-            return _form_error("Enter the special class details.")
-        if len(special_title) > 200:
-            return _form_error("Special class details must be at most 200 characters.")
-        subject = get_or_create_special_subject(department_id, semester_id)
-    else:
-        if not subject_id:
-            return _form_error("Select a subject.")
-        subject = db.session.get(Subject, subject_id)
-        if not subject or subject.department_id != department_id or subject.semester_id != semester_id:
-            return _form_error("The selected subject does not belong to the selected semester.")
-        if not can_access_subject(subject):
-            abort(403)
-        special_title = None
-        if user_role() != 'teacher' and subject.teacher_id and not teacher_id:
-            teacher_id = subject.teacher_id
-
-    if user_role() == 'teacher':
-        teacher_id = current_teacher_id()
-    elif teacher_id:
-        teacher = db.session.get(Teacher, teacher_id)
-        if not teacher or teacher.department_id != subject.department_id:
-            return _form_error("The selected teacher does not belong to this department.")
-        if not can_access_teacher(teacher):
-            abort(403)
-    elif class_mode != 'special':
-        return _form_error("Select a teacher for regular classes.")
-
-    # A session started by hand that matches a class under way in the routine (same class, subject
-    # and group) holds that class. Otherwise it is "Unscheduled" where the class has a routine.
-    occurrence = matching_occurrence(semester.id, subject.id, group.id if group else None) \
-        if class_mode != 'special' else None
-    for link in ((True, False) if occurrence else (False,)):
-        now = utc_now()
-        class_session = ClassSession(
-            subject_id=subject.id,
-            special_title=special_title,
-            teacher_id=teacher_id,
-            created_at=now,
-            expires_at=now + timedelta(minutes=duration),
-            group_id=group.id if group else None,
-            create_token=token,
-        )
-        db.session.add(class_session)
-        db.session.flush()
-        if link and not link_session(class_session, occurrence):
-            db.session.rollback()  # another session holds that extra class already: keep this one unlinked
-            continue
-        log_activity(
-            'qr_session_created',
-            f"Generated QR session for '{special_title or subject_display_name(subject)}'"
-            + (f" for {group.name}" if group else "")
-            + (" (the routine class)." if link else "."),
-            'class_session', class_session.id, department_id,
-        )
-        try:
-            db.session.commit()
-        except IntegrityError:
-            db.session.rollback()
-            # The same form sent twice at once: open the session the other request made.
-            existing = _session_created_with(token)
-            if existing is not None and can_access_session(existing):
-                return redirect(url_for('attendance.generate_qr', session_id=existing.id))
-            # Someone linked a session to that routine class at the same moment: keep this one unlinked.
-            continue
-        return redirect(url_for('attendance.generate_qr', session_id=class_session.id))
-    abort(500)
+    except SessionError as exc:
+        return _form_error(str(exc))
+    return redirect(url_for('attendance.generate_qr', session_id=class_session.id))
 
 
 def _session_for_action(id):
