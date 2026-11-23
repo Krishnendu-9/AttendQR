@@ -76,6 +76,8 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   import say why.
 - Starting a session from the Generate form and from the routine share one service
   (`services/sessions.py`).
+- The attendance routes are split into the teacher's (`sessions.py`) and the student's (`scan.py`);
+  URLs and endpoint names are unchanged.
 
 ### Added
 

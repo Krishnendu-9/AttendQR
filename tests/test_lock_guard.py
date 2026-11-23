@@ -94,7 +94,7 @@ def test_what_does_not_change_the_records_is_still_allowed(app, data, locked):
 
 
 def test_a_route_that_forgets_the_check_is_stopped_with_the_usual_message(data, locked, client_for, monkeypatch):
-    from attendqr.blueprints import attendance
+    from attendqr.blueprints.attendance import sessions as attendance
 
     class_session, _, _ = locked
     monkeypatch.setattr(attendance, 'session_lock_error', lambda class_session: None)

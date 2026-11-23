@@ -52,7 +52,8 @@ AttendQR/
       groups.py         A class's groups and their members (/semesters/<id>/groups)
       routine.py        Calendar (bell schedules, holidays), class routines and their editor, My routine, one-date changes
       students.py       Student records, import, password and device resets, leaving the college
-      attendance.py     QR sessions (/generate_qr) and the student scan flow (/scan, /attend, /mark_attendance)
+      attendance/       QR attendance, one blueprint: sessions.py (/generate_qr, corrections, spot checks) and
+                        scan.py (the student's /scan, /attend, /mark_attendance)
       reports.py        Reports, detailed view, exports, analytics, integrity, exam eligibility
       leave.py          Leave requests: students apply, the HOD or Principal decides (/leave)
       accounts.py       Staff account management (/accounts)
