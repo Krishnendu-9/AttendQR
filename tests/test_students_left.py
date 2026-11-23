@@ -126,3 +126,15 @@ def test_students_who_left_before_the_lock_stay_out_of_it(data, client_for, app)
     db.session.commit()
     with app.test_request_context():
         assert {row['student'].id for row in build_eligibility(data.mca_id, data.sem1_id).rows} == {data.student2_id}
+
+
+def test_the_students_list_shows_current_students_unless_asked(data, client_for):
+    hod = client_for(data.hod)
+    mark_left(hod, data.student_id)
+    rahul, priya = f'data-href="/students/{data.student_id}"', f'data-href="/students/{data.student2_id}"'
+    current = page(hod.get('/students'))
+    assert rahul not in current and priya in current
+    left = page(hod.get('/students?status=left'))
+    assert rahul in left and priya not in left and 'Left the college' in left
+    everyone = page(hod.get('/students?status=all'))
+    assert rahul in everyone and priya in everyone

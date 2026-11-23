@@ -85,6 +85,8 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   records stay, their time in the class ends that day, and they leave the Students list, the shortage
   list and exam eligibility; their login is turned off. **Restore** brings them back from that
   moment. Migration `0029_student_left`.
+- A filter on the Students list for current students (the default), those who have left, or
+  everyone.
 
 ## [1.0.0] - 2026-11-18
 

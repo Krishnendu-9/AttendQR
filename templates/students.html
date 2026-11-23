@@ -4,7 +4,7 @@
 {% set page_title = 'Students' %}
 {% set can_manage = current_user.role in ['principal', 'hod'] %}
 {% set list_url = url_for('students.index', page=page.page if page.page > 1 else None, **filter_args) %}
-{% set filter_count = (1 if filters.department_id else 0) + (1 if filters.semester_id else 0) %}
+{% set filter_count = (1 if filters.department_id else 0) + (1 if filters.semester_id else 0) + (1 if filters.status else 0) %}
 {% set show_department = departments|length > 1 %}
 
 {#- Row actions: Edit, account resets, then Delete in red. -#}
@@ -108,6 +108,12 @@
                 <label for="filter-semester" class="mb-1.5 block text-label-md text-muted-foreground">{{ term('semester') }}</label>
                 {% call select_control('semester_id', 'filter-semester', placeholder='All semesters', attrs={'@change': 'submit'}) %}
                   {% for s in filter_semesters %}<option value="{{ s.id }}"{% if filters.semester_id == s.id %} selected{% endif %}>{{ s.name }}{% if not filters.department_id and show_department %} ({{ s.department.display_name }}){% endif %}</option>{% endfor %}
+                {% endcall %}
+              </div>
+              <div>
+                <label for="filter-status" class="mb-1.5 block text-label-md text-muted-foreground">Students</label>
+                {% call select_control('status', 'filter-status', placeholder='Current students', attrs={'@change': 'submit'}) %}
+                  {% for value, label in statuses.items() %}<option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
                 {% endcall %}
               </div>
             </div>

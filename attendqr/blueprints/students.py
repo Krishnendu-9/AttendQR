@@ -51,12 +51,17 @@ bp = Blueprint('students', __name__)
 MAX_DELETE_REASON_LENGTH = 200
 
 
+# Which students the list shows besides current ones; None (the default) is current students only.
+STUDENT_STATUSES = {'left': 'Left the college', 'all': 'Everyone'}
+
 
 def student_filters():
+    status = request.args.get('status')
     return {
         'q': normalize_text(request.args.get('q'))[:100],
         'department_id': request.args.get('department_id', type=int),
         'semester_id': request.args.get('semester_id', type=int),
+        'status': status if status in STUDENT_STATUSES else None,
     }
 
 
@@ -256,7 +261,10 @@ def index():
         query = query.filter(Student.department_id == filters['department_id'])
     if filters['semester_id']:
         query = query.filter(Student.semester_id == filters['semester_id'])
-    query = query.filter(Student.left_at.is_(None))
+    if filters['status'] is None:
+        query = query.filter(Student.left_at.is_(None))
+    elif filters['status'] == 'left':
+        query = query.filter(Student.left_at.isnot(None))
     if filters['q']:
         like = f"%{filters['q'].lower()}%"
         query = query.filter(or_(
@@ -280,6 +288,7 @@ def index():
         filters=filters,
         filter_args={key: value for key, value in filters.items() if value},
         total_students=visible_students_query().filter(Student.left_at.is_(None)).count(),
+        statuses=STUDENT_STATUSES,
         departments=ordered_departments_query().all(),
         filter_semesters=sort_semesters(semesters.all()),
     )
