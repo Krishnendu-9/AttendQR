@@ -66,6 +66,11 @@ def test_leave_students_and_subjects_cannot_change(data, locked):
     refused(lambda: setattr(leave, 'status', LeaveRequest.APPROVED))
     refused(lambda: db.session.delete(db.session.get(Student, data.student_id)))
     refused(lambda: setattr(db.session.get(Subject, data.subject_id), 'counts_towards_attendance', False))
+    # Joining a locked class, new or moved in.
+    refused(lambda: db.session.add(Student(name='New', roll_no='MCA099', email='new@example.com',
+                                           department_id=data.mca_id, semester_id=data.sem1_id)))
+    sem2_student = Student.query.filter_by(roll_no='MCA201').one()
+    refused(lambda: setattr(sem2_student, 'semester_id', data.sem1_id))
 
 
 def test_what_does_not_change_the_records_is_still_allowed(app, data, locked):
@@ -102,3 +107,17 @@ def test_a_route_that_forgets_the_check_is_stopped_with_the_usual_message(data, 
     assert 'is locked' in html.unescape(hod.get(response.headers['Location']).get_data(as_text=True))
     db.session.expire_all()
     assert Attendance.query.filter_by(session_id=class_session.id).count() == 1
+
+
+def test_students_cannot_be_added_to_a_locked_semester(data, locked, client_for):
+    hod = client_for(data.hod)
+    response = post(hod, '/students', {'name': 'New Student', 'roll_no': 'MCA050', 'email': 'new@example.com',
+                                       'department_id': data.mca_id, 'semester_id': data.sem1_id},
+                    follow_redirects=True)
+    assert 'cannot be added to a locked semester' in html.unescape(response.get_data(as_text=True))
+    response = post(hod, f'/students/edit/{db.session.query(Student.id).filter_by(roll_no="MCA201").scalar()}', {
+        'name': 'Late Joiner', 'roll_no': 'MCA201', 'email': 'late@example.com',
+        'department_id': data.mca_id, 'semester_id': data.sem1_id,
+    }, follow_redirects=True)
+    assert 'cannot be added to a locked semester' in html.unescape(response.get_data(as_text=True))
+    assert Student.query.filter_by(semester_id=data.sem1_id).count() == 2

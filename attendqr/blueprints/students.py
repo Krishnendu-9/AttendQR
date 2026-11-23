@@ -34,7 +34,7 @@ from ..security import (
 )
 from ..services.enrollment import record_class_change
 from ..services.groups import student_groups
-from ..services.locks import student_lock_error
+from ..services.locks import semester_lock_error, student_lock_error
 from ..services.reports import build_student_attendance_summary
 from ..services.roster import (
     ensure_student_account,
@@ -188,6 +188,16 @@ def _not_found():
     return render_template('students/not_found.html'), 404
 
 
+def _joining_lock_error(values, student=None):
+    """Why the student cannot join the chosen class because it is locked, or None. Staying in a
+    locked class (editing a name, say) is fine; joining one would add a row to its final reports."""
+    if student is not None and (student.department_id, student.semester_id) == (values['department_id'],
+                                                                                  values['semester_id']):
+        return None
+    error = semester_lock_error(db.session.get(Semester, values['semester_id']))
+    return f"Students cannot be added to a locked semester. {error}" if error else None
+
+
 def _duplicate_error(values, student=None):
     roll_match = Student.query.filter(
         Student.roll_no == values['roll_no'],
@@ -215,7 +225,7 @@ def _duplicate_error(values, student=None):
 def index():
     if request.method == 'POST':
         values, error = _student_form()
-        error = error or _duplicate_error(values)
+        error = error or _duplicate_error(values) or _joining_lock_error(values)
         if error:
             return _save_failed(error)
         # Sessions the class held before today are not the new student's (services/counting.py).
@@ -382,7 +392,7 @@ def edit(id):
     if not can_access_student(student):
         abort(403)
     values, error = _student_form()
-    error = error or _duplicate_error(values, student)
+    error = error or _duplicate_error(values, student) or _joining_lock_error(values, student)
     if error or values is None:
         return _save_failed(error, student)
     old_class = (student.department_id, student.semester_id)

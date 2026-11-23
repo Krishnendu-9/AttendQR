@@ -61,6 +61,8 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - A guard on every database write refuses any change to a locked semester's attendance, sessions,
   spot checks, leave, students or counted subjects, so a page that forgot its own check cannot change
   them.
+- Students can no longer be added to, or moved into, a locked semester. The Students page and the
+  import say why.
 
 ### Added
 

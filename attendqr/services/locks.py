@@ -4,7 +4,8 @@ The HOD or the Principal locks a semester (typically after exams); only the Prin
 can unlock it, with a reason. Both are in the tamper-evident activity log. While it is
 locked, no session can be started, changed or deleted, nobody can scan into one, no
 attendance can be added or removed (spot checks included), no leave can be decided
-that falls in it, and none of its students (current or former) can be deleted.
+that falls in it, no student can be added to it, and none of its students (current or
+former) can be deleted.
 
 Two layers enforce it. Routes check first, with the helpers below, so people get a
 message that fits what they tried. Underneath, a guard on every database flush
@@ -141,6 +142,10 @@ def _leave_error(leave, new, deleted):
 def _student_error(student, new, deleted):
     if deleted:
         return student_lock_error(student)
+    # Joining a locked class would add a row to its final reports. Leaving one is fine: the class
+    # history keeps the student in it for the sessions held while they were there.
+    if new or _changed(student) & {'department_id', 'semester_id'}:
+        return _semester_error(student.semester_id)
     return None
 
 

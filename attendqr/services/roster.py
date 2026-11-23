@@ -203,6 +203,9 @@ def import_students_from_rows(rows):
         if user_role() == 'teacher' and (department.id, semester.id) not in taught_classes():
             errors.append(f"Row {index}: {semester.name} is not a class you teach")
             continue
+        if semester.attendance_locked:
+            errors.append(f"Row {index}: {semester.name} is locked, so students cannot be added to it")
+            continue
 
         roll_key = (roll_no, department.id, semester.id)
         if roll_key in seen_rolls:
