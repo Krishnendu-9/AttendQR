@@ -1,5 +1,6 @@
 """The tamper-evident activity log, and locking a semester's attendance."""
 import html
+from datetime import timedelta
 
 from attendqr.extensions import db
 from attendqr.models import ActivityLog, AuditChain, LeaveRequest, Semester, SpotCheck, Student, User
@@ -208,3 +209,30 @@ def test_a_student_moved_out_of_a_locked_semester_cannot_be_deleted(data, client
     post(client_for(data.hod), f'/students/delete/{data.student2_id}')
     db.session.expire_all()
     assert db.session.get(Student, data.student2_id) is None
+
+
+def test_leave_in_a_semester_the_student_left_cannot_be_decided_once_it_is_locked(data, client_for):
+    data.principal_client = client_for(data.principal)
+    today = local_now().date()
+    in_old_class = LeaveRequest(student_id=data.student2_id, start_date=today - timedelta(days=3),
+                                end_date=today - timedelta(days=2), kind='medical', reason='Fever')
+    after_the_move = LeaveRequest(student_id=data.student2_id, start_date=today + timedelta(days=2),
+                                  end_date=today + timedelta(days=2), kind='personal', reason='Wedding')
+    approved_before = LeaveRequest(student_id=data.student2_id, start_date=today - timedelta(days=6),
+                                   end_date=today - timedelta(days=6), kind='medical', reason='Fever',
+                                   status=LeaveRequest.APPROVED)
+    db.session.add_all([in_old_class, after_the_move, approved_before])
+    db.session.commit()
+    move_to_sem2(data, data.student2_id)
+    hod = client_for(data.hod)
+    lock(hod, data)  # Semester 1; the student is in Semester 2 now, which is open
+
+    assert 'is locked' in page(post(hod, f'/leave/{in_old_class.id}/decide', {'decision': 'approve'},
+                                    follow_redirects=True))
+    assert 'is locked' in page(post(hod, f'/leave/{approved_before.id}/reopen', {'note': 'Approved by mistake'},
+                                    follow_redirects=True))
+    # Leave that starts after the move only touches the open semester.
+    post(hod, f'/leave/{after_the_move.id}/decide', {'decision': 'approve'})
+    db.session.expire_all()
+    assert (in_old_class.status, approved_before.status, after_the_move.status) == (
+        LeaveRequest.PENDING, LeaveRequest.APPROVED, LeaveRequest.APPROVED)

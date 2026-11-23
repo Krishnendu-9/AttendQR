@@ -4,10 +4,11 @@ The HOD or the Principal locks a semester (typically after exams); only the Prin
 can unlock it, with a reason. Both are in the tamper-evident activity log. While it is
 locked, no session can be started, changed or deleted, nobody can scan into one, no
 attendance can be added or removed (spot checks included), no leave can be decided
-for its students, and none of its students (current or former) can be deleted.
+that falls in it, and none of its students (current or former) can be deleted.
 """
 from ..extensions import db
 from ..models import Semester, StudentClassHistory
+from ..utils import local_day_start_utc
 
 
 def semester_lock_error(semester):
@@ -48,3 +49,8 @@ def student_lock_error(student, since=None):
         if error:
             return error
     return None
+
+
+def leave_lock_error(leave):
+    """Why a decision on this leave would change a locked semester, or None (see student_lock_error)."""
+    return student_lock_error(leave.student, since=local_day_start_utc(leave.start_date))

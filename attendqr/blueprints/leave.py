@@ -13,7 +13,7 @@ from ..services.leave import (
     parse_leave_form,
     recent_requests_error,
 )
-from ..services.locks import semester_lock_error
+from ..services.locks import leave_lock_error
 from ..utils import normalize_text, utc_now
 
 bp = Blueprint('leave', __name__)
@@ -115,7 +115,7 @@ def decide(id):
     if leave.status != LeaveRequest.PENDING:
         flash("This request has already been decided.", 'warning')
         return redirect(url_for('leave.index'))
-    lock_error = semester_lock_error(leave.student.semester)
+    lock_error = leave_lock_error(leave)
     if lock_error:
         flash(lock_error, 'warning')
         return redirect(url_for('leave.index'))
@@ -152,7 +152,7 @@ def reopen(id):
         flash("This request is still waiting for a decision.", 'warning')
         return redirect(url_for('leave.index'))
     student = leave.student
-    lock_error = semester_lock_error(student.semester)
+    lock_error = leave_lock_error(leave)
     if lock_error:
         flash(lock_error, 'warning')
         return redirect(url_for('leave.index'))

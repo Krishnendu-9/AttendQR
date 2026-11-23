@@ -25,6 +25,9 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   deleted from their own page, with a reason that is logged with the number of records erased.
 - A student of a locked semester could be deleted, erasing part of its final records. A student of a
   locked semester, now or before a move, can no longer be deleted.
+- Leave decisions checked only the lock of the student's current semester, so approving or reopening
+  leave for the last weeks of a semester they had just been promoted out of changed its locked
+  records. Every semester the leave days fall in is now checked.
 
 ### Security
 
