@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import or_
+from sqlalchemy import or_, update
 
 from ..extensions import db
 from ..models import ClassSession, Holiday, RoutineChange, Timetable, TimetableEntry
@@ -307,12 +307,24 @@ def matching_occurrence(semester_id, subject_id, group_id, now=None):
 
 
 def link_session(class_session, occurrence):
-    """Record that the session holds the occurrence."""
+    """Record that the session holds the occurrence. Returns False if another session already does.
+
+    A routine class is held once by its unique (entry, date) index: a second link fails on commit.
+    An extra class keeps its session on the change, so it is claimed only while that is still
+    empty; otherwise two sessions started at the same moment would each overwrite the other.
+    """
     if occurrence.entry is not None:
         class_session.timetable_entry_id = occurrence.entry.id
         class_session.occurrence_date = occurrence.original_day
-    else:
-        occurrence.change.session_id = class_session.id
+        return True
+    claimed = db.session.execute(
+        update(RoutineChange)
+        .where(RoutineChange.id == occurrence.change.id, RoutineChange.session_id.is_(None))
+        .values(session_id=class_session.id)
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    db.session.expire(occurrence.change, ['session_id'])
+    return bool(claimed)
 
 
 def unscheduled_ids(sessions):

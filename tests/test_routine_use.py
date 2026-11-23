@@ -27,7 +27,7 @@ from attendqr.services.reports import (
     build_shortage_report,
     build_student_attendance_summary,
 )
-from attendqr.utils import local_now, local_to_utc
+from attendqr.utils import local_now, local_to_utc, utc_now
 from conftest import make_account, post
 
 ALL_DAYS = (0, 1, 2, 3, 4, 5, 6)
@@ -490,3 +490,23 @@ def test_a_replacement_routine_cannot_start_in_the_past(app, data):
     draft, _ = start_draft(semester, user)
     previous = publish(draft, today, user)
     assert previous.effective_to == today - timedelta(days=1)
+
+
+def test_an_extra_class_is_held_by_one_session_only(data, client_for, every_day, now):
+    """Two Start clicks at once: the second session finds the extra class taken and opens the first."""
+    from attendqr.services.occurrences import link_session
+
+    start = at((now - timedelta(minutes=5)).time())
+    end = at((now + timedelta(minutes=30)).time())
+    post(client_for(data.hod), f'/routine/class/{data.sem1_id}/extra', {
+        'date': now.date().isoformat(), 'start_time': start.strftime('%H:%M'), 'end_time': end.strftime('%H:%M'),
+        'subject_id': data.subject2_id, 'reason': 'Make-up class'})
+    extra = today_occurrence(data)
+    first = ClassSession(subject_id=data.subject2_id, expires_at=utc_now() + timedelta(minutes=30))
+    second = ClassSession(subject_id=data.subject2_id, expires_at=utc_now() + timedelta(minutes=30))
+    db.session.add_all([first, second])
+    db.session.flush()
+    assert link_session(first, extra) is True
+    assert link_session(second, extra) is False
+    db.session.commit()
+    assert RoutineChange.query.one().session_id == first.id

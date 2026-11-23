@@ -37,6 +37,8 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - A double click on Generate, or the browser sending the form again, started a second session for
   the same class, and everyone who scanned only one was absent in the other. Each form now starts one
   session, and a second submission opens it. Migration `0028_session_create_token`.
+- Starting an extra class from the routine twice at the same moment created two sessions, and the
+  second took the class from the first. It now gives one session.
 
 ### Security
 

@@ -299,8 +299,9 @@ def _create_session():
         )
         db.session.add(class_session)
         db.session.flush()
-        if link:
-            link_session(class_session, occurrence)
+        if link and not link_session(class_session, occurrence):
+            db.session.rollback()  # another session holds that extra class already: keep this one unlinked
+            continue
         log_activity(
             'qr_session_created',
             f"Generated QR session for '{special_title or subject_display_name(subject)}'"

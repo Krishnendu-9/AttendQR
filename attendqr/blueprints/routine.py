@@ -624,7 +624,15 @@ def start_occurrence():
                                  created_at=started, expires_at=started + timedelta(minutes=duration))
     db.session.add(class_session)
     db.session.flush()
-    link_session(class_session, occurrence)
+    if not link_session(class_session, occurrence):
+        # An extra class someone started at the same moment: open theirs instead.
+        db.session.rollback()
+        occurrence = find(request.form.get('key', ''))
+        if occurrence is None or occurrence.session is None:
+            flash("This class was started from another screen at the same moment. Open it from Today's classes.",
+                  'warning')
+            return _back(url_for('main.dashboard'))
+        return redirect(url_for('attendance.generate_qr', session_id=occurrence.session.id))
     log_activity('qr_session_created', f"Generated QR session for '{session_display_name(class_session)}' from the "
                  f"routine ({occurrence.day:%d %b} {clock(occurrence.start_time)}).",
                  'class_session', class_session.id, occurrence.semester.department_id)
