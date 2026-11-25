@@ -10,7 +10,7 @@ python -m venv venv
 Copy-Item .env.example .env   # optional; every setting has a default
 ```
 
-`requirements.lock` pins exact versions. `requirements.txt` lists the direct dependencies with compatible ranges.
+`requirements.lock` pins exact versions, each with the hashes of its files, so pip checks every download. `requirements.txt` lists the direct dependencies with compatible ranges.
 
 You do not need to set `SECRET_KEY`. On first start AttendQR generates a private key and stores it in `instance/secret_key`. If `SECRET_KEY` is set to a published placeholder value, the app refuses to start outside debug mode.
 
@@ -44,7 +44,7 @@ docker compose up -d --build
 - **`APP_BASE_URL` is required.** Inside a container the app cannot detect the host's LAN IP, so compose refuses to start without it. Other settings are read from `.env` if it exists.
 - **Data:** the SQLite database and the generated secret key live in the `attendqr-data` volume. `docker compose down --volumes` deletes them.
 - **First login:** `docker compose exec attendqr cat /app/instance/initial_principal_password` shows the Principal's one-time password (see [Initial Login](#initial-login)).
-- **What runs:** `run.py` under waitress, as a non-root user, with only the packages in `requirements.lock`. `/healthz` checks the database, and the container reports healthy once it answers.
+- **What runs:** `run.py` under waitress, as a non-root user, with only the packages in `requirements.lock` (installed with `--require-hashes`). `/healthz` checks the database, and the container reports healthy once it answers.
 - **Client addresses:** on Docker Desktop (Windows and macOS), and on Linux whenever Docker's userland proxy handles a connection, the app sees every client as the Docker gateway (for example `172.22.0.1`). `SCAN_ALLOWED_NETWORKS` then cannot tell campus from anywhere else: with the default ranges, everyone looks like a LAN client. Scan IP addresses in the session view will also all be the same. On a Linux server, published ports normally keep the real client address. Behind a reverse proxy, set `TRUSTED_PROXY_COUNT` so the forwarded address is used instead. Either way, [check the app sees real client addresses](#check-the-app-sees-real-client-addresses) before relying on them.
 
 CI builds the image, starts it with compose, waits for the health check, and runs [scripts/docker_smoke.py](../scripts/docker_smoke.py) against it. The script walks one QR attendance flow end to end: Principal first login and forced password change, class setup, QR session, student scan, login, password change, mark, and the Principal seeing the entry.

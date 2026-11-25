@@ -101,7 +101,7 @@ Each rule has tests. What is *not* covered, such as registering a friend's phone
 
 ## Engineering
 
-- **Tests.** pytest, with each test on its own database built by the real migrations. CI runs them on Python 3.11 to 3.14 and on PostgreSQL, and runs browser tests (Playwright) of the QR class flow with an axe-core accessibility check in both themes. It also runs a migration-versus-model check on both databases, pyright, ruff (including bandit's security rules), a coverage floor, `pip-audit` on the pinned dependencies, and a Docker smoke test that walks the attendance flow against the built image.
+- **Tests.** pytest, with each test on its own database built by the real migrations. CI runs them on Python 3.11 to 3.14 and on PostgreSQL, and runs browser tests (Playwright) of the QR class flow with an axe-core accessibility check in both themes. It also runs a migration-versus-model check on both databases, pyright, ruff (including bandit's security rules), a coverage floor, `pip-audit` on the pinned, hash-checked dependencies, and a Docker smoke test that walks the attendance flow against the built image.
 - **Migrations.** Alembic, with tests that upgrade and downgrade with data in place, and an automatic upgrade path for databases created before migrations existed.
 - **Time.** Stored in UTC and shown in the college's time zone (set on the Settings page, starting from `TIMEZONE`).
 - **Security.** Two-step sign-in (TOTP, each code usable once, secrets encrypted at rest), CSRF on every form, a CSP with no inline scripts or styles, signed QR tokens, network allowlisting that fails closed, an HMAC-chained activity log, and a 30-day retention for scan IP addresses. See the [threat model](docs/THREAT_MODEL.md).

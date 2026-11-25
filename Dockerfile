@@ -10,9 +10,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Exact versions from the lock file; no test or lint tools.
+# Exact versions from the lock file, each download checked against its hash; no test or lint tools.
 COPY requirements.lock .
-RUN pip install -r requirements.lock
+RUN pip install --require-hashes -r requirements.lock
 
 COPY attendqr ./attendqr
 COPY migrations ./migrations

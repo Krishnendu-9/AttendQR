@@ -86,6 +86,7 @@ AttendQR/
   Dockerfile            Production image: lock-file dependencies, non-root, waitress via run.py
   compose.yaml          Runs the image with a data volume; requires APP_BASE_URL
   scripts/docker_smoke.py  End-to-end QR attendance check that CI runs against the image
+  scripts/lock_hashes.py  Adds the published files' hashes to each pin in requirements.lock (--check in CI)
   scripts/load_test.py  A whole class through the attendance flow against the real server, with latency percentiles
   docs/                 DEPLOYMENT.md, GUIDE.md, THREAT_MODEL.md, RBAC.md, media/ (the README GIFs)
   scripts/tailwind.py   Builds static/css/app.css with the pinned Tailwind standalone CLI (no Node.js);
@@ -145,6 +146,6 @@ QR images are generated in memory and are never written to disk.
 ## Dependencies
 
 - `requirements.txt`: direct dependencies with compatible version ranges
-- `requirements.lock`: every package pinned, for reproducible installs and CI
+- `requirements.lock`: every package pinned with its hashes, for reproducible, checked installs and CI
 - `requirements-dev.txt`: test and lint tools
 - `pyproject.toml`: project metadata and pytest settings; reads its dependencies from `requirements.txt`

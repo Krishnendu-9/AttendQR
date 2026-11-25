@@ -59,6 +59,9 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   are stored lower case (roll numbers upper case), unless that would clash, so sign-in compares them
   directly. Migration `0027_data_constraints`, which stops with a list of rows to correct if any break
   a constraint.
+- `requirements.lock` carries the hashes of every published file of each pin, so pip refuses a
+  download that differs; the Docker image installs with `--require-hashes`, and CI checks every pin
+  has hashes (`python scripts/lock_hashes.py --check`).
 
 ### Changed
 

@@ -32,4 +32,5 @@ CI runs `pip-audit` against `requirements.lock` on every push, on every pull req
 - The audit is a separate job, so a newly published advisory shows up as "Dependency audit" failing, not as failed tests.
 - **Updates.** Dependabot (`.github/dependabot.yml`) opens weekly pull requests for newer versions of the Python
   packages, the pinned GitHub Actions and the Docker base image (pinned to a digest). After merging a Python one,
-  regenerate `requirements.lock` as its header describes.
+  regenerate `requirements.lock` as its header describes, ending with `python scripts/lock_hashes.py`: every pin
+  carries the hashes of its files, and CI fails if one does not.

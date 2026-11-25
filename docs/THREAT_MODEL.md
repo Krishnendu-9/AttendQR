@@ -90,7 +90,7 @@ operator detail.
 
 ### Supply chain
 
-- Exact versions in `requirements.lock`, audited by `pip-audit` on every push and weekly.
+- Exact versions in `requirements.lock`, each with the hashes of its published files, so pip refuses a download that differs (the Docker image installs with `--require-hashes`). Audited by `pip-audit` on every push and weekly.
 - GitHub Actions pinned to commit SHAs.
 - Alpine.js, htmx, fonts and icons are vendored, not loaded from a CDN.
 - The Tailwind binary is checked against its published SHA-256.

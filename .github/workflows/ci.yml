@@ -24,6 +24,9 @@ jobs:
       with:
         python-version: "3.13"
 
+    - name: Check every pin in requirements.lock has hashes
+      run: python scripts/lock_hashes.py --check
+
     - name: Install pip-audit
       run: python -m pip install pip-audit==2.10.1
 
