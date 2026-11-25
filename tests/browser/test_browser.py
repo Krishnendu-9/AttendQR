@@ -21,6 +21,7 @@ from werkzeug.serving import make_server
 
 from attendqr import create_app
 from attendqr.extensions import db
+from attendqr.models import RoutineChange
 from attendqr.services.demo import DEFAULT_DEMO_PASSWORD, seed_demo
 
 pytestmark = pytest.mark.browser
@@ -35,6 +36,8 @@ STUDENT_NAME = 'Chocolate'
 FAILING_IMPACTS = ('serious', 'critical')
 # Long enough for the QR page's refresh (every QR_REFRESH_SECONDS, 10 by default) to notice.
 LIVE_UPDATE_TIMEOUT_MS = 25_000
+# Dates in the demo that the page paths below refer to, filled in by live_server.
+DEMO_DATES = {}
 
 
 @pytest.fixture(scope='module')
@@ -55,6 +58,8 @@ def live_server(tmp_path_factory):
     })
     with app.app_context():
         seed_demo(DEFAULT_DEMO_PASSWORD, weeks=1)
+        # The demo cancels a class on its next date, 1 to 7 days ahead: this week or the next.
+        DEMO_DATES['cancelled'] = RoutineChange.query.filter_by(kind=RoutineChange.CANCEL).one().date.isoformat()
         db.session.remove()
 
     server = make_server('127.0.0.1', 0, app, threaded=True)
@@ -154,15 +159,17 @@ def serious_violations(page: Page):
     return lines
 
 
+# My routine is checked on the week of the demo's cancelled class, so a cancelled class is on the page
+# whatever day the tests run (on this week's page it showed only on some days of the week).
 PAGES = [
     (None, '/login'),
     (STUDENT, '/'),
     (STUDENT, '/leave'),
-    (STUDENT, '/routine/me'),
+    (STUDENT, '/routine/me?week={cancelled}'),
     (TEACHER, '/'),
     (TEACHER, '/generate_qr'),
     (TEACHER, '/students'),
-    (TEACHER, '/routine/me'),
+    (TEACHER, '/routine/me?week={cancelled}'),
     (HOD, '/'),
     (HOD, '/leave'),
     (HOD, '/reports'),
@@ -182,9 +189,13 @@ def test_pages_have_no_serious_accessibility_problems(live_server, browser, user
     page = context.new_page()
     if username:
         sign_in(page, live_server, username)
+    shows_cancelled = '{cancelled}' in path
+    path = path.format(**DEMO_DATES)
     response = page.goto(f'{live_server}{path}')
     assert response is not None and response.ok, f'{path} answered {response and response.status}'
     page.wait_for_load_state('networkidle')
+    if shows_cancelled:
+        assert page.locator('.line-through').count(), f'{path}: the cancelled class is not on the page'
     problems = serious_violations(page)
     context.close()
     assert not problems, f'{path} ({theme}):\n' + '\n'.join(problems)

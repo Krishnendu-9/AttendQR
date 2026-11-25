@@ -42,6 +42,10 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - Changing the time zone in Settings moved approved leave by hours, which could change past
   percentages. Approval now fixes the leave's window, and leave approved earlier gets the window it has
   now. Migration `0030_leave_window`.
+- Cancelled classes in My routine and Today's classes were faded, which took their grey text below
+  WCAG AA contrast. They are now crossed out and badged at full contrast, with the darker grey on the
+  grey block in the week grid. The browser tests check My routine on the week of the demo's cancelled
+  class, so the check no longer passes or fails with the day of the week it runs.
 
 ### Security
 
