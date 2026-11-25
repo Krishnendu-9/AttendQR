@@ -19,7 +19,7 @@ from ...models import (
 from ...services.routine import (
     RoutineError,
     clock,
-    parse_day,
+    new_holiday,
     parse_periods,
     save_schedule,
     visible_schedules,
@@ -136,22 +136,15 @@ def delete_schedule(id):
 @role_required(*MANAGERS)
 def add_holiday():
     department_id = _scope_from_form()
-    title = normalize_text(request.form.get('title'))
     try:
-        start = parse_day(request.form.get('start_date'))
-        if not start or not title:
-            raise RoutineError("Enter the first day and a title.")
-        end = parse_day(request.form.get('end_date')) or start
-        if end < start:
-            raise RoutineError("The last day cannot be before the first day.")
-        if (end - start).days > 120:
-            raise RoutineError("A holiday can cover at most 120 days.")
+        holiday = new_holiday(request.form.get('title'), request.form.get('start_date'),
+                              request.form.get('end_date'), department_id)
     except RoutineError as exc:
         flash(str(exc), 'danger')
         return redirect(url_for('routine.calendar'))
-    holiday = Holiday(start_date=start, end_date=end, title=title[:100], department_id=department_id)
     db.session.add(holiday)
     db.session.flush()
+    start, end = holiday.start_date, holiday.end_date
     span = f"{start:%d %b %Y}" if start == end else f"{start:%d %b} to {end:%d %b %Y}"
     log_activity('holiday_added', f"Added holiday '{holiday.title}' ({span})"
                  + (f" for {holiday.department.display_name}." if holiday.department else "."),

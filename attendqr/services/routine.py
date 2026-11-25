@@ -161,6 +161,23 @@ def save_schedule(schedule, name, periods, weekdays):
 
 # ── Holidays ─────────────────────────────────────────────────
 
+MAX_HOLIDAY_DAYS = 120
+
+
+def new_holiday(title, start_text, end_text, department_id):
+    """A holiday from the form's values (not added to the session), or RoutineError. No last day: one day."""
+    title = normalize_text(title)
+    start = parse_day(start_text)
+    if not start or not title:
+        raise RoutineError("Enter the first day and a title.")
+    end = parse_day(end_text) or start
+    if end < start:
+        raise RoutineError("The last day cannot be before the first day.")
+    if (end - start).days > MAX_HOLIDAY_DAYS:
+        raise RoutineError(f"A holiday can cover at most {MAX_HOLIDAY_DAYS} days.")
+    return Holiday(start_date=start, end_date=end, title=title[:100], department_id=department_id)
+
+
 def holidays_between(department_id, start, end):
     """Holidays for everyone and for the department that touch start..end."""
     return Holiday.query.filter(
