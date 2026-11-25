@@ -7,7 +7,7 @@ Flask-Migrate>=4.0.0,<5.0.0
 SQLAlchemy>=2.0.0,<3.0.0
 python-dotenv>=1.0.0,<2.0.0
 qrcode[pil]>=8.0,<9.0
-openpyxl>=3.1.0,<4.0.0
+openpyxl>=3.1.5,<4.0.0
 # openpyxl uses it, when installed, to parse uploaded spreadsheets safely (no XML entity tricks).
 defusedxml>=0.7.1,<1.0.0
 reportlab>=4.0.0,<6.0.0
