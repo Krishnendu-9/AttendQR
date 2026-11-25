@@ -14,7 +14,7 @@ reportlab>=4.0.0,<6.0.0
 Pillow>=10.0.0,<14.0.0
 itsdangerous>=2.2.0,<3.0.0
 # One-time codes from authenticator apps (two-step sign-in for staff).
-pyotp>=2.9.0,<3.0.0
+pyotp>=2.12.1,<3.0.0
 # Encrypts the authenticator secrets stored in the database (Fernet).
 cryptography>=46.0.0,<51.0.0
 # Time zone database for zoneinfo; Windows and slim containers have none of their own.
