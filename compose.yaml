@@ -15,6 +15,33 @@ services:
       APP_BASE_URL: ${APP_BASE_URL:?Set APP_BASE_URL to the address phones use to reach this server, e.g. http://192.168.0.170:5000}
     volumes:
       - attendqr-data:/app/instance
+    depends_on:
+      # Only with `--profile postgres`; without it the app uses SQLite in its volume.
+      db:
+        condition: service_healthy
+        required: false
+
+  # Optional PostgreSQL, for several worker processes (docs/DEPLOYMENT.md, "PostgreSQL").
+  # Start with: docker compose --profile postgres up -d, after setting in .env
+  #   POSTGRES_PASSWORD=<a long random value>
+  #   DATABASE_URL=postgresql+psycopg://attendqr:<the same value>@db:5432/attendqr
+  db:
+    image: postgres:16-alpine
+    profiles: [postgres]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: attendqr
+      POSTGRES_USER: attendqr
+      # Empty unless set in .env; the postgres image then refuses to start rather than run without one.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - attendqr-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attendqr -d attendqr"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   attendqr-data:
+  attendqr-postgres:

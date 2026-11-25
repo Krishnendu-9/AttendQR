@@ -43,6 +43,7 @@ docker compose up -d --build
 
 - **`APP_BASE_URL` is required.** Inside a container the app cannot detect the host's LAN IP, so compose refuses to start without it. Other settings are read from `.env` if it exists.
 - **Data:** the SQLite database and the generated secret key live in the `attendqr-data` volume. `docker compose down --volumes` deletes them.
+- **PostgreSQL (optional):** set `POSTGRES_PASSWORD` and `DATABASE_URL=postgresql+psycopg://attendqr:<the same password>@db:5432/attendqr` in `.env`, then `docker compose --profile postgres up -d --build`. The database lives in the `attendqr-postgres` volume, and the app waits for it to be healthy. Without the profile nothing changes: SQLite in `attendqr-data`.
 - **First login:** `docker compose exec attendqr cat /app/instance/initial_principal_password` shows the Principal's one-time password (see [Initial Login](#initial-login)).
 - **What runs:** `run.py` under waitress, as a non-root user, with only the packages in `requirements.lock` (installed with `--require-hashes`). `/healthz` checks the database, and the container reports healthy once it answers.
 - **Client addresses:** on Docker Desktop (Windows and macOS), and on Linux whenever Docker's userland proxy handles a connection, the app sees every client as the Docker gateway (for example `172.22.0.1`). `SCAN_ALLOWED_NETWORKS` then cannot tell campus from anywhere else: with the default ranges, everyone looks like a LAN client. Scan IP addresses in the session view will also all be the same. On a Linux server, published ports normally keep the real client address. Behind a reverse proxy, set `TRUSTED_PROXY_COUNT` so the forwarded address is used instead. Either way, [check the app sees real client addresses](#check-the-app-sees-real-client-addresses) before relying on them.
@@ -204,7 +205,7 @@ Times are stored in UTC and shown in the college's time zone: the one chosen on 
 
 ## PostgreSQL
 
-SQLite suits one server process. For several worker processes, use PostgreSQL: the driver (`psycopg`) is installed with the other dependencies, and in the Docker image. Set `DATABASE_URL=postgresql+psycopg://user:password@host/attendqr`, run `flask --app wsgi init-db` once, and start the workers with `AUTO_MIGRATE=0`, for example `gunicorn -w 4 wsgi:app`. CI runs the whole test suite and the migration check on PostgreSQL as well as SQLite.
+SQLite suits one server process. For several worker processes, use PostgreSQL: the driver (`psycopg`) is installed with the other dependencies and in the Docker image, which can run it from compose (see [Docker](#docker)). Set `DATABASE_URL=postgresql+psycopg://user:password@host/attendqr`, run `flask --app wsgi init-db` once, and start the workers with `AUTO_MIGRATE=0`, for example `gunicorn -w 4 wsgi:app`. CI runs the whole test suite and the migration check on PostgreSQL as well as SQLite.
 
 ## Logs, request ids and metrics
 

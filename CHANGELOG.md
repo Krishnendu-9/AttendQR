@@ -84,6 +84,7 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - The routine routes are split by area (schedules, drafts, views, changes); URLs and endpoint names
   are unchanged.
 - The PostgreSQL driver (`psycopg`) is a regular dependency, in the Docker image too.
+- `compose.yaml` has an optional PostgreSQL service (`docker compose --profile postgres up`).
 
 ### Added
 
