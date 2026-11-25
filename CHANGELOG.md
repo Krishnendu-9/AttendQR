@@ -62,6 +62,7 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
 - `requirements.lock` carries the hashes of every published file of each pin, so pip refuses a
   download that differs; the Docker image installs with `--require-hashes`, and CI checks every pin
   has hashes (`python scripts/lock_hashes.py --check`).
+- CI jobs get a read-only token: they cannot push, comment or change the repository's settings.
 
 ### Changed
 

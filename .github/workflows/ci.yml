@@ -9,6 +9,10 @@ on:
     # Advisories are published without any change here; check every Monday as well.
     - cron: '0 3 * * 1'
 
+# The jobs only read the code: the token they get cannot push, comment or change settings.
+permissions:
+  contents: read
+
 # Actions are pinned to commit SHAs (tags can be moved); the comment gives the release.
 # To update, look up the new tag's commit, e.g. `git ls-remote https://github.com/actions/checkout v7.0.1`.
 
