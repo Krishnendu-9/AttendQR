@@ -204,7 +204,7 @@ Times are stored in UTC and shown in the college's time zone: the one chosen on 
 
 ## PostgreSQL
 
-SQLite suits one server process. For several worker processes, use PostgreSQL: install the driver (`pip install "psycopg[binary]"`), set `DATABASE_URL=postgresql+psycopg://user:password@host/attendqr`, run `flask --app wsgi init-db` once, and start the workers with `AUTO_MIGRATE=0`, for example `gunicorn -w 4 wsgi:app`. CI runs the whole test suite and the migration check on PostgreSQL as well as SQLite.
+SQLite suits one server process. For several worker processes, use PostgreSQL: the driver (`psycopg`) is installed with the other dependencies, and in the Docker image. Set `DATABASE_URL=postgresql+psycopg://user:password@host/attendqr`, run `flask --app wsgi init-db` once, and start the workers with `AUTO_MIGRATE=0`, for example `gunicorn -w 4 wsgi:app`. CI runs the whole test suite and the migration check on PostgreSQL as well as SQLite.
 
 ## Logs, request ids and metrics
 

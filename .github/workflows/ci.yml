@@ -157,11 +157,12 @@ jobs:
           requirements.lock
           requirements-dev.txt
 
-    - name: Install pinned dependencies and the PostgreSQL driver
+    # The PostgreSQL driver is in requirements.lock.
+    - name: Install pinned dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.lock
-        pip install pytest==9.2.0 "psycopg[binary]==3.3.9"
+        pip install pytest==9.2.0
 
     - name: Check migrations match the models on PostgreSQL
       env:

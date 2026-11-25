@@ -83,6 +83,7 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   URLs and endpoint names are unchanged.
 - The routine routes are split by area (schedules, drafts, views, changes); URLs and endpoint names
   are unchanged.
+- The PostgreSQL driver (`psycopg`) is a regular dependency, in the Docker image too.
 
 ### Added
 
