@@ -85,7 +85,7 @@ operator detail.
 | Scan IP addresses | Stored only for scans, only shown in the session view, deleted after `SCAN_IP_RETENTION_DAYS` (30) by the app itself. |
 | Logs | The access log records route patterns (`/scan/<token>`) and status codes, never client addresses, query strings or tokens. Request ids tie lines together. |
 | Metrics | `/metrics` is off unless `METRICS_TOKEN` is set, and requires it. |
-| Backups | `flask backup-db` takes a consistent copy readable by the owner only. The README asks for the same retention as live data. |
+| Backups | `flask backup-db` takes a consistent copy readable by the owner only. [DEPLOYMENT.md](DEPLOYMENT.md#backups) asks for the same retention as live data. |
 | Leave reasons | Visible only to the student and to their HOD and the Principal. |
 
 ### Supply chain

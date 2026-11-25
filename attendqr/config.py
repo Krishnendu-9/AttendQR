@@ -75,18 +75,18 @@ class Config:
 
     # QR scan URLs. Leave empty to detect the LAN IP automatically.
     # A public base URL removes network locality as a defence against forwarded QRs
-    # unless SCAN_ALLOWED_NETWORKS is set; see "Before deploying on a public address" in README.md.
+    # unless SCAN_ALLOWED_NETWORKS is set; see "Before deploying on a public address" in docs/DEPLOYMENT.md.
     APP_BASE_URL = os.environ.get('APP_BASE_URL', '').strip()
     APP_HOST_IP = os.environ.get('APP_HOST_IP', '').strip()
     APP_PORT = os.environ.get('APP_PORT', '5000').strip() or '5000'
 
     # Client IP ranges (CIDR, comma-separated) allowed to open a scan link, or "any".
     # Empty means private LAN addresses only. A malformed value stops the app from
-    # starting. See "Restricting scans to the campus network" in README.md.
+    # starting. See "Restricting scans to the campus network" in docs/DEPLOYMENT.md.
     SCAN_ALLOWED_NETWORKS = os.environ.get('SCAN_ALLOWED_NETWORKS', '').strip()
 
     # Days to keep the IP address of each QR scan; 0 records none and clears existing ones.
-    # See "Scan IP addresses" in README.md.
+    # See "Scan IP addresses" in docs/DEPLOYMENT.md.
     # A whole number like the other settings; services/retention.py also refuses a negative one.
     SCAN_IP_RETENTION_DAYS = env_int('SCAN_IP_RETENTION_DAYS', 30)
 
