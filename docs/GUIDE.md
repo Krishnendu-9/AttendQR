@@ -141,7 +141,7 @@ After students scan, the teacher can open **Spot check** in the session view and
 | Signal | Rule | Weight |
 | --- | --- | --- |
 | Failed spot check | Marked present but not in the room | 5 per failure |
-| Buddy pair | Scanned within 20 s of the same classmate, from the same address, in at least 3 sessions and half of the sessions either scanned in | 3 |
+| Buddy pair | Scanned within 20 s of the same classmate, from the same address, in at least 3 sessions and in half of the scans of either one that still have an address | 3 |
 | New phones | Registered a new phone 2 or more times; and sessions where 3 or more phones were registered at once | 2 |
 | Manual entries | Marked present by hand 3 or more times (usually innocent; shown so a pattern is visible) | 1 |
 

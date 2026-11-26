@@ -78,7 +78,7 @@
 </div>
 
 <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-  {% call card('Buddy pairs', 'Scanned within ' ~ buddy_window ~ ' s of each other from the same address in at least ' ~ buddy_min_sessions ~ ' sessions, and in at least half of the sessions either scanned in.', flush=True) %}
+  {% call card('Buddy pairs', 'Scanned within ' ~ buddy_window ~ ' s of each other from the same address in at least ' ~ buddy_min_sessions ~ ' sessions, and in at least half of the scans of either one that still have an address.', flush=True) %}
     {% if report.pairs %}
     <ul class="divide-y divide-border">
       {% for pair in report.pairs %}

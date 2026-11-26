@@ -46,6 +46,10 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   WCAG AA contrast. They are now crossed out and badged at full contrast, with the darker grey on the
   grey block in the week grid. The browser tests check My routine on the week of the demo's cancelled
   class, so the check no longer passes or fails with the day of the week it runs.
+- The integrity report compared a pair's scans together with all their scans in its period (8 weeks by
+  default), though scan addresses are kept for 30 days. A pair who scanned together in every class
+  since then could still fall short of half and not be listed. Only scans that still have an address
+  count now.
 
 ### Security
 

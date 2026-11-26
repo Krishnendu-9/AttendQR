@@ -30,7 +30,8 @@ from .reports import ReportFilters, report_sessions_query
 
 BUDDY_WINDOW_SECONDS = 20
 BUDDY_MIN_SESSIONS = 3
-# The pair scanned together in at least this share of the sessions the less frequent one scanned in.
+# The pair scanned together in at least this share of the sessions the less frequent one scanned in,
+# counting only scans that still have their address: the others cannot show a pair either way.
 BUDDY_MIN_SHARE = 0.5
 NEW_DEVICE_BURST = 3
 FREQUENT_NEW_DEVICES = 2
@@ -121,11 +122,14 @@ def _spot_checks(report, sessions, flags):
 
 
 def _buddy_pairs(report, scans, students, flags):
+    # Addresses are deleted after SCAN_IP_RETENTION_DAYS, which is usually shorter than the report's
+    # period. Scans without one are left out of the share too, or a pair that scanned together in every
+    # class since the oldest address could still fall short of BUDDY_MIN_SHARE.
     by_session = defaultdict(list)
     scans_per_student = Counter()
     for scan in scans:
-        scans_per_student[scan.student_id] += 1
         if scan.scan_ip:
+            scans_per_student[scan.student_id] += 1
             by_session[scan.session_id].append(scan)
 
     together = Counter()

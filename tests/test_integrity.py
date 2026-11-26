@@ -53,6 +53,24 @@ def test_students_scanning_together_from_one_address_are_a_buddy_pair(app, data)
     assert flags_of(report, 'MCA001') == ['buddy'] and flags_of(report, 'MCA002') == ['buddy']
 
 
+def test_scans_whose_address_was_deleted_do_not_hide_a_buddy_pair(app, data):
+    """Addresses are kept for 30 days and the report covers 8 weeks: the older scans cannot show a pair."""
+    for days in (35, 36, 37, 38):
+        class_session = add_session(data, days_ago=days)
+        scan(data.student_id, class_session, 10, ip=None)
+        scan(data.student2_id, class_session, 300, ip=None)
+    for days in range(3):
+        class_session = add_session(data, days_ago=days)
+        scan(data.student_id, class_session, 10, ip='10.0.0.9')
+        scan(data.student2_id, class_session, 18, ip='10.0.0.9')
+    db.session.commit()
+
+    report = report_for(app, data)
+
+    assert [(p['together'], p['share']) for p in report.pairs] == [(3, 100)]  # 3 of 3, not 3 of 7
+    assert flags_of(report, 'MCA001') == ['buddy']
+
+
 def test_different_addresses_far_apart_or_too_few_sessions_are_not_a_pair(app, data):
     for days, (ip2, gap) in enumerate([('10.0.0.8', 5), ('10.0.0.9', 120), ('10.0.0.9', 5)]):
         class_session = add_session(data, days_ago=days)
