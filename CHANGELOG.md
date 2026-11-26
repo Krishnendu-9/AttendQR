@@ -75,6 +75,10 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   working one from Reset password or from editing them, and could then mark attendance. A student who
   has left now gets no new login until Restore, which creates it; Reset password waits for Restore;
   and the scan refuses a student who has left even if their login is on.
+- `flask seed-demo --reset` deleted the activity log's chain head with everything else, and nothing
+  was sealed after it, while `flask verify-audit` still said the log was intact. The reset now starts
+  the chain again; a missing head is reported; and on a database where nothing was ever sealed, the
+  next seal starts the chain.
 
 ### Changed
 

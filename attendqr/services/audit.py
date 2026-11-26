@@ -91,9 +91,25 @@ def init_app(app):
         return response
 
 
+def _has_sealed_entries():
+    return db.session.query(ActivityLog.query.filter(ActivityLog.chain_seq.isnot(None)).exists()).scalar()
+
+
+def _chain_head():
+    """The head row, started afresh if it is missing and nothing was ever sealed (as after a reset that
+    deleted every row), or None. With sealed entries it is never recreated: its loss is for verify_chain
+    to report, since a new head would hide that the newest entries can no longer be checked."""
+    head = db.session.get(AuditChain, 1)
+    if head is None and not _has_sealed_entries():
+        head = AuditChain(id=1, last_seq=0, last_hash=GENESIS)
+        db.session.add(head)
+        db.session.flush()
+    return head
+
+
 def seal_pending():
     """Seal every entry that has no hash yet, in id order. Returns how many were sealed. Commits."""
-    head = db.session.get(AuditChain, 1)
+    head = _chain_head()
     if head is None:
         return 0
     # Taking the row lock first serialises sealers (SQLite: the write lock; PostgreSQL: the row).
@@ -133,6 +149,15 @@ def verify_chain(max_problems=20):
     head = db.session.get(AuditChain, 1)
     check.head_seq, check.head_hash = (head.last_seq, head.last_hash) if head else (0, GENESIS)
     check.unsealed = ActivityLog.query.filter(ActivityLog.entry_hash.is_(None)).count()
+    if head is None:
+        # Without it nothing is sealed, so "intact" would only mean that nothing was checked.
+        if _has_sealed_entries():
+            check.problems.append("The chain's head record is missing, so new entries are not sealed and the "
+                                  "newest sealed ones cannot be checked: it was deleted.")
+            return check
+        if check.unsealed:
+            check.problems.append("The chain's head record is missing, so no entry has been sealed. Nothing was "
+                                  "sealed before, so `flask verify-audit --seal` starts the chain.")
 
     key = _key()
     expected_seq, previous = 0, GENESIS

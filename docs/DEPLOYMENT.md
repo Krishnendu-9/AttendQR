@@ -246,4 +246,5 @@ flask --app wsgi verify-audit --seal   # first seal entries written outside a re
 ```
 
 - It prints the head of the chain (entry number and hash). Write that down with each backup: someone with database access could cut off the newest entries together with the head record, and only a copy kept elsewhere shows it.
+- A missing head record is reported too, since nothing new is sealed without it. If no entry was ever sealed (a database where an older `seed-demo --reset` deleted it), `verify-audit --seal` starts the chain; once entries have been sealed, a missing head is never replaced on its own.
 - The key comes from `SECRET_KEY`. Keep `instance/secret_key` (or your `SECRET_KEY`) with your backups; with a different key, every entry looks changed.

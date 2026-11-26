@@ -1,8 +1,9 @@
 """`flask seed-demo`: sample data for demonstrations."""
 from attendqr.extensions import db
-from attendqr.models import Attendance, ClassSession, Department, Student, User
+from attendqr.models import Attendance, AuditChain, ClassSession, Department, Student, User
+from attendqr.services.audit import verify_chain
 from attendqr.services.demo import DEFAULT_DEMO_PASSWORD, seed_demo
-from conftest import login
+from conftest import login, post
 
 DEMO_PASSWORD = 'Demo-pass-123'
 
@@ -73,6 +74,18 @@ def test_reset_replaces_existing_records(app, data):
     assert result.exit_code == 0, result.output
     assert Student.query.filter_by(email='rahul@example.com').first() is None
     assert Student.query.count() == 68
+
+
+def test_reset_keeps_the_activity_log_sealed(app, client_for, data):
+    """Deleting every row took the audit chain's head too, and nothing was sealed after it."""
+    post(client_for(data.principal), '/semesters', {'name': 'Extra', 'department_id': data.mca_id})
+    assert verify_chain().entries  # a chain to wipe
+
+    assert run_seed(app, '--reset', '--yes').exit_code == 0
+
+    check = verify_chain()
+    assert db.session.get(AuditChain, 1) is not None
+    assert check.ok and check.entries >= 1 and check.unsealed == 0
 
 
 def test_reset_asks_for_confirmation(app, data):

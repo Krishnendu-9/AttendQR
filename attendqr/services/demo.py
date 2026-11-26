@@ -24,6 +24,7 @@ from ..extensions import db
 from ..models import (
     ActivityLog,
     Attendance,
+    AuditChain,
     BellPeriod,
     BellSchedule,
     BellScheduleDay,
@@ -45,7 +46,7 @@ from ..models import (
 )
 from ..schema import discard_used_initial_password
 from ..utils import local_now, local_to_utc, normalize_email, utc_now
-from .audit import seal_pending
+from .audit import GENESIS, seal_pending
 from .leave import approve as approve_leave
 from .settings import forget_cached
 
@@ -178,6 +179,9 @@ def clear_all_data():
                          skip_fn=lambda fk: fk.constraint.name in _NULLABLE_BACK_REFERENCES)
     for table in reversed(tables):
         db.session.execute(table.delete())
+    # The audit chain's head row went too, and only migration 0013 creates it: without it nothing new
+    # would be sealed. The log is empty now, so the chain starts again from the beginning.
+    db.session.add(AuditChain(id=1, last_seq=0, last_hash=GENESIS))
     db.session.flush()
     forget_cached()  # saved settings went too: back to the server defaults
 

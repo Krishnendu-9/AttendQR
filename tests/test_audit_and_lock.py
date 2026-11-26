@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from attendqr.extensions import db
 from attendqr.models import ActivityLog, AuditChain, LeaveRequest, Semester, SpotCheck, Student, User
-from attendqr.services.audit import verify_chain
+from attendqr.services.audit import seal_pending, verify_chain
 from attendqr.services.qr import make_qr_token
 from attendqr.utils import local_now
 from conftest import add_session, post, post_json
@@ -83,6 +83,30 @@ def test_entries_written_outside_requests_are_counted_until_sealed(app, data):
     result = app.test_cli_runner().invoke(args=['verify-audit', '--seal'])
     assert result.exit_code == 0 and 'intact' in result.output and 'Head: entry' in result.output
     assert verify_chain().unsealed == 0
+
+
+def test_a_missing_head_starts_again_when_nothing_was_sealed(app, data):
+    """As after an old `seed-demo --reset`, which deleted the head with everything else."""
+    AuditChain.query.delete()
+    db.session.add(ActivityLog(actor_username='script', action='x', description='d', created_at=local_now()))
+    db.session.commit()
+
+    check = verify_chain()
+    assert not check.ok and 'verify-audit --seal' in check.problems[0]  # not "intact" with nothing checked
+
+    result = app.test_cli_runner().invoke(args=['verify-audit', '--seal'])
+    assert result.exit_code == 0 and 'intact' in result.output, result.output
+    assert verify_chain().entries >= 1 and verify_chain().unsealed == 0
+
+
+def test_a_missing_head_after_sealing_is_reported_not_replaced(app, data, client_for):
+    logged_actions(client_for(data.principal), data)
+    AuditChain.query.delete()
+    db.session.commit()
+
+    assert seal_pending() == 0 and db.session.get(AuditChain, 1) is None
+    result = app.test_cli_runner().invoke(args=['verify-audit'])
+    assert result.exit_code == 1 and 'head record is missing' in result.output
 
 
 def test_verify_audit_fails_on_tampering(app, data, client_for):
