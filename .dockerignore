@@ -13,6 +13,14 @@ instance
 **/*.pyc
 .pytest_cache
 .ruff_cache
+.coverage
+htmlcov
+test-results
+# Local tools and notes (the Tailwind binary alone is over 100 MB), never part of the build
+tools
+dev_docs
+.claude
+.vscode
 tests
 docs
 scripts
