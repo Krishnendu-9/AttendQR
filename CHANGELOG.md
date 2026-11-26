@@ -67,6 +67,10 @@ they run by themselves at startup (or with `flask --app wsgi init-db`).
   download that differs; the Docker image installs with `--require-hashes`, and CI checks every pin
   has hashes (`python scripts/lock_hashes.py --check`).
 - CI jobs get a read-only token: they cannot push, comment or change the repository's settings.
+- A student marked as left who had no login (their email was taken when they were added) got a
+  working one from Reset password or from editing them, and could then mark attendance. A student who
+  has left now gets no new login until Restore, which creates it; Reset password waits for Restore;
+  and the scan refuses a student who has left even if their login is on.
 
 ### Changed
 

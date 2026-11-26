@@ -79,6 +79,9 @@ OTHER_BROWSER_MESSAGE = (
 )
 GRANT_USED_TITLE = 'Scan Already Used'
 GRANT_USED_MESSAGE = 'This scan has already been used to mark attendance. Scan the QR code shown in class again.'
+# Their login is turned off when they leave; this holds even if one is somehow signed in.
+LEFT_COLLEGE_TITLE = 'Not a Current Student'
+LEFT_COLLEGE_MESSAGE = 'This account belongs to a student who has left the college, so it cannot mark attendance.'
 
 
 def _network_refusal(stage):
@@ -171,6 +174,9 @@ def attend():
         return _status_page('Attendance Locked', lock_error, 403, info)
 
     student = current_user.student
+    if student.left_at is not None:
+        clear_scan_grant()
+        return _status_page(LEFT_COLLEGE_TITLE, LEFT_COLLEGE_MESSAGE, 403, info)
     subject = class_session.subject
     if student.department_id != subject.department_id or student.semester_id != subject.semester_id:
         return _status_page(
@@ -230,6 +236,10 @@ def mark_attendance():
         return _json_error(session_lock_error(class_session), 403)
 
     student = current_user.student
+    if student.left_at is not None:
+        clear_scan_grant()
+        count_scan('student_left')
+        return _json_error(LEFT_COLLEGE_MESSAGE, 403)
     subject = class_session.subject
     if student.department_id != subject.department_id or student.semester_id != subject.semester_id:
         count_scan('wrong_class')

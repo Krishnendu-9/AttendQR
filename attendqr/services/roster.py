@@ -31,7 +31,8 @@ def ensure_student_account(student):
     """Create or update the login account linked to a student profile.
 
     Returns the one-time password when a new account was created (show it to
-    the staff member once; it is not stored), otherwise None.
+    the staff member once; it is not stored), otherwise None. A student who has
+    left the college gets no new account: Restore creates it when they come back.
     """
     if not student.email:
         return None
@@ -41,7 +42,7 @@ def ensure_student_account(student):
         existing.username = student.email
         existing.department_id = student.department_id
         return None
-    if User.query.filter_by(username=student.email).first():
+    if student.left_at is not None or User.query.filter_by(username=student.email).first():
         return None
     # Random rather than the roll number: roll numbers and student emails are easy
     # to guess, so anyone could otherwise claim an account before its owner.

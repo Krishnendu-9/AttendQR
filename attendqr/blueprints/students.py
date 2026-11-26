@@ -474,6 +474,10 @@ def reset_password(id):
     student = db.get_or_404(Student, id)
     if not can_reset_student_access(student):
         abort(403)
+    if student.left_at is not None:
+        # Their login is off while they are away; a password would open nothing, and Restore gives it back.
+        flash(f"{student.name} has left the college, so their login is turned off. Restore them first.", 'warning')
+        return back_to_list()
 
     ensure_student_account(student)
     db.session.flush()
@@ -559,8 +563,14 @@ def restore(id):
         flash(f"{student.name} cannot come back to a locked semester. {lock_error}", 'warning')
         return redirect(url_for('students.view', id=student.id))
     enrollment.restore(student)
+    # Their old login is turned on again; one who never had a login (or left before one was made) gets one now.
+    temporary_password = ensure_student_account(student)
     log_activity('student_restored', f"{student.name} ({student.roll_no}) is a student again, from now on.",
                  'student', student.id, student.department_id)
     db.session.commit()
+    if temporary_password:
+        return _one_time_password_page(student, temporary_password, 'Student restored',
+                                       f"{student.name} is a student again, and their new login has a temporary "
+                                       "password. Classes held while they were away are not theirs.")
     flash(f"{student.name} is a student again. Classes held while they were away are not theirs.", 'success')
     return redirect(url_for('students.view', id=student.id))

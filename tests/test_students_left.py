@@ -1,14 +1,16 @@
 """Students who left the college: their time in the class ends, and every record stays."""
 import html
+import re
 
 from werkzeug.datastructures import MultiDict
 
 from attendqr.extensions import db
-from attendqr.models import ActivityLog, ClassGroup, ClassGroupMember, Semester, Student, User
+from attendqr.models import ActivityLog, Attendance, ClassGroup, ClassGroupMember, Semester, Student, User
 from attendqr.services.eligibility import build_eligibility
+from attendqr.services.qr import make_qr_token
 from attendqr.services.reports import build_attendance_matrix, build_shortage_report, parse_report_filters
 from attendqr.utils import utc_now
-from conftest import add_session, login, post
+from conftest import add_session, login, post, post_json
 
 
 def page(response):
@@ -89,6 +91,44 @@ def test_a_student_who_left_is_not_moved_but_restored_first(data, client_for):
         'semester_id': data.sem2_id}, follow_redirects=True))
     assert 'Restore them before moving them' in text
     assert db.session.get(Student, data.student_id).semester_id == data.sem1_id
+
+
+def test_a_student_who_left_gets_no_login_until_restored(data, client_for, app):
+    """One without a login (their email was taken when they were added) must not get a working one while away."""
+    User.query.filter_by(student_id=data.student_id).delete()
+    db.session.commit()
+    hod = client_for(data.hod)
+    mark_left(hod, data.student_id)
+
+    text = page(post(hod, f'/students/reset-password/{data.student_id}', follow_redirects=True))
+    assert 'Restore them first' in text
+    post(hod, f'/students/edit/{data.student_id}', {
+        'name': 'Rahul D', 'roll_no': 'MCA001', 'email': data.student, 'department_id': data.mca_id,
+        'semester_id': data.sem1_id})
+    assert db.session.get(Student, data.student_id).name == 'Rahul D'
+    assert User.query.filter_by(student_id=data.student_id).first() is None
+
+    text = page(post(hod, f'/students/{data.student_id}/restore'))
+    assert 'is a student again' in text and 'temporary password' in text
+    password = re.search(r'[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}', text).group(0)
+    assert User.query.filter_by(student_id=data.student_id).one().is_active
+    login(app.test_client(), data.student, password)
+
+
+def test_a_student_who_left_cannot_mark_attendance_even_when_signed_in(data, client_for, app):
+    """Their login is turned off when they leave; the scan refuses them too, should a login be on regardless."""
+    mark_left(client_for(data.hod), data.student_id)
+    User.query.filter_by(student_id=data.student_id).one().is_active = True  # say, turned on by a script
+    db.session.commit()
+    class_session = add_session(data)
+    phone = client_for(data.student)
+
+    attend = phone.get(f'/scan/{make_qr_token(class_session.id)}', follow_redirects=True)
+    assert attend.status_code == 403 and 'left the college' in page(attend)
+    phone.get(f'/scan/{make_qr_token(class_session.id)}')
+    result = post_json(phone, '/mark_attendance')
+    assert result.status_code == 403 and 'left the college' in result.get_json()['message']
+    assert not Attendance.query.filter_by(session_id=class_session.id).count()
 
 
 def test_a_locked_semester_keeps_everyone_who_was_in_it_when_it_was_locked(data, client_for, app):
